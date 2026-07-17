@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slate Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#12181F;
+    --panel:#1B2430;
+    --panel-2:#212C3A;
+    --line:#2C3A49;
+    --chalk:#EDEAE0;
+    --muted:#8A93A3;
+    --gold:#C9A227;
+    --green:#4F9D6E;
+    --teal:#3E8E93;
+    --amber:#D3A23F;
+    --brick:#B5533C;
+    --green-bg:#1A2E24;
+    --teal-bg:#152A2C;
+    --amber-bg:#2E2818;
+    --brick-bg:#2E1B15;
+    --gray-bg:#232B33;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--chalk);
+    font-family:'Inter',system-ui,sans-serif;
+    line-height:1.5;
+    padding:32px 20px 80px;
+  }
+  .wrap{max-width:1180px;margin:0 auto;}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+  h1,h2,h3{font-family:'Oswald',sans-serif;font-weight:600;letter-spacing:0.02em;margin:0;}
+  .masthead{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    border-bottom:3px solid var(--gold);
+    padding-bottom:16px;margin-bottom:28px;flex-wrap:wrap;gap:12px;
+  }
+  .masthead h1{font-size:30px;text-transform:uppercase;letter-spacing:0.06em;}
+  .masthead .tag{color:var(--gold);font-size:13px;text-transform:uppercase;letter-spacing:0.12em;margin-top:4px;}
+  .head-actions{display:flex;gap:8px;align-items:center;}
+  button{
+    font-family:'Inter',sans-serif;font-size:13px;font-weight:500;
+    background:var(--panel-2);color:var(--chalk);border:1px solid var(--line);
+    border-radius:6px;padding:8px 14px;cursor:pointer;
+  }
+  button:hover{border-color:var(--gold);}
+  button.primary{background:var(--gold);color:#231a05;border-color:var(--gold);font-weight:600;}
+  button.primary:hover{filter:brightness(1.08);}
+  input,select{
+    font-family:'IBM Plex Mono',monospace;font-size:13px;
+    background:var(--ink);color:var(--chalk);border:1px solid var(--line);
+    border-radius:6px;padding:8px 10px;
+  }
+  input[type=number]{-moz-appearance:textfield;}
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+  input:focus,select:focus{outline:none;border-color:var(--gold);}
+  section{margin-bottom:36px;}
+  .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;}
+  .section-head h2{font-size:18px;text-transform:uppercase;letter-spacing:0.05em;}
+  .section-head .sub{color:var(--muted);font-size:13px;}
+
+  .add-game-row{
+    display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;margin-bottom:16px;
+  }
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
+  .field input, .field select{width:100px;}
+  .field input.team{width:70px;text-transform:uppercase;}
+
+  .games-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
+  .game-card{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px 16px;position:relative;
+  }
+  .game-card .remove{
+    position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);
+    font-size:16px;line-height:1;padding:2px 6px;cursor:pointer;
+  }
+  .game-card .remove:hover{color:var(--brick);}
+  .matchup{font-family:'Oswald',sans-serif;font-size:17px;letter-spacing:0.02em;margin-bottom:2px;}
+  .matchup .at{color:var(--muted);font-weight:400;margin:0 4px;}
+  .vegas-line{color:var(--muted);font-size:12px;margin-bottom:12px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;}
+  .line-edit{font-size:12px;padding:2px 4px;border:1px solid transparent;border-radius:4px;
+             background:transparent;color:inherit;font-family:inherit;width:52px;}
+  .line-edit.wide{width:62px;}
+  .line-edit:hover,.line-edit:focus{border-color:var(--muted);background:var(--gray-bg,#f5f5f5);outline:none;}
+  select.line-edit{width:auto;cursor:pointer;}
+  .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .bar-team{width:38px;font-size:12px;color:var(--muted);flex-shrink:0;}
+  .bar-track{flex:1;background:var(--ink);border-radius:4px;height:16px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:4px;}
+  .bar-val{width:38px;text-align:right;font-size:12px;flex-shrink:0;}
+  .tag-pill{
+    display:inline-block;margin-top:10px;font-size:11px;font-weight:600;
+    text-transform:uppercase;letter-spacing:0.05em;padding:4px 10px;border-radius:20px;
+  }
+
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
+  .legend-item{
+    display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px;
+  }
+  .legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+
+  .dropzone{
+    border:2px dashed var(--line);border-radius:10px;padding:28px;text-align:center;
+    color:var(--muted);cursor:pointer;background:var(--panel);
+  }
+  .dropzone.over{border-color:var(--gold);color:var(--gold);}
+  .dropzone strong{color:var(--chalk);}
+  .pool-status{font-size:13px;color:var(--muted);margin-top:8px;}
+
+  .lineup-bar{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px;}
+  .lineup-stat{display:flex;flex-direction:column;gap:2px;}
+  .lineup-stat .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
+  .lineup-stat .val{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;}
+  .lineup-stat .val.over{color:var(--brick);}
+  .lineup-actions{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;}
+  .lineup-msg{font-size:12px;color:var(--amber);min-height:16px;margin-bottom:8px;}
+  .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:8px;}
+  .slot-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:70px;position:relative;}
+  .slot-card.filled{border-color:var(--gold);}
+  .slot-key{font-family:'Oswald',sans-serif;font-size:12px;color:var(--gold);letter-spacing:0.06em;margin-bottom:4px;}
+  .slot-empty{color:var(--muted);font-size:13px;}
+  .slot-name{font-size:13px;font-weight:500;padding-right:16px;}
+  .slot-meta{font-size:11px;color:var(--muted);margin-top:2px;}
+  .slot-remove{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 4px;}
+  .slot-remove:hover{color:var(--brick);}
+  .row-btn{font-size:11px;padding:4px 9px;border-radius:5px;}
+  .row-btn.add{border-color:var(--green);color:var(--green);}
+  .row-btn.add:hover{background:var(--green-bg);}
+  .row-tag-inlineup{font-size:11px;color:var(--gold);display:flex;align-items:center;gap:6px;white-space:nowrap;}
+  .row-tag-full{font-size:11px;color:var(--muted);}
+
+  .filters{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0;align-items:center;}
+  .filters input[type=text]{width:200px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);}
+  th{
+    font-family:'Inter',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;
+    color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap;
+  }
+  th:hover{color:var(--chalk);}
+  th.sorted{color:var(--gold);}
+  td.num{font-family:'IBM Plex Mono',monospace;}
+  tr:hover td{background:var(--panel-2);}
+  .pos-pill{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);}
+  .empty{color:var(--muted);font-size:13px;padding:20px 0;text-align:center;}
+  .row-count{color:var(--muted);font-size:12px;}
+
+  /* ── Top Players ─────────────────────────────── */
+  .tp-section { margin-top: 0; }
+  .tp-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .tp-tab { padding:4px 12px; border-radius:20px; border:1px solid var(--muted);
+            background:transparent; cursor:pointer; font-size:12px; font-weight:600; color:var(--muted); }
+  .tp-tab.active { background:var(--primary,#1a73e8); color:#fff; border-color:var(--primary,#1a73e8); }
+  .tp-list { display:flex; flex-direction:column; gap:6px; min-height:40px; }
+  .tp-card { display:flex; align-items:center; gap:10px; padding:7px 10px;
+             border-radius:6px; background:var(--gray-bg,#f5f5f5); font-size:13px; }
+  .tp-card .tp-pos { font-size:11px; font-weight:700; width:28px; text-align:center;
+                     padding:2px 4px; border-radius:4px; background:var(--primary,#1a73e8); color:#fff; }
+  .tp-card .tp-name { flex:1; font-weight:600; }
+  .tp-card .tp-team { font-size:11px; color:var(--muted); margin-right:4px; }
+  .tp-card .tp-tag  { font-size:10px; padding:2px 6px; border-radius:10px; }
+  .tp-card .tp-rm   { margin-left:auto; background:none; border:none; cursor:pointer;
+                      color:var(--muted); font-size:16px; line-height:1; padding:0 4px; }
+  .tp-card .tp-rm:hover { color:#c00; }
+  .tp-empty { font-size:12px; color:var(--muted); padding:8px 0; }
+  .tp-add-btn { font-size:11px; padding:2px 8px; border-radius:12px;
+                border:1px solid var(--primary,#1a73e8); color:var(--primary,#1a73e8);
+                background:transparent; cursor:pointer; }
+  .tp-add-btn:hover { background:var(--primary,#1a73e8); color:#fff; }
+  .tp-add-btn.in-tp { background:#e8f5e9; border-color:#2e7d32; color:#2e7d32; }
+  /* Tier styles */
+  .tp-tier-group { margin-bottom:10px; }
+  .tp-tier-header { display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
+  .tp-tier-badge { width:20px; height:20px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; flex-shrink:0; }
+  .tp-tier-badge.t1 { background:#2e7d32; }
+  .tp-tier-badge.t2 { background:#1a73e8; }
+  .tp-tier-badge.t3 { background:#e65100; }
+  .tp-tier-badge.t0 { background:#aaa; }
+  .tp-tier-btns { display:flex; gap:3px; margin-left:auto; }
+  .tp-tier-btn { width:22px; height:22px; border-radius:50%; border:2px solid #ddd; background:#fff;
+                 cursor:pointer; font-size:10px; font-weight:700; color:#999; display:flex; align-items:center; justify-content:center; }
+  .tp-tier-btn.active-t1 { border-color:#2e7d32; background:#2e7d32; color:#fff; }
+  .tp-tier-btn.active-t2 { border-color:#1a73e8; background:#1a73e8; color:#fff; }
+  .tp-tier-btn.active-t3 { border-color:#e65100; background:#e65100; color:#fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div>
+      <h1>Slate board</h1>
+      <div class="tag">Weekly game environment and player pool</div>
+    </div>
+    <div class="head-actions">
+      <div class="field">
+        <label>Week</label>
+        <input id="weekInput" type="text" placeholder="Week 1" style="width:110px;">
+      </div>
+      <button id="exportBtn">Export board</button>
+      <button id="importBtn">Import board</button>
+      <input type="file" id="importFile" accept=".json" style="display:none;">
+    </div>
+  </div>
+
+  <section>
+    <div class="section-head">
+      <h2>Game environment</h2>
+      <div class="sub">Enter the Vegas line for each game. Totals and script tags update automatically.</div>
+    </div>
+
+    <div class="add-game-row">
+      <div class="field"><label>Away</label><input class="team" id="gAway" maxlength="4" placeholder="SF"></div>
+      <div class="field"><label>Home</label><input class="team" id="gHome" maxlength="4" placeholder="ARI"></div>
+      <div class="field"><label>Total</label><input id="gTotal" type="number" step="0.5" placeholder="47.5"></div>
+      <div class="field">
+        <label>Favorite</label>
+        <select id="gFav">
+          <option value="away">Away</option>
+          <option value="home">Home</option>
+          <option value="pick">Pick'em</option>
+        </select>
+      </div>
+      <div class="field"><label>Spread</label><input id="gSpread" type="number" step="0.5" placeholder="3.5"></div>
+      <div class="field"><label>&nbsp;</label><button class="primary" id="addGameBtn">Add game</button></div>
+      <div class="field" style="margin-left:auto;">
+        <label>Blowout at ≥</label>
+        <input id="thBlowout" type="number" step="0.5" value="6.5" style="width:72px;">
+      </div>
+      <div class="field">
+        <label>High total ≥</label>
+        <input id="thHighTotal" type="number" step="0.5" value="44.5" style="width:72px;">
+      </div>
+    </div>
+
+    <div class="legend" id="legend"></div>
+
+    <div class="games-grid" id="gamesGrid"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Your lineup</h2>
+      <div class="sub">Add players from the pool below, or let the optimizer fill what's left.</div>
+    </div>
+
+    <div class="lineup-bar">
+      <div class="lineup-stat"><span class="label">Salary used</span><span class="val" id="salaryUsedVal">$0</span></div>
+      <div class="lineup-stat"><span class="label">Remaining</span><span class="val" id="salaryLeftVal">$60,000</span></div>
+      <div class="field"><label>Cap</label><input id="capInput" type="number" step="100" value="60000" style="width:90px;"></div>
+      <div class="lineup-stat"><span class="label">Projected pts</span><span class="val" id="projTotalVal">0.0</span></div>
+      <div class="lineup-actions">
+        <button id="optimizeBtn" class="primary">Optimize remaining</button>
+        <button id="clearLineupBtn">Clear lineup</button>
+        <button id="copyLineupBtn">Copy lineup</button>
+      </div>
+    </div>
+    <div class="lineup-msg" id="lineupMsg"></div>
+    <div class="slots-grid" id="slotsGrid"></div>
+  </section>
+
+  <section class="tp-section">
+    <div class="section-head">
+      <h2>Top Players</h2>
+      <div class="sub">Tag key plays by position before building lineups. Click a player in the pool to add them here.</div>
+    </div>
+    <div class="tp-tabs" id="tpTabs"></div>
+    <div class="tp-list" id="tpList"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Player pool</h2>
+      <div class="sub">Upload the FanDuel player export for this slate.</div>
+    </div>
+
+    <div class="dropzone" id="dropzone">
+      <div><strong>Drop the FanDuel CSV here</strong>, or click to choose a file.</div>
+      <div class="pool-status" id="poolStatus">No file loaded yet.</div>
+    </div>
+    <input type="file" id="csvFile" accept=".csv" style="display:none;">
+    <div style="margin-top:8px;">
+      <button id="loadRostersBtn">Load 2026 NFL rosters</button>
+      <span class="sub" style="margin-left:8px;">Use before FanDuel posts the slate — loads full player pool from nfl_rosters_2026.js</span>
+    </div>
+
+    <div class="filters">
+      <input type="text" id="searchBox" placeholder="Search player or team">
+      <select id="posFilter"><option value="">All positions</option></select>
+      <select id="tagFilter"><option value="">All script tags</option></select>
+      <span class="row-count" id="rowCount"></span>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table id="poolTable">
+        <thead>
+          <tr>
+            <th data-key="name">Player</th>
+            <th data-key="position">Pos</th>
+            <th data-key="team">Team</th>
+            <th data-key="salary">Salary</th>
+            <th data-key="fppg">FPPG</th>
+            <th data-key="value">Value</th>
+            <th data-key="teamImplied">Team total</th>
+            <th data-key="tag">Script</th>
+            <th>Lineup</th>
+            <th>Top</th>
+          </tr>
+        </thead>
+        <tbody id="poolBody"></tbody>
+      </table>
+      <div class="empty" id="poolEmpty">Upload a player pool to see tagged players here.</div>
+    </div>
+  </section>
+
+</div>
+
+<script src="nfl_rosters_2026.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script>
+(function(){
+
+  var games = [];
+  var players = [];
+  var sortKey = 'value';
+  var sortDir = 'desc';
+
+  var SLOT_DEFS = [
+    {key:'QB', label:'QB', eligible:['QB']},
+    {key:'RB1', label:'RB', eligible:['RB']},
+    {key:'RB2', label:'RB', eligible:['RB']},
+    {key:'WR1', label:'WR', eligible:['WR']},
+    {key:'WR2', label:'WR', eligible:['WR']},
+    {key:'WR3', label:'WR', eligible:['WR']},
+    {key:'TE', label:'TE', eligible:['TE']},
+    {key:'FLEX', label:'FLEX', eligible:['RB','WR','TE']},
+    {key:'DEF', label:'DEF', eligible:['DEF']}
+  ];
+  var lineup = {};
+  SLOT_DEFS.forEach(function(s){lineup[s.key] = null;});
+  var salaryCap = 60000;
+
+  var TAGS = {
+    onslaught: {label:'Onslaught target', color:'var(--green)', bg:'var(--green-bg)', note:'Favorite in a high-total game. Prioritize the QB plus two pass catchers from this side.'},
+    trail:     {label:'Trail volume',     color:'var(--amber)', bg:'var(--amber-bg)', note:'Underdog in a high-total blowout. QB and the alpha WR only, built on garbage-time volume.'},
+    rush:      {label:'Rush script',      color:'var(--amber)', bg:'var(--amber-bg)', note:'Favorite in a low-total blowout. Lean on the early-down back, go light on the air raid.'},
+    shootout:  {label:'Shootout side',    color:'var(--teal)',  bg:'var(--teal-bg)',  note:'Close game, high total. Both sides are live; a true bring-back fits here.'},
+    grind:     {label:'Grind',            color:'var(--brick)', bg:'var(--brick-bg)', note:'Close game, low total. Low ceiling on both sides, treat as a fade unless salary forces it.'},
+    fade:      {label:'Fade',             color:'var(--brick)', bg:'var(--brick-bg)', note:'Underdog in a low-total blowout. Avoid unless there is no cheaper option.'},
+    unmatched: {label:'Unmatched',        color:'var(--muted)', bg:'var(--gray-bg)',  note:'No game entered yet for this team. Add it above to tag these players.'}
+  };
+
+  function round1(n){return Math.round(n*10)/10;}
+  function money(n){return '$'+Math.round(n).toLocaleString();}
+
+  function implied(total, spread, isFavorite){
+    return isFavorite ? total/2 + spread/2 : total/2 - spread/2;
+  }
+
+  function classify(isFavorite, spread, total){
+    var blowout = spread >= parseFloat(document.getElementById('thBlowout').value || 6.5);
+    var highTotal = total >= parseFloat(document.getElementById('thHighTotal').value || 44.5);
+    if (blowout && highTotal) return isFavorite ? 'onslaught' : 'trail';
+    if (blowout && !highTotal) return isFavorite ? 'rush' : 'fade';
+    if (!blowout && highTotal) return 'shootout';
+    return 'grind';
+  }
+
+  function renderLegend(){
+    var el = document.getElementById('legend');
+    el.innerHTML = '';
+    Object.keys(TAGS).forEach(function(k){
+      if (k === 'unmatched') return;
+      var t = TAGS[k];
+      var div = document.createElement('div');
+      div.className = 'legend-item';
+      div.title = t.note;
+      div.innerHTML = '<span class="legend-dot" style="background:'+t.color+'"></span>'+t.label;
+      el.appendChild(div);
+    });
+  }
+
+  function addGame(){
+    var away = normalizeTeam(document.getElementById('gAway').value);
+    var home = normalizeTeam(document.getElementById('gHome').value);
+    var total = parseFloat(document.getElementById('gTotal').value);
+    var fav = document.getElementById('gFav').value;
+    var spread = parseFloat(document.getElementById('gSpread').value) || 0;
+    if (!away || !home || isNaN(total)) return;
+    if (fav === 'pick') spread = 0;
+
+    games.push({
+      id: Date.now()+Math.random(),
+      away: away, home: home, total: total,
+      favorite: fav, spread: Math.abs(spread)
+    });
+
+    document.getElementById('gAway').value='';
+    document.getElementById('gHome').value='';
+    document.getElementById('gTotal').value='';
+    document.getElementById('gSpread').value='';
+    document.getElementById('gFav').value='away';
+
+    renderGames();
+    if (players.length) tagPlayers();
+    saveState();
+  }
+
+  function removeGame(id){
+    games = games.filter(function(g){return g.id !== id;});
+    renderGames();
+    if (players.length) tagPlayers();
+    saveState();
+  }
+
+  function gameSides(g){
+    var awayIsFav = g.favorite === 'away';
+    var homeIsFav = g.favorite === 'home';
+    var awayImplied = g.favorite === 'pick' ? g.total/2 : implied(g.total, g.spread, awayIsFav);
+    var homeImplied = g.favorite === 'pick' ? g.total/2 : implied(g.total, g.spread, homeIsFav);
+    var awayTag = g.favorite === 'pick' ? classify(false, 0, g.total) : classify(awayIsFav, g.spread, g.total);
+    var homeTag = g.favorite === 'pick' ? classify(false, 0, g.total) : classify(homeIsFav, g.spread, g.total);
+    return {
+      away: {team:g.away, implied:awayImplied, tag:awayTag, isFav:awayIsFav},
+      home: {team:g.home, implied:homeImplied, tag:homeTag, isFav:homeIsFav}
+    };
+  }
+
+  function renderGames(){
+    var grid = document.getElementById('gamesGrid');
+    grid.innerHTML = '';
+    var maxImplied = 1;
+    games.forEach(function(g){
+      var s = gameSides(g);
+      maxImplied = Math.max(maxImplied, s.away.implied, s.home.implied);
+    });
+
+    games.forEach(function(g){
+      var s = gameSides(g);
+      var card = document.createElement('div');
+      card.className = 'game-card';
+
+      var favSel =
+        '<select class="line-edit" data-id="'+g.id+'" data-field="favorite">'+
+          '<option value="away"'+(g.favorite==='away'?' selected':'')+'>'+g.away+' fav</option>'+
+          '<option value="home"'+(g.favorite==='home'?' selected':'')+'>'+g.home+' fav</option>'+
+          '<option value="pick"'+(g.favorite==='pick'?' selected':'')+'>Pick\'em</option>'+
+        '</select>';
+      var spreadInput =
+        '<input type="number" step="0.5" min="0" class="line-edit" data-id="'+g.id+'"'+
+        ' data-field="spread" value="'+g.spread+'"'+(g.favorite==='pick'?' disabled':'')+' style="width:48px;">';
+      var totalInput =
+        '<input type="number" step="0.5" min="20" class="line-edit wide" data-id="'+g.id+'"'+
+        ' data-field="total" value="'+g.total+'">';
+
+      card.innerHTML =
+        '<button class="remove" data-id="'+g.id+'" title="Remove game">&times;</button>'+
+        '<div class="matchup">'+g.away+'<span class="at">@</span>'+g.home+'</div>'+
+        '<div class="vegas-line mono">'+favSel+' -'+spreadInput+' O/U '+totalInput+'</div>'+
+        barRow(s.away.team, s.away.implied, maxImplied, TAGS[s.away.tag].color)+
+        barRow(s.home.team, s.home.implied, maxImplied, TAGS[s.home.tag].color)+
+        '<span class="tag-pill" style="color:'+TAGS[s.away.tag].color+';background:'+TAGS[s.away.tag].bg+';">'+s.away.team+' '+TAGS[s.away.tag].label+'</span> '+
+        '<span class="tag-pill" style="color:'+TAGS[s.home.tag].color+';background:'+TAGS[s.home.tag].bg+';">'+s.home.team+' '+TAGS[s.home.tag].label+'</span>';
+
+      grid.appendChild(card);
+    });
+
+    grid.querySelectorAll('.remove').forEach(function(btn){
+      btn.addEventListener('click', function(){removeGame(parseFloat(btn.getAttribute('data-id')));});
+    });
+
+    grid.querySelectorAll('.line-edit').forEach(function(el){
+      el.addEventListener('change', function(){
+        var g = games.find(function(x){return x.id === parseFloat(el.getAttribute('data-id'));});
+        if (!g) return;
+        var field = el.getAttribute('data-field');
+        if (field === 'favorite'){
+          g.favorite = el.value;
+          if (g.favorite === 'pick') g.spread = 0;
+        } else if (field === 'spread'){
+          g.spread = Math.abs(parseFloat(el.value)) || 0;
+        } else if (field === 'total'){
+          var t = parseFloat(el.value);
+          if (!isNaN(t)) g.total = t;
+        }
+        renderGames();
+        if (players.length) tagPlayers();
+        saveState();
+      });
+    });
+  }
+
+  function barRow(team, val, max, color){
+    var pct = Math.max(4, Math.round((val/max)*100));
+    return '<div class="bar-row"><div class="bar-team mono">'+team+'</div>'+
+      '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:'+color+';"></div></div>'+
+      '<div class="bar-val mono">'+round1(val)+'</div></div>';
+  }
+
+  function findGameForTeam(team){
+    for (var i=0;i<games.length;i++){
+      var g = games[i];
+      if (g.away === team) return {game:g, side:'away'};
+      if (g.home === team) return {game:g, side:'home'};
+    }
+    return null;
+  }
+
+  function tagPlayers(){
+    players.forEach(function(p){
+      var match = findGameForTeam(p.team);
+      if (!match){
+        p.tag = 'unmatched'; p.teamImplied = null; p.oppTeam = null;
+        return;
+      }
+      var s = gameSides(match.game);
+      var mine = match.side === 'away' ? s.away : s.home;
+      var opp = match.side === 'away' ? s.home : s.away;
+      p.tag = mine.tag;
+      p.teamImplied = mine.implied;
+      p.oppTeam = opp.team;
+    });
+    populateFilterOptions();
+    renderTable();
+  }
+
+  var TEAM_ALIASES = {
+    'JAX':'JAC', 'WSH':'WAS', 'WFT':'WAS',
+    'KAN':'KC', 'GNB':'GB', 'SFO':'SF', 'TAM':'TB',
+    'NOR':'NO', 'NWE':'NE', 'SD':'LAC',
+    'OAK':'LV', 'LVR':'LV', 'STL':'LAR',
+    'ARZ':'ARI', 'HST':'HOU', 'BLT':'BAL', 'CLV':'CLE', 'LA':'LAR'
+  };
+
+  function normalizeTeam(t){
+    if (!t) return t;
+    var up = t.toString().trim().toUpperCase();
+    return TEAM_ALIASES[up] || up;
+  }
+
+  function saveState(){
+    try{
+      var state = {
+        week: document.getElementById('weekInput').value,
+        thresholds: {
+          blowout: document.getElementById('thBlowout').value,
+          highTotal: document.getElementById('thHighTotal').value
+        },
+        cap: salaryCap,
+        games: games,
+        players: players,
+        topPlayers: topPlayers,
+        lineup: {}
+      };
+      SLOT_DEFS.forEach(function(s){ state.lineup[s.key] = lineup[s.key] ? lineup[s.key].id : null; });
+      localStorage.setItem('slateBoardState', JSON.stringify(state));
+    }catch(e){ /* storage unavailable, skip silently */ }
+  }
+
+  function loadState(){
+    try{
+      var raw = localStorage.getItem('slateBoardState');
+      if (!raw) return false;
+      var state = JSON.parse(raw);
+      document.getElementById('weekInput').value = state.week || '';
+      if (state.thresholds){
+        document.getElementById('thBlowout').value = state.thresholds.blowout || 6.5;
+        document.getElementById('thHighTotal').value = state.thresholds.highTotal || 44.5;
+      }
+      salaryCap = state.cap || 60000;
+      document.getElementById('capInput').value = salaryCap;
+      games = (state.games || []).map(function(g){
+        g.away = normalizeTeam(g.away); g.home = normalizeTeam(g.home); return g;
+      });
+      players = state.players || [];
+      topPlayers = state.topPlayers || {};
+      renderTopPlayers();
+      if (players.length){
+        document.getElementById('poolStatus').textContent = players.length+' players loaded.';
+      }
+      if (state.lineup){
+        SLOT_DEFS.forEach(function(s){
+          var id = state.lineup[s.key];
+          lineup[s.key] = id ? (players.find(function(p){return p.id===id;}) || null) : null;
+        });
+      }
+      return true;
+    }catch(e){ return false; }
+  }
+
+  function normalizeHeader(h){return h.trim().toLowerCase();}
+
+  function parseCSV(file){
+    Papa.parse(file, {
+      header:true,
+      skipEmptyLines:true,
+      complete:function(results){
+        var rows = results.data;
+        players = rows.map(function(r){
+          var keys = {};
+          Object.keys(r).forEach(function(k){keys[normalizeHeader(k)] = r[k];});
+          var name = keys['nickname'] || ((keys['first name']||'')+' '+(keys['last name']||'')).trim();
+          var salary = parseFloat((keys['salary']||'0').toString().replace(/[^0-9.]/g,'')) || 0;
+          var fppg = parseFloat(keys['fppg']||'0') || 0;
+          var team = normalizeTeam(keys['team']||'');
+          var position = (keys['position']||'').toString().trim().toUpperCase();
+          var id = (keys['id']||'').toString().trim();
+          return {
+            id: id || (name+'|'+team+'|'+position),
+            name: name || 'Unknown',
+            position: position,
+            team: team,
+            salary: salary,
+            fppg: fppg,
+            value: salary > 0 ? Math.round((fppg/(salary/1000))*100)/100 : 0,
+            tag: 'unmatched',
+            teamImplied: null
+          };
+        }).filter(function(p){return p.name !== 'Unknown' && p.team;});
+
+        clearLineup();
+        document.getElementById('poolStatus').textContent = players.length+' players loaded.';
+        tagPlayers();
+        saveState();
+      },
+      error:function(err){
+        document.getElementById('poolStatus').textContent = 'Could not read that file. Export the player list as CSV and try again.';
+      }
+    });
+  }
+
+  function playerInSlot(p){
+    for (var i=0;i<SLOT_DEFS.length;i++){
+      var k = SLOT_DEFS[i].key;
+      if (lineup[k] && lineup[k].id === p.id) return k;
+    }
+    return null;
+  }
+
+  function isPlayerInLineup(p){ return playerInSlot(p) !== null; }
+
+  function firstEmptySlotFor(position){
+    var dedicated = SLOT_DEFS.find(function(s){return !lineup[s.key] && s.eligible.length===1 && s.eligible[0]===position;});
+    if (dedicated) return dedicated.key;
+    var flex = SLOT_DEFS.find(function(s){return !lineup[s.key] && s.eligible.length>1 && s.eligible.indexOf(position)!==-1;});
+    return flex ? flex.key : null;
+  }
+
+  function hasEmptySlotFor(position){ return firstEmptySlotFor(position) !== null; }
+
+  function salaryUsed(){
+    return SLOT_DEFS.reduce(function(sum,s){return sum + (lineup[s.key] ? lineup[s.key].salary : 0);}, 0);
+  }
+  function projectedTotal(){
+    return SLOT_DEFS.reduce(function(sum,s){return sum + (lineup[s.key] ? lineup[s.key].fppg : 0);}, 0);
+  }
+
+  function setMsg(text){
+    document.getElementById('lineupMsg').textContent = text || '';
+  }
+
+  function addToLineup(p){
+    if (isPlayerInLineup(p)) return;
+    var slotKey = firstEmptySlotFor(p.position);
+    if (!slotKey){ setMsg(p.name+' has no open slot. That position is full.'); return; }
+    if (salaryUsed() + p.salary > salaryCap){ setMsg(p.name+' would put you over the cap.'); return; }
+    lineup[slotKey] = p;
+    setMsg('');
+    refreshLineupUI();
+  }
+
+  function removeFromLineup(slotKey){
+    lineup[slotKey] = null;
+    setMsg('');
+    refreshLineupUI();
+  }
+
+  function clearLineup(){
+    SLOT_DEFS.forEach(function(s){lineup[s.key] = null;});
+    setMsg('');
+    refreshLineupUI();
+  }
+
+  function refreshLineupUI(){
+    renderLineupSlots();
+    renderLineupBar();
+    renderTable();
+    saveState();
+  }
+
+  function renderLineupBar(){
+    var used = salaryUsed();
+    var left = salaryCap - used;
+    var usedEl = document.getElementById('salaryUsedVal');
+    var leftEl = document.getElementById('salaryLeftVal');
+    usedEl.textContent = money(used);
+    leftEl.textContent = money(left);
+    leftEl.classList.toggle('over', left < 0);
+    document.getElementById('projTotalVal').textContent = projectedTotal().toFixed(1);
+  }
+
+  function renderLineupSlots(){
+    var grid = document.getElementById('slotsGrid');
+    grid.innerHTML = SLOT_DEFS.map(function(s){
+      var p = lineup[s.key];
+      if (!p){
+        return '<div class="slot-card"><div class="slot-key">'+s.label+'</div><div class="slot-empty">Empty</div></div>';
+      }
+      return '<div class="slot-card filled">'+
+        '<button class="slot-remove" data-slot="'+s.key+'" title="Remove">&times;</button>'+
+        '<div class="slot-key">'+s.label+'</div>'+
+        '<div class="slot-name">'+p.name+'</div>'+
+        '<div class="slot-meta mono">'+p.team+' &middot; '+money(p.salary)+' &middot; '+p.fppg.toFixed(1)+' pts</div>'+
+      '</div>';
+    }).join('');
+    grid.querySelectorAll('.slot-remove').forEach(function(btn){
+      btn.addEventListener('click', function(){removeFromLineup(btn.getAttribute('data-slot'));});
+    });
+  }
+
+  function optimizeRemaining(){
+    var emptySlots = SLOT_DEFS.filter(function(s){return !lineup[s.key];});
+    if (!emptySlots.length){ setMsg('Lineup is already full. Clear a slot to optimize around it.'); return; }
+
+    var usedIds = {};
+    SLOT_DEFS.forEach(function(s){ if (lineup[s.key]) usedIds[lineup[s.key].id] = true; });
+    var pool = players.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
+
+    var order = emptySlots.slice().sort(function(a,b){
+      return (a.eligible.length - b.eligible.length);
+    });
+    var picks = {};
+    var remaining = order.slice();
+    var budget = salaryCap - salaryUsed();
+
+    for (var i=0;i<order.length;i++){
+      var slot = order[i];
+      var stillAfter = remaining.filter(function(s){return s.key!==slot.key;});
+      var candidates = pool.filter(function(p){
+        return slot.eligible.indexOf(p.position)!==-1 && !picks[p.id];
+      });
+      var minRestCost = stillAfter.reduce(function(sum, s){
+        var opts = pool.filter(function(p){return s.eligible.indexOf(p.position)!==-1 && !picks[p.id];});
+        if (!opts.length) return sum;
+        var cheapest = opts.reduce(function(m,p){return p.salary<m.salary?p:m;}, opts[0]);
+        return sum + cheapest.salary;
+      }, 0);
+      var affordable = candidates.filter(function(p){ return p.salary <= (budget - minRestCost); });
+      var pickFrom = affordable.length ? affordable : candidates;
+      if (!pickFrom.length){ continue; }
+      var best = pickFrom.reduce(function(m,p){ return p.fppg > m.fppg ? p : m; }, pickFrom[0]);
+      picks[best.id] = true;
+      lineup[slot.key] = best;
+      budget -= best.salary;
+      remaining = remaining.filter(function(s){return s.key!==slot.key;});
+    }
+
+    var improved = true;
+    var guard = 0;
+    while (improved && guard < 300){
+      improved = false; guard++;
+      var totalSalary = salaryUsed();
+      var currentPool = players.filter(function(p){
+        return !SLOT_DEFS.some(function(s){return lineup[s.key] && lineup[s.key].id===p.id;});
+      });
+      var bestGain = 0, bestSlotKey = null, bestCandidate = null;
+      emptySlots.forEach(function(slot){
+        var current = lineup[slot.key];
+        if (!current) return;
+        var opts = currentPool.filter(function(p){return slot.eligible.indexOf(p.position)!==-1;});
+        opts.forEach(function(cand){
+          var delta = cand.salary - current.salary;
+          if (totalSalary + delta <= salaryCap && (cand.fppg - current.fppg) > bestGain){
+            bestGain = cand.fppg - current.fppg;
+            bestSlotKey = slot.key;
+            bestCandidate = cand;
+          }
+        });
+      });
+      if (bestSlotKey){
+        lineup[bestSlotKey] = bestCandidate;
+        improved = true;
+      }
+    }
+
+    setMsg('');
+    refreshLineupUI();
+  }
+
+  function copyLineup(){
+    var lines = SLOT_DEFS.map(function(s){
+      var p = lineup[s.key];
+      return s.label+': '+(p ? p.name+' ('+p.team+') '+money(p.salary)+' - '+p.fppg.toFixed(1)+' pts' : 'empty');
+    });
+    lines.push('Salary used: '+money(salaryUsed())+' of '+money(salaryCap));
+    lines.push('Projected: '+projectedTotal().toFixed(1)+' pts');
+    var text = lines.join('\n');
+    if (navigator.clipboard){
+      navigator.clipboard.writeText(text).then(function(){
+        var btn = document.getElementById('copyLineupBtn');
+        var orig = btn.textContent;
+        btn.textContent = 'Copied';
+        setTimeout(function(){ btn.textContent = orig; }, 1500);
+      });
+    }
+  }
+
+  function populateFilterOptions(){
+    var posSel = document.getElementById('posFilter');
+    var tagSel = document.getElementById('tagFilter');
+    var positions = Array.from(new Set(players.map(function(p){return p.position;}))).filter(Boolean).sort();
+    posSel.innerHTML = '<option value="">All positions</option>' + positions.map(function(p){return '<option value="'+p+'">'+p+'</option>';}).join('');
+    tagSel.innerHTML = '<option value="">All script tags</option>' + Object.keys(TAGS).map(function(k){return '<option value="'+k+'">'+TAGS[k].label+'</option>';}).join('');
+  }
+
+  function renderTable(){
+    var body = document.getElementById('poolBody');
+    var empty = document.getElementById('poolEmpty');
+    var search = document.getElementById('searchBox').value.trim().toLowerCase();
+    var posF = document.getElementById('posFilter').value;
+    var tagF = document.getElementById('tagFilter').value;
+
+    var rows = players.filter(function(p){
+      if (posF && p.position !== posF) return false;
+      if (tagF && p.tag !== tagF) return false;
+      if (search && p.name.toLowerCase().indexOf(search) === -1 && p.team.toLowerCase().indexOf(search) === -1) return false;
+      return true;
+    });
+
+    rows.sort(function(a,b){
+      var av = a[sortKey], bv = b[sortKey];
+      if (av === null) av = -Infinity;
+      if (bv === null) bv = -Infinity;
+      if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    document.getElementById('rowCount').textContent = rows.length + ' of ' + players.length + ' players';
+
+    if (!rows.length){
+      body.innerHTML = '';
+      empty.style.display = 'block';
+      empty.textContent = players.length ? 'No players match these filters.' : 'Upload a player pool to see tagged players here.';
+      return;
+    }
+    empty.style.display = 'none';
+
+    body.innerHTML = rows.map(function(p){
+      var t = TAGS[p.tag];
+      var slotKey = playerInSlot(p);
+      var action;
+      if (slotKey){
+        action = '<span class="row-tag-inlineup">In lineup ('+slotKey+') <button class="row-btn" data-remove-slot="'+slotKey+'" style="padding:2px 6px;">&times;</button></span>';
+      } else if (hasEmptySlotFor(p.position)){
+        action = '<button class="row-btn add" data-add-id="'+p.id+'">Add</button>';
+      } else {
+        action = '<span class="row-tag-full">Full</span>';
+      }
+      return '<tr>'+
+        '<td>'+p.name+'</td>'+
+        '<td class="pos-pill">'+p.position+'</td>'+
+        '<td class="mono">'+p.team+'</td>'+
+        '<td class="num">'+money(p.salary)+'</td>'+
+        '<td class="num">'+p.fppg.toFixed(1)+'</td>'+
+        '<td class="num">'+p.value.toFixed(2)+'</td>'+
+        '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
+        '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
+        '<td>'+action+'</td>'+
+        '<td><button class="tp-add-btn'+(topPlayers[p.id]?' in-tp':'')+'" data-tp-id="'+p.id+'">'+(topPlayers[p.id]?'★ Starred':'☆ Star')+'</button></td>'+
+      '</tr>';
+    }).join('');
+
+    body.querySelectorAll('[data-add-id]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-add-id');
+        var p = players.find(function(pl){return pl.id === id;});
+        if (p) addToLineup(p);
+      });
+    });
+    body.querySelectorAll('[data-tp-id]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        toggleTopPlayer(btn.getAttribute('data-tp-id'));
+      });
+    });
+    body.querySelectorAll('[data-remove-slot]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        removeFromLineup(btn.getAttribute('data-remove-slot'));
+      });
+    });
+  }
+
+
+  // ── nflverse roster loader ────────────────────────────────────────────────
+  var TEAM_FULL = {
+    ARI:'Arizona Cardinals',ATL:'Atlanta Falcons',BAL:'Baltimore Ravens',BUF:'Buffalo Bills',
+    CAR:'Carolina Panthers',CHI:'Chicago Bears',CIN:'Cincinnati Bengals',CLE:'Cleveland Browns',
+    DAL:'Dallas Cowboys',DEN:'Denver Broncos',DET:'Detroit Lions',GB:'Green Bay Packers',
+    HOU:'Houston Texans',IND:'Indianapolis Colts',JAC:'Jacksonville Jaguars',KC:'Kansas City Chiefs',
+    LV:'Las Vegas Raiders',LAC:'Los Angeles Chargers',LAR:'Los Angeles Rams',MIA:'Miami Dolphins',
+    MIN:'Minnesota Vikings',NE:'New England Patriots',NO:'New Orleans Saints',NYG:'New York Giants',
+    NYJ:'New York Jets',PHI:'Philadelphia Eagles',PIT:'Pittsburgh Steelers',SF:'San Francisco 49ers',
+    SEA:'Seattle Seahawks',TB:'Tampa Bay Buccaneers',TEN:'Tennessee Titans',WAS:'Washington Commanders'
+  };
+
+  function loadRosters(){
+    if (typeof NFL_ROSTERS === 'undefined'){
+      document.getElementById('poolStatus').textContent = 'Roster file not found — put nfl_rosters_2026.js in the same folder as this page.';
+      return;
+    }
+    players = NFL_ROSTERS.players.map(function(r){
+      var team = normalizeTeam(r.team);
+      return {
+        id: r.name+'|'+team+'|'+r.pos,
+        name: r.name, position: r.pos, team: team,
+        salary:0, fppg:0, value:0, tag:'unmatched', teamImplied:null
+      };
+    });
+    clearLineup();
+    document.getElementById('poolStatus').textContent =
+      players.length + ' players loaded from 2026 NFL rosters (' + (NFL_ROSTERS.meta.pulled||'') + '). Upload FD CSV for salaries.';
+    tagPlayers(); renderTopPlayers(); saveState();
+  }
+
+  // ── Top Players ───────────────────────────────────────────────────────────
+  var topPlayers  = {};   // id -> {player props, tier: 0|1|2|3}
+  var tpActivePos = 'ALL';
+  var TP_POSITIONS = ['ALL','QB','RB','WR','TE','DEF'];
+  var TIER_COLORS  = {1:'t1', 2:'t2', 3:'t3', 0:'t0'};
+  var TIER_LABELS  = {1:'Tier 1', 2:'Tier 2', 3:'Tier 3', 0:'Untiered'};
+
+  function renderTopPlayers(){
+    // ── Tabs ──────────────────────────────────────────────────────────────
+    var tabs = document.getElementById('tpTabs');
+    tabs.innerHTML = TP_POSITIONS.map(function(pos){
+      var count = pos === 'ALL'
+        ? Object.keys(topPlayers).length
+        : Object.values(topPlayers).filter(function(p){return p.position===pos;}).length;
+      var label = pos + (count ? ' <span style="font-size:10px;opacity:.7;">('+count+')</span>' : '');
+      return '<button class="tp-tab'+(tpActivePos===pos?' active':'')+'" data-tp-pos="'+pos+'">'+label+'</button>';
+    }).join('');
+    tabs.querySelectorAll('.tp-tab').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        tpActivePos = btn.getAttribute('data-tp-pos');
+        renderTopPlayers();
+      });
+    });
+
+    // ── Filter to active pos tab ───────────────────────────────────────────
+    var list   = document.getElementById('tpList');
+    var subset = Object.values(topPlayers).filter(function(p){
+      return tpActivePos === 'ALL' || p.position === tpActivePos;
+    });
+    if (!subset.length){
+      list.innerHTML = '<div class="tp-empty">No '+(tpActivePos==='ALL'?'':tpActivePos+' ')+'players starred yet — click ☆ Star in the pool below.</div>';
+      return;
+    }
+
+    // ── Group: ALL view shows tier groups; positional view shows flat list ─
+    var posOrder = {QB:0,RB:1,WR:2,TE:3,DEF:4};
+
+    if (tpActivePos === 'ALL'){
+      // Group by tier (1,2,3,0), then by position within each tier
+      var byTier = {1:[], 2:[], 3:[], 0:[]};
+      subset.forEach(function(p){ (byTier[p.tier||0]).push(p); });
+      [1,2,3,0].forEach(function(tier){
+        byTier[tier].sort(function(a,b){
+          return (posOrder[a.position]||9)-(posOrder[b.position]||9)||a.name.localeCompare(b.name);
+        });
+      });
+      var html = '';
+      [1,2,3,0].forEach(function(tier){
+        var grp = byTier[tier];
+        if (!grp.length) return;
+        html += '<div class="tp-tier-group">'+
+          '<div class="tp-tier-header">'+
+            '<span class="tp-tier-badge '+TIER_COLORS[tier]+'">'+
+              (tier===0?'—':tier)+
+            '</span>'+
+            TIER_LABELS[tier]+' ('+grp.length+')'+
+          '</div>'+
+          grp.map(function(p){ return renderTPCard(p, false); }).join('')+
+        '</div>';
+      });
+      list.innerHTML = html;
+    } else {
+      // Positional tab: flat list grouped by tier with inline tier buttons
+      var byTier2 = {1:[], 2:[], 3:[], 0:[]};
+      subset.forEach(function(p){ (byTier2[p.tier||0]).push(p); });
+      [1,2,3,0].forEach(function(tier){ byTier2[tier].sort(function(a,b){return a.name.localeCompare(b.name);}); });
+      var html2 = '';
+      [1,2,3,0].forEach(function(tier){
+        var grp = byTier2[tier];
+        if (!grp.length) return;
+        html2 += '<div class="tp-tier-group">'+
+          '<div class="tp-tier-header">'+
+            '<span class="tp-tier-badge '+TIER_COLORS[tier]+'">'+
+              (tier===0?'—':tier)+
+            '</span>'+
+            TIER_LABELS[tier]+' ('+grp.length+')'+
+          '</div>'+
+          grp.map(function(p){ return renderTPCard(p, true); }).join('')+
+        '</div>';
+      });
+      list.innerHTML = html2;
+    }
+
+    // ── Event listeners ────────────────────────────────────────────────────
+    list.querySelectorAll('[data-tp-rm]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        delete topPlayers[btn.getAttribute('data-tp-rm')];
+        saveState(); renderTopPlayers(); renderTable();
+      });
+    });
+    list.querySelectorAll('[data-tp-settier]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id   = btn.getAttribute('data-tp-settier');
+        var tier = parseInt(btn.getAttribute('data-tier'));
+        if (topPlayers[id]){
+          // clicking active tier clears it back to 0
+          topPlayers[id].tier = (topPlayers[id].tier === tier) ? 0 : tier;
+          saveState(); renderTopPlayers(); renderTable();
+        }
+      });
+    });
+  }
+
+  function renderTPCard(p, showTierBtns){
+    var t    = TAGS[p.tag] || TAGS.unmatched;
+    var tier = p.tier || 0;
+    var tierBtns = showTierBtns
+      ? '<div class="tp-tier-btns">'+
+          [1,2,3].map(function(n){
+            return '<button class="tp-tier-btn'+(tier===n?' active-t'+n:'')+'" '+
+              'data-tp-settier="'+p.id+'" data-tier="'+n+'">'+n+'</button>';
+          }).join('')+
+        '</div>'
+      : '';
+    return '<div class="tp-card">'+
+      '<span class="tp-tier-badge '+TIER_COLORS[tier]+'" style="flex-shrink:0;width:18px;height:18px;font-size:10px;">'+
+        (tier===0?'—':tier)+
+      '</span>'+
+      '<span class="tp-pos">'+p.position+'</span>'+
+      '<span class="tp-name">'+p.name+'</span>'+
+      '<span class="tp-team">'+p.team+'</span>'+
+      '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span>'+
+      (p.salary?'<span class="mono" style="font-size:11px;color:var(--muted);">$'+p.salary.toLocaleString()+'</span>':'')+
+      tierBtns+
+      '<button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">×</button>'+
+    '</div>';
+  }
+
+  function toggleTopPlayer(id){
+    var p = players.find(function(pl){return pl.id===id;});
+    if (!p) return;
+    if (topPlayers[id]) delete topPlayers[id];
+    else topPlayers[id] = Object.assign({}, p, {tier:0});
+    saveState(); renderTopPlayers(); renderTable();
+  }
+
+  document.getElementById('addGameBtn').addEventListener('click', addGame);
+  document.getElementById('thBlowout').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
+  document.getElementById('thHighTotal').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
+
+  var dropzone = document.getElementById('dropzone');
+  var csvFile = document.getElementById('csvFile');
+  dropzone.addEventListener('click', function(){csvFile.click();});
+  dropzone.addEventListener('dragover', function(e){e.preventDefault(); dropzone.classList.add('over');});
+  dropzone.addEventListener('dragleave', function(){dropzone.classList.remove('over');});
+  dropzone.addEventListener('drop', function(e){
+    e.preventDefault(); dropzone.classList.remove('over');
+    if (e.dataTransfer.files.length) parseCSV(e.dataTransfer.files[0]);
+  });
+  csvFile.addEventListener('change', function(){
+    if (csvFile.files.length) parseCSV(csvFile.files[0]);
+  });
+
+  document.getElementById('searchBox').addEventListener('input', renderTable);
+  document.getElementById('posFilter').addEventListener('change', renderTable);
+  document.getElementById('tagFilter').addEventListener('change', renderTable);
+
+  document.querySelectorAll('#poolTable th[data-key]').forEach(function(th){
+    th.addEventListener('click', function(){
+      var key = th.getAttribute('data-key');
+      if (sortKey === key) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; }
+      else { sortKey = key; sortDir = 'desc'; }
+      document.querySelectorAll('#poolTable th[data-key]').forEach(function(t){t.classList.remove('sorted');});
+      th.classList.add('sorted');
+      renderTable();
+    });
+  });
+
+  document.getElementById('optimizeBtn').addEventListener('click', optimizeRemaining);
+  document.getElementById('loadRostersBtn').addEventListener('click', loadRosters);
+  document.getElementById('clearLineupBtn').addEventListener('click', clearLineup);
+  document.getElementById('copyLineupBtn').addEventListener('click', copyLineup);
+  document.getElementById('capInput').addEventListener('change', function(){
+    salaryCap = parseFloat(this.value) || 60000;
+    renderLineupBar();
+    renderTable();
+    saveState();
+  });
+  document.getElementById('weekInput').addEventListener('change', saveState);
+
+  document.getElementById('exportBtn').addEventListener('click', function(){
+    var data = {
+      week: document.getElementById('weekInput').value,
+      thresholds: {
+        blowout: document.getElementById('thBlowout').value,
+        highTotal: document.getElementById('thHighTotal').value
+      },
+      games: games
+    };
+    var blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'slate-board-'+(data.week || 'week').replace(/\s+/g,'-').toLowerCase()+'.json';
+    a.click();
+  });
+
+  document.getElementById('importBtn').addEventListener('click', function(){
+    document.getElementById('importFile').click();
+  });
+  document.getElementById('importFile').addEventListener('change', function(){
+    var file = this.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e){
+      try{
+        var data = JSON.parse(e.target.result);
+        document.getElementById('weekInput').value = data.week || '';
+        if (data.thresholds){
+          document.getElementById('thBlowout').value = data.thresholds.blowout || 6.5;
+          document.getElementById('thHighTotal').value = data.thresholds.highTotal || 44.5;
+        }
+        games = (data.games || []).map(function(g){
+          g.away = normalizeTeam(g.away);
+          g.home = normalizeTeam(g.home);
+          return g;
+        });
+        renderGames();
+        if (players.length) tagPlayers();
+        saveState();
+      }catch(err){
+        alert('That file could not be read as a saved slate board.');
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  loadState();
+  renderLegend();
+  renderGames();
+  if (players.length) { tagPlayers(); } else { renderTable(); }
+  renderLineupSlots();
+  renderLineupBar();
+
+})();
+</script>
+</body>
+</html>
