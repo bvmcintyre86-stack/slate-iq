@@ -121,6 +121,16 @@
   .pool-status{font-size:13px;color:var(--muted);margin-top:8px;}
 
   .lineup-bar{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px;}
+  /* Multi-lineup tabs */
+  .lu-tabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+  .lu-tab{padding:4px 14px;border-radius:20px;border:1px solid var(--muted);background:transparent;
+          cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);}
+  .lu-tab.active{background:var(--primary,#1a73e8);color:#fff;border-color:var(--primary,#1a73e8);}
+  .lu-tab-add{padding:4px 10px;border-radius:20px;border:1px dashed var(--muted);background:transparent;
+              cursor:pointer;font-size:12px;color:var(--muted);}
+  .lu-tab-add:hover{border-color:var(--primary,#1a73e8);color:var(--primary,#1a73e8);}
+  .lu-tab-rm{margin-left:4px;font-size:13px;opacity:.5;cursor:pointer;vertical-align:middle;}
+  .lu-tab-rm:hover{opacity:1;color:#c00;}
   .lineup-stat{display:flex;flex-direction:column;gap:2px;}
   .lineup-stat .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
   .lineup-stat .val{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;}
@@ -253,10 +263,15 @@
   </section>
 
   <section>
-    <div class="section-head">
-      <h2>Your lineup</h2>
-      <div class="sub">Add players from the pool below, or let the optimizer fill what's left.</div>
+    <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <div>
+        <h2>Your lineups</h2>
+        <div class="sub">Build up to 20 lineups. Switch between them with the tabs.</div>
+      </div>
+      <button id="exportCsvBtn" style="flex-shrink:0;">⬇ Export week to CSV</button>
     </div>
+
+    <div class="lu-tabs" id="luTabs"></div>
 
     <div class="lineup-bar">
       <div class="lineup-stat"><span class="label">Salary used</span><span class="val" id="salaryUsedVal">$0</span></div>
@@ -350,9 +365,55 @@
     {key:'FLEX', label:'FLEX', eligible:['RB','WR','TE']},
     {key:'DEF', label:'DEF', eligible:['DEF']}
   ];
-  var lineup = {};
-  SLOT_DEFS.forEach(function(s){lineup[s.key] = null;});
-  var salaryCap = 60000;
+  var MAX_LINEUPS = 20;
+  function emptyLineup(){ var l={}; SLOT_DEFS.forEach(function(s){l[s.key]=null;}); return l; }
+  var lineups    = [emptyLineup()];   // array of lineup objects
+  var activeIdx  = 0;                 // which lineup is shown
+  var lineup     = lineups[activeIdx];// convenience reference
+  var salaryCap  = 60000;
+
+  function renderLuTabs(){
+    var tabs = document.getElementById('luTabs');
+    tabs.innerHTML = lineups.map(function(lu, i){
+      var filled = SLOT_DEFS.filter(function(s){return lu[s.key];}).length;
+      var label  = 'LU '+(i+1)+(filled?' ('+filled+'/9)':'');
+      return '<button class="lu-tab'+(i===activeIdx?' active':'')+'" data-lu-idx="'+i+'">'+
+        label+(lineups.length>1?'<span class="lu-tab-rm" data-lu-rm="'+i+'">×</span>':'')+
+      '</button>';
+    }).join('')+
+    (lineups.length < MAX_LINEUPS
+      ? '<button class="lu-tab-add" id="luAddBtn">+ Add lineup</button>'
+      : '');
+    tabs.querySelectorAll('.lu-tab').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        if (e.target.hasAttribute('data-lu-rm')) return;
+        switchLineup(parseInt(btn.getAttribute('data-lu-idx')));
+      });
+    });
+    tabs.querySelectorAll('[data-lu-rm]').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var idx = parseInt(btn.getAttribute('data-lu-rm'));
+        if (!confirm('Remove Lineup '+(idx+1)+'?')) return;
+        lineups.splice(idx, 1);
+        activeIdx = Math.min(activeIdx, lineups.length-1);
+        lineup = lineups[activeIdx];
+        saveState(); renderLuTabs(); refreshLineupUI();
+      });
+    });
+    var addBtn = document.getElementById('luAddBtn');
+    if (addBtn) addBtn.addEventListener('click', function(){
+      lineups.push(emptyLineup());
+      switchLineup(lineups.length-1);
+    });
+  }
+
+  function switchLineup(idx){
+    activeIdx = idx;
+    lineup    = lineups[activeIdx];
+    setMsg('');
+    saveState(); renderLuTabs(); refreshLineupUI(); renderTable();
+  }
 
   var TAGS = {
     onslaught: {label:'Onslaught target', color:'var(--green)', bg:'var(--green-bg)', note:'Favorite in a high-total game. Prioritize the QB plus two pass catchers from this side.'},
@@ -564,9 +625,13 @@
         games: games,
         players: players,
         topPlayers: topPlayers,
-        lineup: {}
+        activeIdx: activeIdx,
+        lineups: lineups.map(function(lu){
+          var obj={};
+          SLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
+          return obj;
+        })
       };
-      SLOT_DEFS.forEach(function(s){ state.lineup[s.key] = lineup[s.key] ? lineup[s.key].id : null; });
       localStorage.setItem('slateBoardState', JSON.stringify(state));
     }catch(e){ /* storage unavailable, skip silently */ }
   }
@@ -581,23 +646,31 @@
         document.getElementById('thBlowout').value = state.thresholds.blowout || 6.5;
         document.getElementById('thHighTotal').value = state.thresholds.highTotal || 44.5;
       }
-      salaryCap = state.cap || 60000;
+      salaryCap  = state.cap || 60000;
       document.getElementById('capInput').value = salaryCap;
+      if (state.lineups && state.lineups.length){
+        lineups   = state.lineups.map(function(lu){
+          var obj = emptyLineup();
+          SLOT_DEFS.forEach(function(s){
+            var id = lu[s.key];
+            obj[s.key] = id ? (players.find(function(p){return p.id===id;}) || null) : null;
+          });
+          return obj;
+        });
+        activeIdx = state.activeIdx || 0;
+        lineup    = lineups[activeIdx];
+      }
       games = (state.games || []).map(function(g){
         g.away = normalizeTeam(g.away); g.home = normalizeTeam(g.home); return g;
       });
       players = state.players || [];
       topPlayers = state.topPlayers || {};
       renderTopPlayers();
+      renderLuTabs();
       if (players.length){
         document.getElementById('poolStatus').textContent = players.length+' players loaded.';
       }
-      if (state.lineup){
-        SLOT_DEFS.forEach(function(s){
-          var id = state.lineup[s.key];
-          lineup[s.key] = id ? (players.find(function(p){return p.id===id;}) || null) : null;
-        });
-      }
+
       return true;
     }catch(e){ return false; }
   }
@@ -679,23 +752,27 @@
     if (!slotKey){ setMsg(p.name+' has no open slot. That position is full.'); return; }
     if (salaryUsed() + p.salary > salaryCap){ setMsg(p.name+' would put you over the cap.'); return; }
     lineup[slotKey] = p;
+    lineups[activeIdx] = lineup;
     setMsg('');
     refreshLineupUI();
   }
 
   function removeFromLineup(slotKey){
     lineup[slotKey] = null;
+    lineups[activeIdx] = lineup;
     setMsg('');
     refreshLineupUI();
   }
 
   function clearLineup(){
     SLOT_DEFS.forEach(function(s){lineup[s.key] = null;});
+    lineups[activeIdx] = lineup;
     setMsg('');
     refreshLineupUI();
   }
 
   function refreshLineupUI(){
+    renderLuTabs();
     renderLineupSlots();
     renderLineupBar();
     renderTable();
@@ -1073,6 +1150,89 @@
     saveState(); renderTopPlayers(); renderTable();
   }
 
+  // ── CSV Export ────────────────────────────────────────────────────────────
+  function exportCSV(){
+    var week = document.getElementById('weekInput') ? document.getElementById('weekInput').value : '';
+    var rows = [];
+    var sep  = ',';
+    function q(v){ return '"'+(v==null?'':String(v).replace(/"/g,'""'))+'"'; }
+
+    // Section 1: Game Environments
+    rows.push('GAME ENVIRONMENTS');
+    rows.push(['Away','Home','Total','Spread','Favorite','Away Tag','Away Implied','Home Tag','Home Implied'].map(q).join(sep));
+    games.forEach(function(g){
+      var s = gameSides(g);
+      rows.push([
+        g.away, g.home, g.total, g.spread, g.favorite,
+        TAGS[s.away.tag].label, round1(s.away.implied),
+        TAGS[s.home.tag].label, round1(s.home.implied)
+      ].map(q).join(sep));
+    });
+
+    rows.push('');
+
+    // Section 2: Top Players
+    rows.push('TOP PLAYERS');
+    rows.push(['Position','Tier','Player','Team','Tag','Salary','Proj Pts'].map(q).join(sep));
+    var posOrder = {QB:0,RB:1,WR:2,TE:3,DEF:4};
+    Object.values(topPlayers)
+      .sort(function(a,b){
+        return (a.tier||0)-(b.tier||0) ||
+               (posOrder[a.position]||9)-(posOrder[b.position]||9) ||
+               a.name.localeCompare(b.name);
+      })
+      .forEach(function(p){
+        var t = TAGS[p.tag]||TAGS.unmatched;
+        rows.push([
+          p.position, p.tier||'', p.name, p.team,
+          t.label, p.salary||'', p.fppg||''
+        ].map(q).join(sep));
+      });
+
+    rows.push('');
+
+    // Section 3: Lineups
+    rows.push('LINEUPS');
+    var slotLabels = SLOT_DEFS.map(function(s){return s.key;});
+    rows.push(['Lineup','Salary Used','Proj Pts'].concat(slotLabels).map(q).join(sep));
+    lineups.forEach(function(lu, i){
+      var salUsed = SLOT_DEFS.reduce(function(sum,s){return sum+(lu[s.key]?lu[s.key].salary:0);},0);
+      var projPts = SLOT_DEFS.reduce(function(sum,s){return sum+(lu[s.key]?lu[s.key].fppg:0);},0);
+      var filled  = SLOT_DEFS.filter(function(s){return lu[s.key];}).length;
+      if (!filled) return; // skip empty lineups
+      var cells = ['LU '+(i+1), salUsed, projPts.toFixed(1)].concat(
+        SLOT_DEFS.map(function(s){ return lu[s.key] ? lu[s.key].name+' ('+lu[s.key].team+')' : ''; })
+      );
+      rows.push(cells.map(q).join(sep));
+    });
+
+    // Player detail rows
+    rows.push('');
+    rows.push('LINEUP DETAIL');
+    rows.push(['Lineup','Slot','Player','Team','Position','Tag','Salary','Proj Pts'].map(q).join(sep));
+    lineups.forEach(function(lu, i){
+      var filled = SLOT_DEFS.filter(function(s){return lu[s.key];}).length;
+      if (!filled) return;
+      SLOT_DEFS.forEach(function(s){
+        var p = lu[s.key];
+        if (!p) return;
+        var t = TAGS[p.tag]||TAGS.unmatched;
+        rows.push(['LU '+(i+1), s.key, p.name, p.team, p.position, t.label, p.salary||'', p.fppg||''].map(q).join(sep));
+      });
+    });
+
+    var csv  = rows.join('\n');
+    var blob = new Blob([csv], {type:'text/csv'});
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href   = url;
+    a.download = 'slate_board_week'+(week||'')+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   document.getElementById('addGameBtn').addEventListener('click', addGame);
   document.getElementById('thBlowout').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
   document.getElementById('thHighTotal').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
@@ -1108,6 +1268,7 @@
   document.getElementById('optimizeBtn').addEventListener('click', optimizeRemaining);
   document.getElementById('loadRostersBtn').addEventListener('click', loadRosters);
   document.getElementById('clearLineupBtn').addEventListener('click', clearLineup);
+  document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
   document.getElementById('copyLineupBtn').addEventListener('click', copyLineup);
   document.getElementById('capInput').addEventListener('change', function(){
     salaryCap = parseFloat(this.value) || 60000;
