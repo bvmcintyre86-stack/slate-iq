@@ -534,8 +534,8 @@
         '<div class="vegas-line mono">'+favSel+' -'+spreadInput+' O/U '+totalInput+'</div>'+
         barRow(s.away.team, s.away.implied, maxImplied, TAGS[s.away.tag].color)+
         barRow(s.home.team, s.home.implied, maxImplied, TAGS[s.home.tag].color)+
-        '<span class="tag-pill" style="color:'+TAGS[s.away.tag].color+';background:'+TAGS[s.away.tag].bg+';">'+s.away.team+' '+TAGS[s.away.tag].label+'</span> '+
-        '<span class="tag-pill" style="color:'+TAGS[s.home.tag].color+';background:'+TAGS[s.home.tag].bg+';">'+s.home.team+' '+TAGS[s.home.tag].label+'</span>';
+        '<span class="tag-pill" title="'+TAGS[s.away.tag].note+'" style="color:'+TAGS[s.away.tag].color+';background:'+TAGS[s.away.tag].bg+';">'+s.away.team+' '+TAGS[s.away.tag].label+'</span> '+
+        '<span class="tag-pill" title="'+TAGS[s.home.tag].note+'" style="color:'+TAGS[s.home.tag].color+';background:'+TAGS[s.home.tag].bg+';">'+s.home.team+' '+TAGS[s.home.tag].label+'</span>';
 
       grid.appendChild(card);
     });
