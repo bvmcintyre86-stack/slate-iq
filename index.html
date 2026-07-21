@@ -322,6 +322,7 @@
     <div class="filters">
       <input type="text" id="searchBox" placeholder="Search player or team">
       <select id="posFilter"><option value="">All positions</option></select>
+      <select id="teamFilter"><option value="">All teams</option></select>
       <select id="tagFilter"><option value="">All script tags</option></select>
       <span class="row-count" id="rowCount"></span>
     </div>
@@ -904,23 +905,28 @@
   }
 
   function populateFilterOptions(){
-    var posSel = document.getElementById('posFilter');
-    var tagSel = document.getElementById('tagFilter');
+    var posSel  = document.getElementById('posFilter');
+    var teamSel = document.getElementById('teamFilter');
+    var tagSel  = document.getElementById('tagFilter');
     var positions = Array.from(new Set(players.map(function(p){return p.position;}))).filter(Boolean).sort();
-    posSel.innerHTML = '<option value="">All positions</option>' + positions.map(function(p){return '<option value="'+p+'">'+p+'</option>';}).join('');
-    tagSel.innerHTML = '<option value="">All script tags</option>' + Object.keys(TAGS).map(function(k){return '<option value="'+k+'">'+TAGS[k].label+'</option>';}).join('');
+    var teams     = Array.from(new Set(players.map(function(p){return p.team;}))).filter(Boolean).sort();
+    posSel.innerHTML  = '<option value="">All positions</option>' + positions.map(function(p){return '<option value="'+p+'">'+p+'</option>';}).join('');
+    teamSel.innerHTML = '<option value="">All teams</option>'     + teams.map(function(t){return '<option value="'+t+'">'+t+'</option>';}).join('');
+    tagSel.innerHTML  = '<option value="">All script tags</option>' + Object.keys(TAGS).map(function(k){return '<option value="'+k+'">'+TAGS[k].label+'</option>';}).join('');
   }
 
   function renderTable(){
     var body = document.getElementById('poolBody');
     var empty = document.getElementById('poolEmpty');
     var search = document.getElementById('searchBox').value.trim().toLowerCase();
-    var posF = document.getElementById('posFilter').value;
-    var tagF = document.getElementById('tagFilter').value;
+    var posF  = document.getElementById('posFilter').value;
+    var teamF = document.getElementById('teamFilter').value;
+    var tagF  = document.getElementById('tagFilter').value;
 
     var rows = players.filter(function(p){
-      if (posF && p.position !== posF) return false;
-      if (tagF && p.tag !== tagF) return false;
+      if (posF  && p.position !== posF)  return false;
+      if (teamF && p.team     !== teamF) return false;
+      if (tagF  && p.tag      !== tagF)  return false;
       if (search && p.name.toLowerCase().indexOf(search) === -1 && p.team.toLowerCase().indexOf(search) === -1) return false;
       return true;
     });
@@ -1273,6 +1279,7 @@
 
   document.getElementById('searchBox').addEventListener('input', renderTable);
   document.getElementById('posFilter').addEventListener('change', renderTable);
+  document.getElementById('teamFilter').addEventListener('change', renderTable);
   document.getElementById('tagFilter').addEventListener('change', renderTable);
 
   document.querySelectorAll('#poolTable th[data-key]').forEach(function(th){
