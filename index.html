@@ -176,15 +176,21 @@
             background:transparent; cursor:pointer; font-size:12px; font-weight:600; color:var(--muted); }
   .tp-tab.active { background:var(--primary,#1a73e8); color:#fff; border-color:var(--primary,#1a73e8); }
   .tp-list { display:flex; flex-direction:column; gap:6px; min-height:40px; }
-  .tp-card { display:flex; align-items:center; gap:10px; padding:7px 10px;
+  .tp-card { display:flex; align-items:center; gap:6px; padding:5px 8px;
              border-radius:6px; background:var(--gray-bg,#f5f5f5); font-size:13px; }
-  .tp-card .tp-pos { font-size:11px; font-weight:700; width:28px; text-align:center;
+  .tp-card .tp-pos { font-size:11px; font-weight:700; width:28px; text-align:center; flex-shrink:0;
                      padding:2px 4px; border-radius:4px; background:var(--primary,#1a73e8); color:#fff; }
-  .tp-card .tp-name { flex:1; font-weight:600; }
-  .tp-card .tp-team { font-size:11px; color:var(--muted); margin-right:4px; }
-  .tp-card .tp-tag  { font-size:10px; padding:2px 6px; border-radius:10px; }
-  .tp-card .tp-rm   { margin-left:auto; background:none; border:none; cursor:pointer;
-                      color:var(--muted); font-size:16px; line-height:1; padding:0 4px; }
+  .tp-card .tp-name { font-weight:600; white-space:nowrap; margin-right:2px; }
+  .tp-card .tp-team { font-size:11px; color:var(--muted); white-space:nowrap; }
+  .tp-card .tp-tag  { font-size:10px; padding:2px 6px; border-radius:10px; white-space:nowrap; }
+  .tp-card .tp-add-lu { font-size:11px; padding:1px 7px; border-radius:10px; flex-shrink:0;
+                        border:1px solid var(--primary,#1a73e8); color:var(--primary,#1a73e8);
+                        background:transparent; cursor:pointer; white-space:nowrap; }
+  .tp-card .tp-add-lu:hover { background:var(--primary,#1a73e8); color:#fff; }
+  .tp-card .tp-add-lu.in-lu { border-color:#2e7d32; color:#2e7d32; }
+  .tp-card .tp-spacer { flex:1; min-width:4px; }
+  .tp-card .tp-rm   { background:none; border:none; cursor:pointer; flex-shrink:0;
+                      color:var(--muted); font-size:16px; line-height:1; padding:0 2px; }
   .tp-card .tp-rm:hover { color:#c00; }
   .tp-empty { font-size:12px; color:var(--muted); padding:8px 0; }
   .tp-add-btn { font-size:11px; padding:2px 8px; border-radius:12px;
@@ -776,6 +782,7 @@
     renderLineupSlots();
     renderLineupBar();
     renderTable();
+    renderTopPlayers();
     saveState();
   }
 
@@ -1098,6 +1105,12 @@
     }
 
     // ── Event listeners ────────────────────────────────────────────────────
+    list.querySelectorAll('[data-tp-add]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var p = topPlayers[btn.getAttribute('data-tp-add')];
+        if (p) { addToLineup(p); renderTopPlayers(); }
+      });
+    });
     list.querySelectorAll('[data-tp-rm]').forEach(function(btn){
       btn.addEventListener('click', function(){
         delete topPlayers[btn.getAttribute('data-tp-rm')];
@@ -1128,6 +1141,12 @@
           }).join('')+
         '</div>'
       : '';
+    var inLu   = isPlayerInLineup(p);
+    var canAdd = !inLu && !!firstEmptySlotFor(p.position);
+    var addBtn = '<button class="tp-add-lu'+(inLu?' in-lu':'')+'" '+
+      'data-tp-add="'+p.id+'" '+(inLu||!canAdd?'disabled':'')+' title="'+(inLu?'In lineup':canAdd?'Add to lineup':'No open slot')+'">'+
+      (inLu?'✓ In LU':canAdd?'+ Add':'Full')+
+    '</button>';
     return '<div class="tp-card">'+
       '<span class="tp-tier-badge '+TIER_COLORS[tier]+'" style="flex-shrink:0;width:18px;height:18px;font-size:10px;">'+
         (tier===0?'—':tier)+
@@ -1137,7 +1156,9 @@
       '<span class="tp-team">'+p.team+'</span>'+
       '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span>'+
       (p.salary?'<span class="mono" style="font-size:11px;color:var(--muted);">$'+p.salary.toLocaleString()+'</span>':'')+
+      '<span class="tp-spacer"></span>'+
       tierBtns+
+      addBtn+
       '<button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">×</button>'+
     '</div>';
   }
