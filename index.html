@@ -222,15 +222,7 @@
       <h1>Slate IQ</h1>
       <div class="tag">Weekly game environment and player pool</div>
     </div>
-    <div class="head-actions">
-      <div class="field">
-        <label>Week</label>
-        <input id="weekInput" type="text" placeholder="Week 1" style="width:110px;">
-      </div>
-      <button id="exportBtn">Export board</button>
-      <button id="importBtn">Import board</button>
-      <input type="file" id="importFile" accept=".json" style="display:none;">
-    </div>
+
   </div>
 
   <section>
@@ -240,6 +232,7 @@
     </div>
 
     <div class="add-game-row">
+      <!-- Row 1: Manual entry + thresholds -->
       <div class="field"><label>Away</label><input class="team" id="gAway" maxlength="4" placeholder="SF"></div>
       <div class="field"><label>Home</label><input class="team" id="gHome" maxlength="4" placeholder="ARI"></div>
       <div class="field"><label>Total</label><input id="gTotal" type="number" step="0.5" placeholder="47.5"></div>
@@ -254,12 +247,24 @@
       <div class="field"><label>Spread</label><input id="gSpread" type="number" step="0.5" placeholder="3.5"></div>
       <div class="field"><label>&nbsp;</label><button class="primary" id="addGameBtn">Add game</button></div>
       <div class="field" style="margin-left:auto;">
-        <label>Blowout at ≥</label>
-        <input id="thBlowout" type="number" step="0.5" value="6.5" style="width:72px;">
+        <label>Blowout ≥</label>
+        <input id="thBlowout" type="number" step="0.5" value="6.5" style="width:68px;">
       </div>
       <div class="field">
         <label>High total ≥</label>
-        <input id="thHighTotal" type="number" step="0.5" value="44.5" style="width:72px;">
+        <input id="thHighTotal" type="number" step="0.5" value="44.5" style="width:68px;">
+      </div>
+      <!-- Row 2: Unabated controls -->
+      <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);margin-top:4px;">
+        <button id="loadUnabatedBtn">Load from Unabated</button>
+        <button id="refreshLinesBtn">Refresh lines</button>
+        <button id="clearGamesBtn">Clear all games</button>
+        <span style="color:var(--line);padding:0 4px;">|</span>
+        <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Week</label>
+        <select id="unabatedWeek" style="font-size:12px;"><option value="">All upcoming</option></select>
+        <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Proxy URL</label>
+        <input id="unabatedWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://unabated-proxy.bvmcintyre86.workers.dev">
+        <span id="unabatedStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
       </div>
     </div>
 
@@ -508,16 +513,40 @@
     };
   }
 
+  function formatKickoff(isoStr){
+    if (!isoStr) return '';
+    var d = new Date(isoStr);
+    var etDate = new Date(d.getTime() + (-4 * 60 * 60 * 1000));
+    var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var dayIdx = etDate.getUTCDay();
+    var day  = days[dayIdx];
+    var hour = etDate.getUTCHours();
+    var m    = etDate.getUTCMinutes();
+    var ampm = hour >= 12 ? 'pm' : 'am';
+    var h    = hour % 12 || 12;
+    var mStr = m ? ':' + String(m).padStart(2,'0') : '';
+    return day + ' ' + h + mStr + ampm + ' ET';
+  }
+
   function renderGames(){
     var grid = document.getElementById('gamesGrid');
     grid.innerHTML = '';
     var maxImplied = 1;
-    games.forEach(function(g){
+
+    // Sort by kickoff time (games without kickoff go last)
+    var sorted = games.slice().sort(function(a,b){
+      if (!a.kickoff && !b.kickoff) return 0;
+      if (!a.kickoff) return 1;
+      if (!b.kickoff) return -1;
+      return a.kickoff < b.kickoff ? -1 : a.kickoff > b.kickoff ? 1 : 0;
+    });
+
+    sorted.forEach(function(g){
       var s = gameSides(g);
       maxImplied = Math.max(maxImplied, s.away.implied, s.home.implied);
     });
 
-    games.forEach(function(g){
+    sorted.forEach(function(g){
       var s = gameSides(g);
       var card = document.createElement('div');
       card.className = 'game-card';
@@ -535,8 +564,10 @@
         '<input type="number" step="0.5" min="20" class="line-edit wide" data-id="'+g.id+'"'+
         ' data-field="total" value="'+g.total+'">';
 
+      var kickoffStr = g.kickoff ? formatKickoff(g.kickoff) : '';
       card.innerHTML =
         '<button class="remove" data-id="'+g.id+'" title="Remove game">&times;</button>'+
+        (kickoffStr ? '<div style="font-size:11px;color:var(--muted);margin-bottom:2px;">'+kickoffStr+'</div>' : '')+
         '<div class="matchup">'+g.away+'<span class="at">@</span>'+g.home+'</div>'+
         '<div class="vegas-line mono">'+favSel+' -'+spreadInput+' O/U '+totalInput+'</div>'+
         barRow(s.away.team, s.away.implied, maxImplied, TAGS[s.away.tag].color)+
@@ -623,7 +654,7 @@
   function saveState(){
     try{
       var state = {
-        week: document.getElementById('weekInput').value,
+        unabatedWorkerUrl: document.getElementById('unabatedWorkerUrl').value,
         thresholds: {
           blowout: document.getElementById('thBlowout').value,
           highTotal: document.getElementById('thHighTotal').value
@@ -648,7 +679,7 @@
       var raw = localStorage.getItem('slateBoardState');
       if (!raw) return false;
       var state = JSON.parse(raw);
-      document.getElementById('weekInput').value = state.week || '';
+      if (state.unabatedWorkerUrl) document.getElementById('unabatedWorkerUrl').value = state.unabatedWorkerUrl;
       if (state.thresholds){
         document.getElementById('thBlowout').value = state.thresholds.blowout || 6.5;
         document.getElementById('thHighTotal').value = state.thresholds.highTotal || 44.5;
@@ -1179,7 +1210,7 @@
 
   // ── CSV Export ────────────────────────────────────────────────────────────
   function exportCSV(){
-    var week = document.getElementById('weekInput') ? document.getElementById('weekInput').value : '';
+    var week = '';
     var rows = [];
     var sep  = ',';
     function q(v){ return '"'+(v==null?'':String(v).replace(/"/g,'""'))+'"'; }
@@ -1253,14 +1284,331 @@
     var url  = URL.createObjectURL(blob);
     var a    = document.createElement('a');
     a.href   = url;
-    a.download = 'slate_board_week'+(week||'')+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    a.download = 'slate_iq_'+new Date().toISOString().slice(0,10)+'.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 
-  document.getElementById('addGameBtn').addEventListener('click', addGame);
+  // ── Load games from Unabated ────────────────────────────────────────────
+  var UNABATED_NFL_LEAGUE = 'nfl';
+  var UNABATED_NFL_TEAM_MAP = {
+    'Arizona Cardinals':'ARI','Atlanta Falcons':'ATL','Baltimore Ravens':'BAL',
+    'Buffalo Bills':'BUF','Carolina Panthers':'CAR','Chicago Bears':'CHI',
+    'Cincinnati Bengals':'CIN','Cleveland Browns':'CLE','Dallas Cowboys':'DAL',
+    'Denver Broncos':'DEN','Detroit Lions':'DET','Green Bay Packers':'GB',
+    'Houston Texans':'HOU','Indianapolis Colts':'IND','Jacksonville Jaguars':'JAC',
+    'Kansas City Chiefs':'KC','Las Vegas Raiders':'LV','Los Angeles Chargers':'LAC',
+    'Los Angeles Rams':'LAR','Miami Dolphins':'MIA','Minnesota Vikings':'MIN',
+    'New England Patriots':'NE','New Orleans Saints':'NO','New York Giants':'NYG',
+    'New York Jets':'NYJ','Philadelphia Eagles':'PHI','Pittsburgh Steelers':'PIT',
+    'San Francisco 49ers':'SF','Seattle Seahawks':'SEA','Tampa Bay Buccaneers':'TB',
+    'Tennessee Titans':'TEN','Washington Commanders':'WAS'
+  };
+  var _unabatedEvents   = null;  // cached full event list
+  var _unabatedSpreadId = 2;   // NFL point spread (confirmed)
+  var _unabatedTotalId  = 3;   // NFL game total (confirmed)
+
+  function teamToAbbr(fullName){
+    if (!fullName) return '';
+    if (UNABATED_NFL_TEAM_MAP[fullName]) return UNABATED_NFL_TEAM_MAP[fullName];
+    var parts = fullName.trim().split(' ');
+    return normalizeTeam(parts[parts.length-1].toUpperCase().slice(0,3));
+  }
+
+  // NFL week: season starts first Thursday of September
+  // Group games by their Sunday week (Thu-Wed window)
+  function getNFLWeekSunday(dateStr){
+    // NFL week runs Thu through Mon
+    // Anchor to the Thursday of that window
+    var d = new Date(dateStr);
+    // Convert to ET (EDT = UTC-4)
+    var etDate = new Date(d.getTime() + (-4 * 60 * 60 * 1000));
+    var day  = etDate.getUTCDay();  // 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat
+    // NFL week Thu-Mon. Wed evening games (rare, Week 1 opener) belong to the
+    // FOLLOWING Thursday's week — so Wed forward-anchors to the next day (Thu).
+    // Thu(4)->0, Fri(5)->1, Sat(6)->2, Sun(0)->3, Mon(1)->4, Tue(2)->5back, Wed(3)->forward+1
+    var daysBack;
+    if (day === 3) {
+      // Wednesday: snap forward to next Thursday (-1 = add 1 day then anchor)
+      var nextThu = new Date(etDate);
+      nextThu.setUTCDate(etDate.getUTCDate() + 1);
+      return nextThu.toISOString().slice(0,10);
+    }
+    var daysBackMap = {0:3, 1:4, 2:5, 4:0, 5:1, 6:2};
+    daysBack = daysBackMap[day] !== undefined ? daysBackMap[day] : 0;
+    var thu = new Date(etDate);
+    thu.setUTCDate(etDate.getUTCDate() - daysBack);
+    return thu.toISOString().slice(0,10);
+  }
+
+  function populateWeekSelector(events){
+    // Filter by date: NFL regular season starts first Thursday of September
+    // Exclude anything before Sep 1 (preseason) and after Feb 1 (playoffs done)
+    var regSeason = events.filter(function(ev){
+      if (!ev.eventStart) return false;
+      var d = new Date(ev.eventStart);
+      var m = d.getUTCMonth(); // 0=Jan
+      var yr = d.getUTCFullYear();
+      // Keep Sep(8) through Jan(0)/Feb(1) of next year
+      return m >= 8 || m <= 1;
+    });
+    console.log('Regular season events (Sep-Feb):', regSeason.length, 'of', events.length);
+    if (regSeason.length === 0) regSeason = events;
+    var weekMap = {};
+    regSeason.forEach(function(ev){
+      if (!ev.eventStart) return;
+      var wk = getNFLWeekSunday(ev.eventStart);
+      if (!weekMap[wk]) weekMap[wk] = [];
+      weekMap[wk].push(ev);
+    });
+    var weekKeys = Object.keys(weekMap).sort();
+    var wkSel = document.getElementById('unabatedWeek');
+    var prevVal = wkSel.value;
+    wkSel.innerHTML = '<option value="">Pick a week</option>';
+    weekKeys.forEach(function(wk, i){
+      var opt = document.createElement('option');
+      opt.value = wk;
+      opt.textContent = 'Week ' + (i+1) + ' — ' + weekMap[wk].length + ' games (' + wk + ')';
+      wkSel.appendChild(opt);
+    });
+    // Restore selection or auto-select first week
+    if (prevVal) wkSel.value = prevVal;
+    if (!wkSel.value && weekKeys.length) wkSel.value = weekKeys[0];
+    return { weekMap: weekMap, regSeason: regSeason };
+  }
+
+  function buildOddsMap(oddsResp, isSpread){
+    var map = {};
+    if (!oddsResp || !oddsResp.data || !oddsResp.data.odds) return map;
+    var odds = oddsResp.data.odds;
+    // Navigate: odds[league].periodTypes.game.pregame[groupKey]
+    Object.values(odds).forEach(function(leagueObj){
+      if (!leagueObj || typeof leagueObj !== 'object') return;
+      var periodTypes = leagueObj.periodTypes || {};
+      var gamePeriod  = periodTypes['game'] || {};
+      var pregame     = gamePeriod['pregame'] || {};
+      Object.values(pregame).forEach(function(group){
+        // For spread: only use groups where betTypeId looks like a spread
+        // (points value < 30, not symmetric) — skip totals groups in spread map
+        if (isSpread && group.betTypeId === _unabatedTotalId) return;
+        var eid = group.eventId;
+        if (!eid) return;
+        var sides = group.sides || {};
+        var PREFERRED_SOURCE = '1'; // Pinnacle (sharp, sets the market)
+        if (isSpread) {
+          // Collect all source lines across all sides, then find the negative one
+          var spreadVal = null, spreadFav = 'pick';
+          var allLines = []; // [{sideIdx, pts, sid}]
+          Object.keys(sides).forEach(function(sk){
+            var sv = sides[sk];
+            var m = sk.match(/^si(\d+)/);
+            var sideIdx = m ? parseInt(m[1]) : -1;
+            var srcLines = sv.marketSourceLines || {};
+            Object.keys(srcLines).forEach(function(sid){
+              var pts = srcLines[sid].points;
+              if (pts != null) allLines.push({sideIdx: sideIdx, pts: pts, sid: sid});
+            });
+          });
+          // Two passes: prefer source 1 (Pinnacle), then any source
+          [PREFERRED_SOURCE, null].forEach(function(preferSid){
+            if (spreadVal !== null) return;
+            allLines.forEach(function(l){
+              if (spreadVal !== null) return;
+              if (preferSid && l.sid !== preferSid) return;
+              if (l.pts < 0){
+                spreadVal = Math.abs(l.pts);
+                spreadFav = (l.sideIdx === 0) ? 'away' : 'home';
+              } else if (l.pts === 0 && spreadVal === null){
+                spreadVal = 0; spreadFav = 'pick';
+              }
+            });
+          });
+          if (spreadVal !== null && !map[String(eid)]){
+            map[String(eid)] = { spread: spreadVal, fav: spreadFav };
+          }
+        } else {
+          // Total: prefer Pinnacle, fall back to first available > 20
+          var total = null;
+          [true, false].forEach(function(preferredOnly){
+            if (total !== null) return;
+            Object.values(sides).forEach(function(sv){
+              if (total !== null) return;
+              var srcLines = sv.marketSourceLines || {};
+              var keys = preferredOnly ? [PREFERRED_SOURCE] : Object.keys(srcLines);
+              keys.forEach(function(sid){
+                if (total !== null || !srcLines[sid]) return;
+                var pts = srcLines[sid].points;
+                if (pts != null && pts > 20) total = pts;
+              });
+            });
+          });
+          if (total !== null && !map[String(eid)]) map[String(eid)] = total;
+        }
+      });
+    });
+    return map;
+  }
+
+  function loadUnabated(){
+    var status = document.getElementById('unabatedStatus');
+    var workerUrl = (document.getElementById('unabatedWorkerUrl').value || '').trim().replace(/\/+$/, '');
+    if (!workerUrl){ status.textContent = 'Enter your Worker URL first.'; return; }
+
+    var wkSel    = document.getElementById('unabatedWeek');
+    var selWeek  = wkSel.value;
+
+    // If we have cached events and a week is selected, just filter and add
+    if (_unabatedEvents && selWeek){
+      var wkData = populateWeekSelector(_unabatedEvents);
+      var eventsToAdd = wkData.weekMap[selWeek] || [];
+      addEventsToBoard(eventsToAdd, {}, {}, status);
+      return;
+    }
+
+    status.textContent = 'Fetching...';
+
+    // Step 1: Get bet type IDs (or use cached)
+    // betTypeIds confirmed from API: 2=point spread, 3=game total
+    console.log('NFL betTypeIds — spread:', _unabatedSpreadId, 'total:', _unabatedTotalId);
+
+    Promise.resolve(null).then(function(){
+      status.textContent = 'Fetching NFL events + odds...';
+      var spreadUrl = workerUrl + '/market/nfl/straight/odds?betTypeId=' + _unabatedSpreadId;
+      var totalUrl  = workerUrl + '/market/nfl/straight/odds?betTypeId=' + _unabatedTotalId;
+      console.log('Spread URL:', spreadUrl);
+      console.log('Total URL:', totalUrl);
+
+      return Promise.all([
+        fetch(workerUrl + '/event/nfl/upcoming').then(function(r){ return r.json(); }),
+        fetch(spreadUrl).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+        fetch(totalUrl ).then(function(r){ return r.json(); }).catch(function(){ return null; })
+      ]);
+    })
+    .then(function(results){
+      var evData     = results[0];
+      var spreadData = results[1];
+      var totalData  = results[2];
+
+      _unabatedEvents = Array.isArray(evData) ? evData : (evData && evData.data ? evData.data : []);
+
+      var spreadMap = buildOddsMap(spreadData, true);
+      var totalMap  = buildOddsMap(totalData, false);
+      console.log('spreadMap entries:', Object.keys(spreadMap).length, spreadMap);
+      console.log('totalMap entries:', Object.keys(totalMap).length, totalMap);
+
+      // Populate week selector
+      var wkData = populateWeekSelector(_unabatedEvents);
+
+      // If no week selected yet, auto-select Week 1
+      var wkSel2 = document.getElementById('unabatedWeek');
+      if (!wkSel2.value && Object.keys(wkData.weekMap).length){
+        wkSel2.value = Object.keys(wkData.weekMap).sort()[0];
+      }
+
+      var eventsToAdd = wkData.weekMap[wkSel2.value] || wkData.regSeason;
+      addEventsToBoard(eventsToAdd, spreadMap, totalMap, status);
+    })
+    .catch(function(err){
+      console.error('Unabated error:', err);
+      status.textContent = 'Error: ' + err.message;
+    });
+  }
+
+  function addEventsToBoard(eventsToAdd, spreadMap, totalMap, status){
+    var added = 0;
+    eventsToAdd.forEach(function(ev){
+      var teams    = ev.eventTeams || [];
+      var awayTeam = teams.find(function(t){ return t.sideIndex === 0; }) || teams[0];
+      var homeTeam = teams.find(function(t){ return t.sideIndex === 1; }) || teams[1];
+      if (!awayTeam || !homeTeam) return;
+
+      var away  = teamToAbbr(awayTeam.name);
+      var home  = teamToAbbr(homeTeam.name);
+      if (!away || !home) return;
+
+      var eid    = String(ev.eventId);
+      var total  = totalMap[eid]  || 0;
+      var sm     = spreadMap[eid] || {};
+      var spread = sm.spread !== undefined ? sm.spread : 0;
+      var fav    = sm.fav    || 'pick';
+
+      var exists = games.some(function(g){ return g.home === home && g.away === away; });
+      if (!exists){
+        games.push({id: Date.now() + added, away: away, home: home,
+          total: total, spread: Math.abs(spread), favorite: fav,
+          kickoff: ev.eventStart || null, _eid: String(ev.eventId)});
+        added++;
+      }
+    });
+
+    renderGames();
+    if (players.length) tagPlayers();
+    saveState();
+    var hasTotals = Object.keys(totalMap).length;
+    var hasSpreads = Object.keys(spreadMap).length;
+    status.textContent = added + ' game' + (added!==1?'s':'') + ' added' +
+      (hasTotals||hasSpreads ? ' (totals:'+Object.keys(totalMap).length+' spreads:'+Object.keys(spreadMap).length+')' : ' — odds not posted yet') + '.';
+  }
+
+  document.getElementById('clearGamesBtn').addEventListener('click', function(){
+    if (games.length && confirm('Clear all ' + games.length + ' games?')){
+      games = []; renderGames(); if(players.length) tagPlayers(); saveState();
+    }
+  });
+  function refreshLines(){
+    var status = document.getElementById('unabatedStatus');
+    if (!games.length){ status.textContent = 'No games on board to refresh.'; return; }
+    var workerUrl = (document.getElementById('unabatedWorkerUrl').value || '').trim().replace(/\/+$/, '');
+    if (!workerUrl){ status.textContent = 'Enter your Worker URL first.'; return; }
+    status.textContent = 'Refreshing lines from Pinnacle...';
+    var spreadUrl = workerUrl + '/market/nfl/straight/odds?betTypeId=' + _unabatedSpreadId;
+    var totalUrl  = workerUrl + '/market/nfl/straight/odds?betTypeId=' + _unabatedTotalId;
+    Promise.all([
+      fetch(spreadUrl).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+      fetch(totalUrl ).then(function(r){ return r.json(); }).catch(function(){ return null; })
+    ]).then(function(results){
+      var spreadMap = buildOddsMap(results[0], true);
+      var totalMap  = buildOddsMap(results[1], false);
+      var updated = 0;
+      // Need eventId for each game — build from _unabatedEvents if available
+      var evMap = {};
+      if (_unabatedEvents){
+        _unabatedEvents.forEach(function(ev){
+          var teams = ev.eventTeams || [];
+          var away = teamToAbbr((teams.find(function(t){ return t.sideIndex===0; })||{}).name||'');
+          var home = teamToAbbr((teams.find(function(t){ return t.sideIndex===1; })||{}).name||'');
+          if (away && home) evMap[away+'@'+home] = String(ev.eventId);
+        });
+      }
+      games.forEach(function(g){
+        var key = g.away + '@' + g.home;
+        var eid = evMap[key] || g._eid;
+        if (!eid) return;
+        var sm = spreadMap[eid];
+        var tot = totalMap[eid];
+        if (sm !== undefined){
+          g.spread   = sm.spread;
+          g.favorite = sm.fav;
+          updated++;
+        }
+        if (tot !== undefined){
+          g.total = tot;
+          if (sm === undefined) updated++;  // count if only total updated
+        }
+      });
+      renderGames();
+      if (players.length) tagPlayers();
+      saveState();
+      status.textContent = updated + ' game' + (updated!==1?'s':'') + ' updated with latest Pinnacle lines.';
+    }).catch(function(err){
+      status.textContent = 'Error: ' + err.message;
+    });
+  }
+
+  document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
+  document.getElementById('refreshLinesBtn').addEventListener('click', refreshLines);
   document.getElementById('thBlowout').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
   document.getElementById('thHighTotal').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
 
@@ -1275,7 +1623,6 @@
   });
   csvFile.addEventListener('change', function(){
     if (csvFile.files.length) parseCSV(csvFile.files[0]);
-  });
 
   document.getElementById('searchBox').addEventListener('input', renderTable);
   document.getElementById('posFilter').addEventListener('change', renderTable);
@@ -1304,52 +1651,7 @@
     renderTable();
     saveState();
   });
-  document.getElementById('weekInput').addEventListener('change', saveState);
-
-  document.getElementById('exportBtn').addEventListener('click', function(){
-    var data = {
-      week: document.getElementById('weekInput').value,
-      thresholds: {
-        blowout: document.getElementById('thBlowout').value,
-        highTotal: document.getElementById('thHighTotal').value
-      },
-      games: games
-    };
-    var blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'slate-board-'+(data.week || 'week').replace(/\s+/g,'-').toLowerCase()+'.json';
-    a.click();
-  });
-
-  document.getElementById('importBtn').addEventListener('click', function(){
-    document.getElementById('importFile').click();
-  });
-  document.getElementById('importFile').addEventListener('change', function(){
-    var file = this.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(e){
-      try{
-        var data = JSON.parse(e.target.result);
-        document.getElementById('weekInput').value = data.week || '';
-        if (data.thresholds){
-          document.getElementById('thBlowout').value = data.thresholds.blowout || 6.5;
-          document.getElementById('thHighTotal').value = data.thresholds.highTotal || 44.5;
-        }
-        games = (data.games || []).map(function(g){
-          g.away = normalizeTeam(g.away);
-          g.home = normalizeTeam(g.home);
-          return g;
-        });
-        renderGames();
-        if (players.length) tagPlayers();
-        saveState();
-      }catch(err){
-        alert('That file could not be read as a saved Slate IQ board.');
-      }
-    };
-    reader.readAsText(file);
+  // Export/Import board removed (use Export week to CSV instead)
   });
 
   loadState();
