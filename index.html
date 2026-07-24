@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Slate Board</title>
+<title>Slate IQ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
@@ -190,6 +190,8 @@
   .tp-card .tp-name{font-weight:600;white-space:nowrap;flex:1;}
   .tp-card .tp-rm{background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0 2px;flex-shrink:0;}
   .tp-card .tp-rm:hover{color:var(--brick);}
+  .tp-rank-btn{background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:0 1px;flex-shrink:0;}
+  .tp-rank-btn:hover{color:var(--gold);}
   .tp-list{display:flex;flex-direction:column;gap:4px;min-height:40px;}
   .tp-card .tp-add-lu{font-size:11px;padding:1px 7px;border-radius:10px;flex-shrink:0;border:1px solid var(--primary,#1a73e8);color:var(--primary,#1a73e8);background:transparent;cursor:pointer;white-space:nowrap;}
   .tp-card .tp-add-lu:hover{background:var(--primary,#1a73e8);color:#fff;}
@@ -201,7 +203,7 @@
 
   <div class="masthead">
     <div>
-      <h1>Slate board</h1>
+      <h1>Slate IQ</h1>
       <div class="tag">Weekly game environment and player pool</div>
     </div>
 
@@ -210,7 +212,7 @@
   <section>
     <div class="section-head">
       <h2>Game environment</h2>
-      <div class="sub">Enter the Vegas line for each game. Totals and script tags update automatically.</div>
+      <div class="sub">Load from Unabated or manually add games below — totals and script tags update automatically.</div>
     </div>
 
     <div class="add-game-row">
@@ -1077,8 +1079,11 @@
       '<span class="tp-pos">'+p.position+'</span> '+
       '<span class="tp-name">'+p.name+'</span> '+
       '<span class="tp-team" style="color:var(--muted);font-size:11px;">'+p.team+'</span> '+
+      (p.teamImplied!==null&&p.teamImplied!==undefined?'<span style="font-size:11px;color:var(--muted);">'+round1(p.teamImplied)+'</span> ':'')+
       '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';font-size:10px;padding:1px 6px;border-radius:10px;">'+t.label+'</span>'+
       (p.salary?' <span class="mono" style="font-size:11px;color:var(--muted);">$'+p.salary.toLocaleString()+'</span>':'')+
+      '<button class="tp-rank-btn" data-tp-up="'+p.id+'" title="Move up">&#8679;</button>'+
+      '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&#8681;</button>'+
       tierBtns+addBtn+
       '<button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button>'+
     '</div>';
@@ -1105,7 +1110,7 @@
     if (tpActivePos === 'ALL'){
       var byTier = {1:[],2:[],3:[],0:[]};
       subset.forEach(function(p){(byTier[p.tier||0]).push(p);});
-      [1,2,3,0].forEach(function(tier){byTier[tier].sort(function(a,b){return (posOrder[a.position]||9)-(posOrder[b.position]||9)||a.name.localeCompare(b.name);});});
+      [1,2,3,0].forEach(function(tier){byTier[tier].sort(function(a,b){return (posOrder[a.position]||9)-(posOrder[b.position]||9)||(a.rank||0)-(b.rank||0)||a.name.localeCompare(b.name);});});
       var tl = {1:'Tier 1',2:'Tier 2',3:'Tier 3',0:'Untiered'};
       var tc2 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
@@ -1115,6 +1120,7 @@
     } else {
       var byTier2 = {1:[],2:[],3:[],0:[]};
       subset.forEach(function(p){(byTier2[p.tier||0]).push(p);});
+      [1,2,3,0].forEach(function(tier){byTier2[tier].sort(function(a,b){return (a.rank||0)-(b.rank||0)||a.name.localeCompare(b.name);});});
       var tl2 = {1:'Tier 1',2:'Tier 2',3:'Tier 3',0:'Untiered'};
       var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
@@ -1126,6 +1132,36 @@
       btn.addEventListener('click', function(){
         var p = topPlayers[btn.getAttribute('data-tp-add')];
         if (p) { addToLineup(p); renderTopPlayers(); }
+      });
+    });
+    list.querySelectorAll('[data-tp-up]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-tp-up');
+        var p = topPlayers[id]; if (!p) return;
+        var tier = p.tier||0;
+        var grp = Object.values(topPlayers).filter(function(x){return (x.tier||0)===tier && x.position===p.position;});
+        grp.sort(function(a,b){return (a.rank||0)-(b.rank||0)||a.name.localeCompare(b.name);});
+        var idx = grp.findIndex(function(x){return x.id===id;});
+        if (idx > 0){
+          grp.forEach(function(x,i){x.rank=i;});
+          var tmp = grp[idx].rank; grp[idx].rank = grp[idx-1].rank; grp[idx-1].rank = tmp;
+        }
+        saveState(); renderTopPlayers();
+      });
+    });
+    list.querySelectorAll('[data-tp-dn]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-tp-dn');
+        var p = topPlayers[id]; if (!p) return;
+        var tier = p.tier||0;
+        var grp = Object.values(topPlayers).filter(function(x){return (x.tier||0)===tier && x.position===p.position;});
+        grp.sort(function(a,b){return (a.rank||0)-(b.rank||0)||a.name.localeCompare(b.name);});
+        var idx = grp.findIndex(function(x){return x.id===id;});
+        if (idx < grp.length-1){
+          grp.forEach(function(x,i){x.rank=i;});
+          var tmp = grp[idx].rank; grp[idx].rank = grp[idx+1].rank; grp[idx+1].rank = tmp;
+        }
+        saveState(); renderTopPlayers();
       });
     });
     list.querySelectorAll('[data-tp-rm]').forEach(function(btn){
