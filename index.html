@@ -465,6 +465,37 @@
     };
   }
 
+  function formatKickoff(isoStr){
+    if (!isoStr) return '';
+    var d = new Date(isoStr);
+    var etDate = new Date(d.getTime() + (-4 * 60 * 60 * 1000));
+    var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var dayIdx = etDate.getUTCDay();
+    var hour = etDate.getUTCHours();
+    var day  = days[dayIdx];
+    var m    = etDate.getUTCMinutes();
+    var ampm = hour >= 12 ? 'pm' : 'am';
+    var h    = hour % 12 || 12;
+    var mStr = m ? ':' + String(m).padStart(2,'0') : '';
+    return day + ' ' + h + mStr + ampm + ' ET';
+  }
+
+  function getNFLWeekSunday(dateStr){
+    var d = new Date(dateStr);
+    var etDate = new Date(d.getTime() + (-4 * 60 * 60 * 1000));
+    var day = etDate.getUTCDay();
+    if (day === 3) {
+      var nextThu = new Date(etDate);
+      nextThu.setUTCDate(etDate.getUTCDate() + 1);
+      return nextThu.toISOString().slice(0,10);
+    }
+    var daysBackMap = {0:3, 1:4, 2:5, 4:0, 5:1, 6:2};
+    var daysBack = daysBackMap[day] !== undefined ? daysBackMap[day] : 0;
+    var thu = new Date(etDate);
+    thu.setUTCDate(etDate.getUTCDate() - daysBack);
+    return thu.toISOString().slice(0,10);
+  }
+
   function renderGames(){
     var grid = document.getElementById('gamesGrid');
     grid.innerHTML = '';
