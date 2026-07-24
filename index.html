@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Slate IQ</title>
+<title>Slate Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
@@ -89,12 +89,7 @@
   .game-card .remove:hover{color:var(--brick);}
   .matchup{font-family:'Oswald',sans-serif;font-size:17px;letter-spacing:0.02em;margin-bottom:2px;}
   .matchup .at{color:var(--muted);font-weight:400;margin:0 4px;}
-  .vegas-line{color:var(--muted);font-size:12px;margin-bottom:12px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;}
-  .line-edit{font-size:12px;padding:2px 4px;border:1px solid transparent;border-radius:4px;
-             background:transparent;color:inherit;font-family:inherit;width:52px;}
-  .line-edit.wide{width:62px;}
-  .line-edit:hover,.line-edit:focus{border-color:var(--muted);background:var(--gray-bg,#f5f5f5);outline:none;}
-  select.line-edit{width:auto;cursor:pointer;}
+  .vegas-line{color:var(--muted);font-size:12px;margin-bottom:12px;}
   .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
   .bar-team{width:38px;font-size:12px;color:var(--muted);flex-shrink:0;}
   .bar-track{flex:1;background:var(--ink);border-radius:4px;height:16px;overflow:hidden;}
@@ -121,16 +116,6 @@
   .pool-status{font-size:13px;color:var(--muted);margin-top:8px;}
 
   .lineup-bar{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px;}
-  /* Multi-lineup tabs */
-  .lu-tabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
-  .lu-tab{padding:4px 14px;border-radius:20px;border:1px solid var(--muted);background:transparent;
-          cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);}
-  .lu-tab.active{background:var(--primary,#1a73e8);color:#fff;border-color:var(--primary,#1a73e8);}
-  .lu-tab-add{padding:4px 10px;border-radius:20px;border:1px dashed var(--muted);background:transparent;
-              cursor:pointer;font-size:12px;color:var(--muted);}
-  .lu-tab-add:hover{border-color:var(--primary,#1a73e8);color:var(--primary,#1a73e8);}
-  .lu-tab-rm{margin-left:4px;font-size:13px;opacity:.5;cursor:pointer;vertical-align:middle;}
-  .lu-tab-rm:hover{opacity:1;color:#c00;}
   .lineup-stat{display:flex;flex-direction:column;gap:2px;}
   .lineup-stat .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
   .lineup-stat .val{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;}
@@ -169,35 +154,6 @@
   .empty{color:var(--muted);font-size:13px;padding:20px 0;text-align:center;}
   .row-count{color:var(--muted);font-size:12px;}
 
-  /* ── Top Players ─────────────────────────────── */
-  .tp-section { margin-top: 0; }
-  .tp-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
-  .tp-tab { padding:4px 12px; border-radius:20px; border:1px solid var(--muted);
-            background:transparent; cursor:pointer; font-size:12px; font-weight:600; color:var(--muted); }
-  .tp-tab.active { background:var(--primary,#1a73e8); color:#fff; border-color:var(--primary,#1a73e8); }
-  .tp-list { display:flex; flex-direction:column; gap:6px; min-height:40px; }
-  .tp-card { display:flex; align-items:center; gap:6px; padding:5px 8px;
-             border-radius:6px; background:var(--gray-bg,#f5f5f5); font-size:13px; }
-  .tp-card .tp-pos { font-size:11px; font-weight:700; width:28px; text-align:center; flex-shrink:0;
-                     padding:2px 4px; border-radius:4px; background:var(--primary,#1a73e8); color:#fff; }
-  .tp-card .tp-name { font-weight:600; white-space:nowrap; margin-right:2px; }
-  .tp-card .tp-team { font-size:11px; color:var(--muted); white-space:nowrap; }
-  .tp-card .tp-tag  { font-size:10px; padding:2px 6px; border-radius:10px; white-space:nowrap; }
-  .tp-card .tp-add-lu { font-size:11px; padding:1px 7px; border-radius:10px; flex-shrink:0;
-                        border:1px solid var(--primary,#1a73e8); color:var(--primary,#1a73e8);
-                        background:transparent; cursor:pointer; white-space:nowrap; }
-  .tp-card .tp-add-lu:hover { background:var(--primary,#1a73e8); color:#fff; }
-  .tp-card .tp-add-lu.in-lu { border-color:#2e7d32; color:#2e7d32; }
-  .tp-card .tp-spacer { flex:1; min-width:4px; }
-  .tp-card .tp-rm   { background:none; border:none; cursor:pointer; flex-shrink:0;
-                      color:var(--muted); font-size:16px; line-height:1; padding:0 2px; }
-  .tp-card .tp-rm:hover { color:#c00; }
-  .tp-empty { font-size:12px; color:var(--muted); padding:8px 0; }
-  .tp-add-btn { font-size:11px; padding:2px 8px; border-radius:12px;
-                border:1px solid var(--primary,#1a73e8); color:var(--primary,#1a73e8);
-                background:transparent; cursor:pointer; }
-  .tp-add-btn:hover { background:var(--primary,#1a73e8); color:#fff; }
-  .tp-add-btn.in-tp { background:#e8f5e9; border-color:#2e7d32; color:#2e7d32; }
   /* Tier styles */
   .tp-tier-group { margin-bottom:10px; }
   .tp-tier-header { display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
@@ -207,11 +163,28 @@
   .tp-tier-badge.t3 { background:#e65100; }
   .tp-tier-badge.t0 { background:#aaa; }
   .tp-tier-btns { display:flex; gap:3px; margin-left:auto; }
-  .tp-tier-btn { width:22px; height:22px; border-radius:50%; border:2px solid #ddd; background:#fff;
-                 cursor:pointer; font-size:10px; font-weight:700; color:#999; display:flex; align-items:center; justify-content:center; }
+  .tp-tier-btn { width:22px; height:22px; border-radius:50%; border:2px solid #ddd; background:#fff; cursor:pointer; font-size:10px; font-weight:700; color:#999; display:flex; align-items:center; justify-content:center; }
   .tp-tier-btn.active-t1 { border-color:#2e7d32; background:#2e7d32; color:#fff; }
   .tp-tier-btn.active-t2 { border-color:#1a73e8; background:#1a73e8; color:#fff; }
   .tp-tier-btn.active-t3 { border-color:#e65100; background:#e65100; color:#fff; }
+  /* line-edit */
+  .line-edit{font-size:12px;padding:2px 4px;border:1px solid transparent;border-radius:4px;background:transparent;color:inherit;font-family:inherit;width:52px;}
+  .line-edit.wide{width:62px;}
+  .line-edit:hover,.line-edit:focus{border-color:var(--muted);background:var(--gray-bg,#f5f5f5);outline:none;}
+  select.line-edit{width:auto;cursor:pointer;}
+  /* lu-tabs */
+  .lu-tabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+  .lu-tab{padding:4px 14px;border-radius:20px;border:1px solid var(--muted);background:transparent;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);}
+  .lu-tab.active{background:var(--primary,#1a73e8);color:#fff;border-color:var(--primary,#1a73e8);}
+  .lu-tab-add{padding:4px 10px;border-radius:20px;border:1px dashed var(--muted);background:transparent;cursor:pointer;font-size:12px;color:var(--muted);}
+  .lu-tab-add:hover{border-color:var(--primary,#1a73e8);color:var(--primary,#1a73e8);}
+  .lu-tab-rm{margin-left:4px;font-size:13px;opacity:.5;cursor:pointer;vertical-align:middle;}
+  .lu-tab-rm:hover{opacity:1;color:#c00;}
+  /* tp-add-lu */
+  .tp-card .tp-add-lu{font-size:11px;padding:1px 7px;border-radius:10px;flex-shrink:0;border:1px solid var(--primary,#1a73e8);color:var(--primary,#1a73e8);background:transparent;cursor:pointer;white-space:nowrap;}
+  .tp-card .tp-add-lu:hover{background:var(--primary,#1a73e8);color:#fff;}
+  .tp-card .tp-add-lu.in-lu{border-color:#2e7d32;color:#2e7d32;}
+  .tp-card .tp-spacer{flex:1;min-width:4px;}
 </style>
 </head>
 <body>
@@ -219,7 +192,7 @@
 
   <div class="masthead">
     <div>
-      <h1>Slate IQ</h1>
+      <h1>Slate board</h1>
       <div class="tag">Weekly game environment and player pool</div>
     </div>
 
@@ -232,7 +205,6 @@
     </div>
 
     <div class="add-game-row">
-      <!-- Row 1: Manual entry + thresholds -->
       <div class="field"><label>Away</label><input class="team" id="gAway" maxlength="4" placeholder="SF"></div>
       <div class="field"><label>Home</label><input class="team" id="gHome" maxlength="4" placeholder="ARI"></div>
       <div class="field"><label>Total</label><input id="gTotal" type="number" step="0.5" placeholder="47.5"></div>
@@ -254,7 +226,6 @@
         <label>High total ≥</label>
         <input id="thHighTotal" type="number" step="0.5" value="44.5" style="width:68px;">
       </div>
-      <!-- Row 2: Unabated controls -->
       <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);margin-top:4px;">
         <button id="loadUnabatedBtn">Load from Unabated</button>
         <button id="refreshLinesBtn">Refresh lines</button>
@@ -379,53 +350,34 @@
   ];
   var MAX_LINEUPS = 20;
   function emptyLineup(){ var l={}; SLOT_DEFS.forEach(function(s){l[s.key]=null;}); return l; }
-  var lineups    = [emptyLineup()];   // array of lineup objects
-  var activeIdx  = 0;                 // which lineup is shown
-  var lineup     = lineups[activeIdx];// convenience reference
+  var lineups    = [emptyLineup()];
+  var activeIdx  = 0;
+  var lineup     = lineups[activeIdx];
   var salaryCap  = 60000;
-
-  function renderLuTabs(){
-    var tabs = document.getElementById('luTabs');
-    tabs.innerHTML = lineups.map(function(lu, i){
-      var filled = SLOT_DEFS.filter(function(s){return lu[s.key];}).length;
-      var label  = 'LU '+(i+1)+(filled?' ('+filled+'/9)':'');
-      return '<button class="lu-tab'+(i===activeIdx?' active':'')+'" data-lu-idx="'+i+'">'+
-        label+(lineups.length>1?'<span class="lu-tab-rm" data-lu-rm="'+i+'">×</span>':'')+
-      '</button>';
-    }).join('')+
-    (lineups.length < MAX_LINEUPS
-      ? '<button class="lu-tab-add" id="luAddBtn">+ Add lineup</button>'
-      : '');
-    tabs.querySelectorAll('.lu-tab').forEach(function(btn){
-      btn.addEventListener('click', function(e){
-        if (e.target.hasAttribute('data-lu-rm')) return;
-        switchLineup(parseInt(btn.getAttribute('data-lu-idx')));
-      });
-    });
-    tabs.querySelectorAll('[data-lu-rm]').forEach(function(btn){
-      btn.addEventListener('click', function(e){
-        e.stopPropagation();
-        var idx = parseInt(btn.getAttribute('data-lu-rm'));
-        if (!confirm('Remove Lineup '+(idx+1)+'?')) return;
-        lineups.splice(idx, 1);
-        activeIdx = Math.min(activeIdx, lineups.length-1);
-        lineup = lineups[activeIdx];
-        saveState(); renderLuTabs(); refreshLineupUI();
-      });
-    });
-    var addBtn = document.getElementById('luAddBtn');
-    if (addBtn) addBtn.addEventListener('click', function(){
-      lineups.push(emptyLineup());
-      switchLineup(lineups.length-1);
-    });
-  }
-
-  function switchLineup(idx){
-    activeIdx = idx;
-    lineup    = lineups[activeIdx];
-    setMsg('');
-    saveState(); renderLuTabs(); refreshLineupUI(); renderTable();
-  }
+  var sortKey = 'value';
+  var sortDir = 'desc';
+  var filterPos = ''; var filterTeam = ''; var filterTag = ''; var filterSearch = '';
+  var topPlayers = {};
+  var tpActivePos = 'ALL';
+  var TP_POSITIONS = ['ALL','QB','RB','WR','TE','DEF'];
+  var TIER_COLORS = {1:'t1',2:'t2',3:'t3',0:'t0'};
+  var TIER_LABELS = {1:'Tier 1',2:'Tier 2',3:'Tier 3',0:'Untiered'};
+  var _unabatedEvents = null;
+  var _unabatedSpreadId = 2;
+  var _unabatedTotalId  = 3;
+  var UNABATED_NFL_TEAM_MAP = {
+    'Arizona Cardinals':'ARI','Atlanta Falcons':'ATL','Baltimore Ravens':'BAL',
+    'Buffalo Bills':'BUF','Carolina Panthers':'CAR','Chicago Bears':'CHI',
+    'Cincinnati Bengals':'CIN','Cleveland Browns':'CLE','Dallas Cowboys':'DAL',
+    'Denver Broncos':'DEN','Detroit Lions':'DET','Green Bay Packers':'GB',
+    'Houston Texans':'HOU','Indianapolis Colts':'IND','Jacksonville Jaguars':'JAC',
+    'Kansas City Chiefs':'KC','Las Vegas Raiders':'LV','Los Angeles Chargers':'LAC',
+    'Los Angeles Rams':'LAR','Miami Dolphins':'MIA','Minnesota Vikings':'MIN',
+    'New England Patriots':'NE','New Orleans Saints':'NO','New York Giants':'NYG',
+    'New York Jets':'NYJ','Philadelphia Eagles':'PHI','Pittsburgh Steelers':'PIT',
+    'San Francisco 49ers':'SF','Seattle Seahawks':'SEA','Tampa Bay Buccaneers':'TB',
+    'Tennessee Titans':'TEN','Washington Commanders':'WAS'
+  };
 
   var TAGS = {
     onslaught: {label:'Onslaught target', color:'var(--green)', bg:'var(--green-bg)', note:'Favorite in a high-total game. Prioritize the QB plus two pass catchers from this side.'},
@@ -513,40 +465,16 @@
     };
   }
 
-  function formatKickoff(isoStr){
-    if (!isoStr) return '';
-    var d = new Date(isoStr);
-    var etDate = new Date(d.getTime() + (-4 * 60 * 60 * 1000));
-    var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    var dayIdx = etDate.getUTCDay();
-    var day  = days[dayIdx];
-    var hour = etDate.getUTCHours();
-    var m    = etDate.getUTCMinutes();
-    var ampm = hour >= 12 ? 'pm' : 'am';
-    var h    = hour % 12 || 12;
-    var mStr = m ? ':' + String(m).padStart(2,'0') : '';
-    return day + ' ' + h + mStr + ampm + ' ET';
-  }
-
   function renderGames(){
     var grid = document.getElementById('gamesGrid');
     grid.innerHTML = '';
     var maxImplied = 1;
-
-    // Sort by kickoff time (games without kickoff go last)
-    var sorted = games.slice().sort(function(a,b){
-      if (!a.kickoff && !b.kickoff) return 0;
-      if (!a.kickoff) return 1;
-      if (!b.kickoff) return -1;
-      return a.kickoff < b.kickoff ? -1 : a.kickoff > b.kickoff ? 1 : 0;
-    });
-
-    sorted.forEach(function(g){
+    games.forEach(function(g){
       var s = gameSides(g);
       maxImplied = Math.max(maxImplied, s.away.implied, s.home.implied);
     });
 
-    sorted.forEach(function(g){
+    games.forEach(function(g){
       var s = gameSides(g);
       var card = document.createElement('div');
       card.className = 'game-card';
@@ -563,8 +491,8 @@
       var totalInput =
         '<input type="number" step="0.5" min="20" class="line-edit wide" data-id="'+g.id+'"'+
         ' data-field="total" value="'+g.total+'">';
-
       var kickoffStr = g.kickoff ? formatKickoff(g.kickoff) : '';
+
       card.innerHTML =
         '<button class="remove" data-id="'+g.id+'" title="Remove game">&times;</button>'+
         (kickoffStr ? '<div style="font-size:11px;color:var(--muted);margin-bottom:2px;">'+kickoffStr+'</div>' : '')+
@@ -581,7 +509,6 @@
     grid.querySelectorAll('.remove').forEach(function(btn){
       btn.addEventListener('click', function(){removeGame(parseFloat(btn.getAttribute('data-id')));});
     });
-
     grid.querySelectorAll('.line-edit').forEach(function(el){
       el.addEventListener('change', function(){
         var g = games.find(function(x){return x.id === parseFloat(el.getAttribute('data-id'));});
@@ -654,7 +581,7 @@
   function saveState(){
     try{
       var state = {
-        unabatedWorkerUrl: document.getElementById('unabatedWorkerUrl').value,
+        unabatedWorkerUrl: document.getElementById('unabatedWorkerUrl') ? document.getElementById('unabatedWorkerUrl').value : '',
         thresholds: {
           blowout: document.getElementById('thBlowout').value,
           highTotal: document.getElementById('thHighTotal').value
@@ -679,15 +606,20 @@
       var raw = localStorage.getItem('slateBoardState');
       if (!raw) return false;
       var state = JSON.parse(raw);
-      if (state.unabatedWorkerUrl) document.getElementById('unabatedWorkerUrl').value = state.unabatedWorkerUrl;
+      if (state.unabatedWorkerUrl && document.getElementById('unabatedWorkerUrl')) document.getElementById('unabatedWorkerUrl').value = state.unabatedWorkerUrl;
       if (state.thresholds){
         document.getElementById('thBlowout').value = state.thresholds.blowout || 6.5;
         document.getElementById('thHighTotal').value = state.thresholds.highTotal || 44.5;
       }
-      salaryCap  = state.cap || 60000;
+      salaryCap = state.cap || 60000;
       document.getElementById('capInput').value = salaryCap;
+      games = (state.games || []).map(function(g){
+        g.away = normalizeTeam(g.away); g.home = normalizeTeam(g.home); return g;
+      });
+      players = state.players || [];
+      topPlayers = state.topPlayers || {};
       if (state.lineups && state.lineups.length){
-        lineups   = state.lineups.map(function(lu){
+        lineups = state.lineups.map(function(lu){
           var obj = emptyLineup();
           SLOT_DEFS.forEach(function(s){
             var id = lu[s.key];
@@ -696,19 +628,11 @@
           return obj;
         });
         activeIdx = state.activeIdx || 0;
-        lineup    = lineups[activeIdx];
+        lineup = lineups[activeIdx];
       }
-      games = (state.games || []).map(function(g){
-        g.away = normalizeTeam(g.away); g.home = normalizeTeam(g.home); return g;
-      });
-      players = state.players || [];
-      topPlayers = state.topPlayers || {};
-      renderTopPlayers();
-      renderLuTabs();
       if (players.length){
         document.getElementById('poolStatus').textContent = players.length+' players loaded.';
       }
-
       return true;
     }catch(e){ return false; }
   }
@@ -807,6 +731,48 @@
     lineups[activeIdx] = lineup;
     setMsg('');
     refreshLineupUI();
+  }
+
+  function renderLuTabs(){
+    var tabs = document.getElementById('luTabs');
+    if (!tabs) return;
+    tabs.innerHTML = lineups.map(function(lu, i){
+      var filled = SLOT_DEFS.filter(function(s){return lu[s.key];}).length;
+      var label  = 'LU '+(i+1)+(filled?' ('+filled+'/9)':'');
+      return '<button class="lu-tab'+(i===activeIdx?' active':'')+'" data-lu-idx="'+i+'">'+
+        label+(lineups.length>1?'<span class="lu-tab-rm" data-lu-rm="'+i+'">x</span>':'')+
+      '</button>';
+    }).join('')+
+    (lineups.length < MAX_LINEUPS ? '<button class="lu-tab-add" id="luAddBtn">+ Add lineup</button>' : '');
+    tabs.querySelectorAll('.lu-tab').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        if (e.target.hasAttribute('data-lu-rm')) return;
+        switchLineup(parseInt(btn.getAttribute('data-lu-idx')));
+      });
+    });
+    tabs.querySelectorAll('[data-lu-rm]').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var idx = parseInt(btn.getAttribute('data-lu-rm'));
+        if (!confirm('Remove Lineup '+(idx+1)+'?')) return;
+        lineups.splice(idx, 1);
+        activeIdx = Math.min(activeIdx, lineups.length-1);
+        lineup = lineups[activeIdx];
+        saveState(); renderLuTabs(); refreshLineupUI();
+      });
+    });
+    var addBtn = document.getElementById('luAddBtn');
+    if (addBtn) addBtn.addEventListener('click', function(){
+      lineups.push(emptyLineup());
+      switchLineup(lineups.length-1);
+    });
+  }
+
+  function switchLineup(idx){
+    activeIdx = idx;
+    lineup = lineups[activeIdx];
+    setMsg('');
+    saveState(); renderLuTabs(); refreshLineupUI(); renderTable();
   }
 
   function refreshLineupUI(){
@@ -944,15 +910,19 @@
     posSel.innerHTML  = '<option value="">All positions</option>' + positions.map(function(p){return '<option value="'+p+'">'+p+'</option>';}).join('');
     teamSel.innerHTML = '<option value="">All teams</option>'     + teams.map(function(t){return '<option value="'+t+'">'+t+'</option>';}).join('');
     tagSel.innerHTML  = '<option value="">All script tags</option>' + Object.keys(TAGS).map(function(k){return '<option value="'+k+'">'+TAGS[k].label+'</option>';}).join('');
+    // Restore JS filter state
+    posSel.value  = filterPos;
+    teamSel.value = filterTeam;
+    tagSel.value  = filterTag;
   }
 
   function renderTable(){
     var body = document.getElementById('poolBody');
     var empty = document.getElementById('poolEmpty');
-    var search = document.getElementById('searchBox').value.trim().toLowerCase();
-    var posF  = document.getElementById('posFilter').value;
-    var teamF = document.getElementById('teamFilter').value;
-    var tagF  = document.getElementById('tagFilter').value;
+    var search = filterSearch;
+    var posF   = filterPos;
+    var teamF  = filterTeam;
+    var tagF   = filterTag;
 
     var rows = players.filter(function(p){
       if (posF  && p.position !== posF)  return false;
@@ -1015,9 +985,7 @@
       });
     });
     body.querySelectorAll('[data-tp-id]').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        toggleTopPlayer(btn.getAttribute('data-tp-id'));
-      });
+      btn.addEventListener('click', function(){ toggleTopPlayer(btn.getAttribute('data-tp-id')); });
     });
     body.querySelectorAll('[data-remove-slot]').forEach(function(btn){
       btn.addEventListener('click', function(){
@@ -1026,122 +994,89 @@
     });
   }
 
-
-  // ── nflverse roster loader ────────────────────────────────────────────────
-  var TEAM_FULL = {
-    ARI:'Arizona Cardinals',ATL:'Atlanta Falcons',BAL:'Baltimore Ravens',BUF:'Buffalo Bills',
-    CAR:'Carolina Panthers',CHI:'Chicago Bears',CIN:'Cincinnati Bengals',CLE:'Cleveland Browns',
-    DAL:'Dallas Cowboys',DEN:'Denver Broncos',DET:'Detroit Lions',GB:'Green Bay Packers',
-    HOU:'Houston Texans',IND:'Indianapolis Colts',JAC:'Jacksonville Jaguars',KC:'Kansas City Chiefs',
-    LV:'Las Vegas Raiders',LAC:'Los Angeles Chargers',LAR:'Los Angeles Rams',MIA:'Miami Dolphins',
-    MIN:'Minnesota Vikings',NE:'New England Patriots',NO:'New Orleans Saints',NYG:'New York Giants',
-    NYJ:'New York Jets',PHI:'Philadelphia Eagles',PIT:'Pittsburgh Steelers',SF:'San Francisco 49ers',
-    SEA:'Seattle Seahawks',TB:'Tampa Bay Buccaneers',TEN:'Tennessee Titans',WAS:'Washington Commanders'
-  };
-
+  // ── Load rosters ──────────────────────────────────────────────────────────
   function loadRosters(){
     if (typeof NFL_ROSTERS === 'undefined'){
-      document.getElementById('poolStatus').textContent = 'Roster file not found — put nfl_rosters_2026.js in the same folder as this page.';
+      document.getElementById('poolStatus').textContent = 'Roster file not found — put nfl_rosters_2026.js in the same folder.';
       return;
     }
     players = NFL_ROSTERS.players.map(function(r){
       var team = normalizeTeam(r.team);
-      return {
-        id: r.name+'|'+team+'|'+r.pos,
-        name: r.name, position: r.pos, team: team,
-        salary:0, fppg:0, value:0, tag:'unmatched', teamImplied:null
-      };
+      return {id:r.name+'|'+team+'|'+r.pos, name:r.name, position:r.pos, team:team,
+        salary:0, fppg:0, value:0, tag:'unmatched', teamImplied:null};
     });
     clearLineup();
     document.getElementById('poolStatus').textContent =
-      players.length + ' players loaded from 2026 NFL rosters (' + (NFL_ROSTERS.meta.pulled||'') + '). Upload FD CSV for salaries.';
-    tagPlayers(); renderTopPlayers(); saveState();
+      players.length+' players loaded from 2026 NFL rosters ('+(NFL_ROSTERS.meta.pulled||'')+').';
+    populateFilterOptions(); tagPlayers(); renderTopPlayers(); saveState();
   }
 
-  // ── Top Players ───────────────────────────────────────────────────────────
-  var topPlayers  = {};   // id -> {player props, tier: 0|1|2|3}
-  var tpActivePos = 'ALL';
-  var TP_POSITIONS = ['ALL','QB','RB','WR','TE','DEF'];
-  var TIER_COLORS  = {1:'t1', 2:'t2', 3:'t3', 0:'t0'};
-  var TIER_LABELS  = {1:'Tier 1', 2:'Tier 2', 3:'Tier 3', 0:'Untiered'};
+  // ── Top Players ────────────────────────────────────────────────────────────
+  function renderTPCard(p, showTierBtns){
+    var t = TAGS[p.tag] || TAGS.unmatched;
+    var tier = p.tier || 0;
+    var tc = {1:'t1',2:'t2',3:'t3',0:'t0'};
+    var inLu = isPlayerInLineup(p);
+    var canAdd = !inLu && !!firstEmptySlotFor(p.position);
+    var addBtn = '<button class="tp-add-lu'+(inLu?' in-lu':'')+'" data-tp-add="'+p.id+'" '+
+      (inLu||!canAdd?'disabled':'')+' title="'+(inLu?'In lineup':canAdd?'Add to lineup':'No open slot')+'">'+
+      (inLu?'In LU':canAdd?'+ Add':'Full')+'</button>';
+    var tierBtns = showTierBtns
+      ? '<div class="tp-tier-btns">'+[1,2,3].map(function(n){
+          return '<button class="tp-tier-btn'+(tier===n?' active-t'+n:'')+'" data-tp-settier="'+p.id+'" data-tier="'+n+'">'+n+'</button>';
+        }).join('')+'</div>'
+      : '';
+    return '<div class="tp-card">'+
+      '<span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="flex-shrink:0;width:18px;height:18px;font-size:10px;">'+(tier===0?'&mdash;':tier)+'</span>'+
+      '<span class="tp-pos">'+p.position+'</span>'+
+      '<span class="tp-name">'+p.name+'</span>'+
+      '<span class="tp-team">'+p.team+'</span>'+
+      '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span>'+
+      (p.salary?'<span class="mono" style="font-size:11px;color:var(--muted);">$'+p.salary.toLocaleString()+'</span>':'')+
+      '<span class="tp-spacer"></span>'+
+      tierBtns+addBtn+
+      '<button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">x</button>'+
+    '</div>';
+  }
 
   function renderTopPlayers(){
-    // ── Tabs ──────────────────────────────────────────────────────────────
     var tabs = document.getElementById('tpTabs');
+    var list = document.getElementById('tpList');
+    if (!tabs || !list) return;
     tabs.innerHTML = TP_POSITIONS.map(function(pos){
-      var count = pos === 'ALL'
-        ? Object.keys(topPlayers).length
+      var count = pos==='ALL' ? Object.keys(topPlayers).length
         : Object.values(topPlayers).filter(function(p){return p.position===pos;}).length;
-      var label = pos + (count ? ' <span style="font-size:10px;opacity:.7;">('+count+')</span>' : '');
-      return '<button class="tp-tab'+(tpActivePos===pos?' active':'')+'" data-tp-pos="'+pos+'">'+label+'</button>';
+      return '<button class="tp-tab'+(tpActivePos===pos?' active':'')+'" data-tp-pos="'+pos+'">'+pos+(count?' ('+count+')':'')+'</button>';
     }).join('');
     tabs.querySelectorAll('.tp-tab').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        tpActivePos = btn.getAttribute('data-tp-pos');
-        renderTopPlayers();
-      });
+      btn.addEventListener('click', function(){tpActivePos=btn.getAttribute('data-tp-pos'); renderTopPlayers();});
     });
-
-    // ── Filter to active pos tab ───────────────────────────────────────────
-    var list   = document.getElementById('tpList');
-    var subset = Object.values(topPlayers).filter(function(p){
-      return tpActivePos === 'ALL' || p.position === tpActivePos;
-    });
+    var subset = Object.values(topPlayers).filter(function(p){return tpActivePos==='ALL'||p.position===tpActivePos;});
     if (!subset.length){
-      list.innerHTML = '<div class="tp-empty">No '+(tpActivePos==='ALL'?'':tpActivePos+' ')+'players starred yet — click ☆ Star in the pool below.</div>';
+      list.innerHTML = '<div class="tp-empty">No '+(tpActivePos==='ALL'?'':tpActivePos+' ')+'players starred yet.</div>';
       return;
     }
-
-    // ── Group: ALL view shows tier groups; positional view shows flat list ─
     var posOrder = {QB:0,RB:1,WR:2,TE:3,DEF:4};
-
     if (tpActivePos === 'ALL'){
-      // Group by tier (1,2,3,0), then by position within each tier
-      var byTier = {1:[], 2:[], 3:[], 0:[]};
-      subset.forEach(function(p){ (byTier[p.tier||0]).push(p); });
-      [1,2,3,0].forEach(function(tier){
-        byTier[tier].sort(function(a,b){
-          return (posOrder[a.position]||9)-(posOrder[b.position]||9)||a.name.localeCompare(b.name);
-        });
-      });
-      var html = '';
-      [1,2,3,0].forEach(function(tier){
-        var grp = byTier[tier];
-        if (!grp.length) return;
-        html += '<div class="tp-tier-group">'+
-          '<div class="tp-tier-header">'+
-            '<span class="tp-tier-badge '+TIER_COLORS[tier]+'">'+
-              (tier===0?'—':tier)+
-            '</span>'+
-            TIER_LABELS[tier]+' ('+grp.length+')'+
-          '</div>'+
-          grp.map(function(p){ return renderTPCard(p, false); }).join('')+
-        '</div>';
-      });
-      list.innerHTML = html;
+      var byTier = {1:[],2:[],3:[],0:[]};
+      subset.forEach(function(p){(byTier[p.tier||0]).push(p);});
+      [1,2,3,0].forEach(function(tier){byTier[tier].sort(function(a,b){return (posOrder[a.position]||9)-(posOrder[b.position]||9)||a.name.localeCompare(b.name);});});
+      var tl = {1:'Tier 1',2:'Tier 2',3:'Tier 3',0:'Untiered'};
+      var tc2 = {1:'t1',2:'t2',3:'t3',0:'t0'};
+      list.innerHTML = [1,2,3,0].map(function(tier){
+        if (!byTier[tier].length) return '';
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')</div>'+byTier[tier].map(function(p){return renderTPCard(p,false);}).join('')+'</div>';
+      }).join('');
     } else {
-      // Positional tab: flat list grouped by tier with inline tier buttons
-      var byTier2 = {1:[], 2:[], 3:[], 0:[]};
-      subset.forEach(function(p){ (byTier2[p.tier||0]).push(p); });
-      [1,2,3,0].forEach(function(tier){ byTier2[tier].sort(function(a,b){return a.name.localeCompare(b.name);}); });
-      var html2 = '';
-      [1,2,3,0].forEach(function(tier){
-        var grp = byTier2[tier];
-        if (!grp.length) return;
-        html2 += '<div class="tp-tier-group">'+
-          '<div class="tp-tier-header">'+
-            '<span class="tp-tier-badge '+TIER_COLORS[tier]+'">'+
-              (tier===0?'—':tier)+
-            '</span>'+
-            TIER_LABELS[tier]+' ('+grp.length+')'+
-          '</div>'+
-          grp.map(function(p){ return renderTPCard(p, true); }).join('')+
-        '</div>';
-      });
-      list.innerHTML = html2;
+      var byTier2 = {1:[],2:[],3:[],0:[]};
+      subset.forEach(function(p){(byTier2[p.tier||0]).push(p);});
+      var tl2 = {1:'Tier 1',2:'Tier 2',3:'Tier 3',0:'Untiered'};
+      var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
+      list.innerHTML = [1,2,3,0].map(function(tier){
+        if (!byTier2[tier].length) return '';
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div>'+byTier2[tier].map(function(p){return renderTPCard(p,true);}).join('')+'</div>';
+      }).join('');
     }
-
-    // ── Event listeners ────────────────────────────────────────────────────
     list.querySelectorAll('[data-tp-add]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var p = topPlayers[btn.getAttribute('data-tp-add')];
@@ -1156,160 +1091,22 @@
     });
     list.querySelectorAll('[data-tp-settier]').forEach(function(btn){
       btn.addEventListener('click', function(){
-        var id   = btn.getAttribute('data-tp-settier');
+        var id = btn.getAttribute('data-tp-settier');
         var tier = parseInt(btn.getAttribute('data-tier'));
-        if (topPlayers[id]){
-          // clicking active tier clears it back to 0
-          topPlayers[id].tier = (topPlayers[id].tier === tier) ? 0 : tier;
-          saveState(); renderTopPlayers(); renderTable();
-        }
+        if (topPlayers[id]){ topPlayers[id].tier = (topPlayers[id].tier===tier)?0:tier; saveState(); renderTopPlayers(); }
       });
     });
-  }
-
-  function renderTPCard(p, showTierBtns){
-    var t    = TAGS[p.tag] || TAGS.unmatched;
-    var tier = p.tier || 0;
-    var tierBtns = showTierBtns
-      ? '<div class="tp-tier-btns">'+
-          [1,2,3].map(function(n){
-            return '<button class="tp-tier-btn'+(tier===n?' active-t'+n:'')+'" '+
-              'data-tp-settier="'+p.id+'" data-tier="'+n+'">'+n+'</button>';
-          }).join('')+
-        '</div>'
-      : '';
-    var inLu   = isPlayerInLineup(p);
-    var canAdd = !inLu && !!firstEmptySlotFor(p.position);
-    var addBtn = '<button class="tp-add-lu'+(inLu?' in-lu':'')+'" '+
-      'data-tp-add="'+p.id+'" '+(inLu||!canAdd?'disabled':'')+' title="'+(inLu?'In lineup':canAdd?'Add to lineup':'No open slot')+'">'+
-      (inLu?'✓ In LU':canAdd?'+ Add':'Full')+
-    '</button>';
-    return '<div class="tp-card">'+
-      '<span class="tp-tier-badge '+TIER_COLORS[tier]+'" style="flex-shrink:0;width:18px;height:18px;font-size:10px;">'+
-        (tier===0?'—':tier)+
-      '</span>'+
-      '<span class="tp-pos">'+p.position+'</span>'+
-      '<span class="tp-name">'+p.name+'</span>'+
-      '<span class="tp-team">'+p.team+'</span>'+
-      '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span>'+
-      (p.salary?'<span class="mono" style="font-size:11px;color:var(--muted);">$'+p.salary.toLocaleString()+'</span>':'')+
-      '<span class="tp-spacer"></span>'+
-      tierBtns+
-      addBtn+
-      '<button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">×</button>'+
-    '</div>';
   }
 
   function toggleTopPlayer(id){
     var p = players.find(function(pl){return pl.id===id;});
     if (!p) return;
     if (topPlayers[id]) delete topPlayers[id];
-    else topPlayers[id] = Object.assign({}, p, {tier:0});
+    else topPlayers[id] = Object.assign({},p,{tier:0});
     saveState(); renderTopPlayers(); renderTable();
   }
 
-  // ── CSV Export ────────────────────────────────────────────────────────────
-  function exportCSV(){
-    var week = '';
-    var rows = [];
-    var sep  = ',';
-    function q(v){ return '"'+(v==null?'':String(v).replace(/"/g,'""'))+'"'; }
-
-    // Section 1: Game Environments
-    rows.push('GAME ENVIRONMENTS');
-    rows.push(['Away','Home','Total','Spread','Favorite','Away Tag','Away Implied','Home Tag','Home Implied'].map(q).join(sep));
-    games.forEach(function(g){
-      var s = gameSides(g);
-      rows.push([
-        g.away, g.home, g.total, g.spread, g.favorite,
-        TAGS[s.away.tag].label, round1(s.away.implied),
-        TAGS[s.home.tag].label, round1(s.home.implied)
-      ].map(q).join(sep));
-    });
-
-    rows.push('');
-
-    // Section 2: Top Players
-    rows.push('TOP PLAYERS');
-    rows.push(['Position','Tier','Player','Team','Tag','Salary','Proj Pts'].map(q).join(sep));
-    var posOrder = {QB:0,RB:1,WR:2,TE:3,DEF:4};
-    Object.values(topPlayers)
-      .sort(function(a,b){
-        return (a.tier||0)-(b.tier||0) ||
-               (posOrder[a.position]||9)-(posOrder[b.position]||9) ||
-               a.name.localeCompare(b.name);
-      })
-      .forEach(function(p){
-        var t = TAGS[p.tag]||TAGS.unmatched;
-        rows.push([
-          p.position, p.tier||'', p.name, p.team,
-          t.label, p.salary||'', p.fppg||''
-        ].map(q).join(sep));
-      });
-
-    rows.push('');
-
-    // Section 3: Lineups
-    rows.push('LINEUPS');
-    var slotLabels = SLOT_DEFS.map(function(s){return s.key;});
-    rows.push(['Lineup','Salary Used','Proj Pts'].concat(slotLabels).map(q).join(sep));
-    lineups.forEach(function(lu, i){
-      var salUsed = SLOT_DEFS.reduce(function(sum,s){return sum+(lu[s.key]?lu[s.key].salary:0);},0);
-      var projPts = SLOT_DEFS.reduce(function(sum,s){return sum+(lu[s.key]?lu[s.key].fppg:0);},0);
-      var filled  = SLOT_DEFS.filter(function(s){return lu[s.key];}).length;
-      if (!filled) return; // skip empty lineups
-      var cells = ['LU '+(i+1), salUsed, projPts.toFixed(1)].concat(
-        SLOT_DEFS.map(function(s){ return lu[s.key] ? lu[s.key].name+' ('+lu[s.key].team+')' : ''; })
-      );
-      rows.push(cells.map(q).join(sep));
-    });
-
-    // Player detail rows
-    rows.push('');
-    rows.push('LINEUP DETAIL');
-    rows.push(['Lineup','Slot','Player','Team','Position','Tag','Salary','Proj Pts'].map(q).join(sep));
-    lineups.forEach(function(lu, i){
-      var filled = SLOT_DEFS.filter(function(s){return lu[s.key];}).length;
-      if (!filled) return;
-      SLOT_DEFS.forEach(function(s){
-        var p = lu[s.key];
-        if (!p) return;
-        var t = TAGS[p.tag]||TAGS.unmatched;
-        rows.push(['LU '+(i+1), s.key, p.name, p.team, p.position, t.label, p.salary||'', p.fppg||''].map(q).join(sep));
-      });
-    });
-
-    var csv  = rows.join('\n');
-    var blob = new Blob([csv], {type:'text/csv'});
-    var url  = URL.createObjectURL(blob);
-    var a    = document.createElement('a');
-    a.href   = url;
-    a.download = 'slate_iq_'+new Date().toISOString().slice(0,10)+'.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  // ── Load games from Unabated ────────────────────────────────────────────
-  var UNABATED_NFL_LEAGUE = 'nfl';
-  var UNABATED_NFL_TEAM_MAP = {
-    'Arizona Cardinals':'ARI','Atlanta Falcons':'ATL','Baltimore Ravens':'BAL',
-    'Buffalo Bills':'BUF','Carolina Panthers':'CAR','Chicago Bears':'CHI',
-    'Cincinnati Bengals':'CIN','Cleveland Browns':'CLE','Dallas Cowboys':'DAL',
-    'Denver Broncos':'DEN','Detroit Lions':'DET','Green Bay Packers':'GB',
-    'Houston Texans':'HOU','Indianapolis Colts':'IND','Jacksonville Jaguars':'JAC',
-    'Kansas City Chiefs':'KC','Las Vegas Raiders':'LV','Los Angeles Chargers':'LAC',
-    'Los Angeles Rams':'LAR','Miami Dolphins':'MIA','Minnesota Vikings':'MIN',
-    'New England Patriots':'NE','New Orleans Saints':'NO','New York Giants':'NYG',
-    'New York Jets':'NYJ','Philadelphia Eagles':'PHI','Pittsburgh Steelers':'PIT',
-    'San Francisco 49ers':'SF','Seattle Seahawks':'SEA','Tampa Bay Buccaneers':'TB',
-    'Tennessee Titans':'TEN','Washington Commanders':'WAS'
-  };
-  var _unabatedEvents   = null;  // cached full event list
-  var _unabatedSpreadId = 2;   // NFL point spread (confirmed)
-  var _unabatedTotalId  = 3;   // NFL game total (confirmed)
-
+  // ── Unabated ───────────────────────────────────────────────────────────────
   function teamToAbbr(fullName){
     if (!fullName) return '';
     if (UNABATED_NFL_TEAM_MAP[fullName]) return UNABATED_NFL_TEAM_MAP[fullName];
@@ -1317,126 +1114,47 @@
     return normalizeTeam(parts[parts.length-1].toUpperCase().slice(0,3));
   }
 
-  // NFL week: season starts first Thursday of September
-  // Group games by their Sunday week (Thu-Wed window)
-  function getNFLWeekSunday(dateStr){
-    // NFL week runs Thu through Mon
-    // Anchor to the Thursday of that window
-    var d = new Date(dateStr);
-    // Convert to ET (EDT = UTC-4)
-    var etDate = new Date(d.getTime() + (-4 * 60 * 60 * 1000));
-    var day  = etDate.getUTCDay();  // 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat
-    // NFL week Thu-Mon. Wed evening games (rare, Week 1 opener) belong to the
-    // FOLLOWING Thursday's week — so Wed forward-anchors to the next day (Thu).
-    // Thu(4)->0, Fri(5)->1, Sat(6)->2, Sun(0)->3, Mon(1)->4, Tue(2)->5back, Wed(3)->forward+1
-    var daysBack;
-    if (day === 3) {
-      // Wednesday: snap forward to next Thursday (-1 = add 1 day then anchor)
-      var nextThu = new Date(etDate);
-      nextThu.setUTCDate(etDate.getUTCDate() + 1);
-      return nextThu.toISOString().slice(0,10);
-    }
-    var daysBackMap = {0:3, 1:4, 2:5, 4:0, 5:1, 6:2};
-    daysBack = daysBackMap[day] !== undefined ? daysBackMap[day] : 0;
-    var thu = new Date(etDate);
-    thu.setUTCDate(etDate.getUTCDate() - daysBack);
-    return thu.toISOString().slice(0,10);
-  }
-
-  function populateWeekSelector(events){
-    // Filter by date: NFL regular season starts first Thursday of September
-    // Exclude anything before Sep 1 (preseason) and after Feb 1 (playoffs done)
-    var regSeason = events.filter(function(ev){
-      if (!ev.eventStart) return false;
-      var d = new Date(ev.eventStart);
-      var m = d.getUTCMonth(); // 0=Jan
-      var yr = d.getUTCFullYear();
-      // Keep Sep(8) through Jan(0)/Feb(1) of next year
-      return m >= 8 || m <= 1;
-    });
-    console.log('Regular season events (Sep-Feb):', regSeason.length, 'of', events.length);
-    if (regSeason.length === 0) regSeason = events;
-    var weekMap = {};
-    regSeason.forEach(function(ev){
-      if (!ev.eventStart) return;
-      var wk = getNFLWeekSunday(ev.eventStart);
-      if (!weekMap[wk]) weekMap[wk] = [];
-      weekMap[wk].push(ev);
-    });
-    var weekKeys = Object.keys(weekMap).sort();
-    var wkSel = document.getElementById('unabatedWeek');
-    var prevVal = wkSel.value;
-    wkSel.innerHTML = '<option value="">Pick a week</option>';
-    weekKeys.forEach(function(wk, i){
-      var opt = document.createElement('option');
-      opt.value = wk;
-      opt.textContent = 'Week ' + (i+1) + ' — ' + weekMap[wk].length + ' games (' + wk + ')';
-      wkSel.appendChild(opt);
-    });
-    // Restore selection or auto-select first week
-    if (prevVal) wkSel.value = prevVal;
-    if (!wkSel.value && weekKeys.length) wkSel.value = weekKeys[0];
-    return { weekMap: weekMap, regSeason: regSeason };
-  }
-
   function buildOddsMap(oddsResp, isSpread){
     var map = {};
     if (!oddsResp || !oddsResp.data || !oddsResp.data.odds) return map;
     var odds = oddsResp.data.odds;
-    // Navigate: odds[league].periodTypes.game.pregame[groupKey]
+    var PREFERRED_SOURCE = '1';
     Object.values(odds).forEach(function(leagueObj){
       if (!leagueObj || typeof leagueObj !== 'object') return;
-      var periodTypes = leagueObj.periodTypes || {};
-      var gamePeriod  = periodTypes['game'] || {};
-      var pregame     = gamePeriod['pregame'] || {};
+      var pregame = ((leagueObj.periodTypes || {})['game'] || {})['pregame'] || {};
       Object.values(pregame).forEach(function(group){
-        // For spread: only use groups where betTypeId looks like a spread
-        // (points value < 30, not symmetric) — skip totals groups in spread map
-        if (isSpread && group.betTypeId === _unabatedTotalId) return;
         var eid = group.eventId;
         if (!eid) return;
         var sides = group.sides || {};
-        var PREFERRED_SOURCE = '1'; // Pinnacle (sharp, sets the market)
-        if (isSpread) {
-          // Collect all source lines across all sides, then find the negative one
-          var spreadVal = null, spreadFav = 'pick';
-          var allLines = []; // [{sideIdx, pts, sid}]
+        if (isSpread){
+          var allLines = [];
           Object.keys(sides).forEach(function(sk){
-            var sv = sides[sk];
-            var m = sk.match(/^si(\d+)/);
+            var sv = sides[sk]; var m = sk.match(/^si(\d+)/);
             var sideIdx = m ? parseInt(m[1]) : -1;
-            var srcLines = sv.marketSourceLines || {};
-            Object.keys(srcLines).forEach(function(sid){
-              var pts = srcLines[sid].points;
-              if (pts != null) allLines.push({sideIdx: sideIdx, pts: pts, sid: sid});
+            Object.keys(sv.marketSourceLines||{}).forEach(function(sid){
+              var pts = sv.marketSourceLines[sid].points;
+              if (pts != null) allLines.push({sideIdx:sideIdx,pts:pts,sid:sid});
             });
           });
-          // Two passes: prefer source 1 (Pinnacle), then any source
+          var spreadVal = null, spreadFav = 'pick';
           [PREFERRED_SOURCE, null].forEach(function(preferSid){
             if (spreadVal !== null) return;
             allLines.forEach(function(l){
               if (spreadVal !== null) return;
               if (preferSid && l.sid !== preferSid) return;
-              if (l.pts < 0){
-                spreadVal = Math.abs(l.pts);
-                spreadFav = (l.sideIdx === 0) ? 'away' : 'home';
-              } else if (l.pts === 0 && spreadVal === null){
-                spreadVal = 0; spreadFav = 'pick';
-              }
+              if (l.pts < 0){ spreadVal = Math.abs(l.pts); spreadFav = (l.sideIdx===0)?'away':'home'; }
+              else if (l.pts === 0 && spreadVal === null){ spreadVal = 0; spreadFav = 'pick'; }
             });
           });
-          if (spreadVal !== null && !map[String(eid)]){
-            map[String(eid)] = { spread: spreadVal, fav: spreadFav };
-          }
+          if (spreadVal !== null && !map[String(eid)]) map[String(eid)] = {spread:spreadVal,fav:spreadFav};
         } else {
-          // Total: prefer Pinnacle, fall back to first available > 20
           var total = null;
-          [true, false].forEach(function(preferredOnly){
+          [PREFERRED_SOURCE, null].forEach(function(preferSid){
             if (total !== null) return;
             Object.values(sides).forEach(function(sv){
               if (total !== null) return;
               var srcLines = sv.marketSourceLines || {};
-              var keys = preferredOnly ? [PREFERRED_SOURCE] : Object.keys(srcLines);
+              var keys = preferSid ? [preferSid] : Object.keys(srcLines);
               keys.forEach(function(sid){
                 if (total !== null || !srcLines[sid]) return;
                 var pts = srcLines[sid].points;
@@ -1451,164 +1169,178 @@
     return map;
   }
 
-  function loadUnabated(){
-    var status = document.getElementById('unabatedStatus');
-    var workerUrl = (document.getElementById('unabatedWorkerUrl').value || '').trim().replace(/\/+$/, '');
-    if (!workerUrl){ status.textContent = 'Enter your Worker URL first.'; return; }
-
-    var wkSel    = document.getElementById('unabatedWeek');
-    var selWeek  = wkSel.value;
-
-    // If we have cached events and a week is selected, just filter and add
-    if (_unabatedEvents && selWeek){
-      var wkData = populateWeekSelector(_unabatedEvents);
-      var eventsToAdd = wkData.weekMap[selWeek] || [];
-      addEventsToBoard(eventsToAdd, {}, {}, status);
-      return;
-    }
-
-    status.textContent = 'Fetching...';
-
-    // Step 1: Get bet type IDs (or use cached)
-    // betTypeIds confirmed from API: 2=point spread, 3=game total
-    console.log('NFL betTypeIds — spread:', _unabatedSpreadId, 'total:', _unabatedTotalId);
-
-    Promise.resolve(null).then(function(){
-      status.textContent = 'Fetching NFL events + odds...';
-      var spreadUrl = workerUrl + '/market/nfl/straight/odds?betTypeId=' + _unabatedSpreadId;
-      var totalUrl  = workerUrl + '/market/nfl/straight/odds?betTypeId=' + _unabatedTotalId;
-      console.log('Spread URL:', spreadUrl);
-      console.log('Total URL:', totalUrl);
-
-      return Promise.all([
-        fetch(workerUrl + '/event/nfl/upcoming').then(function(r){ return r.json(); }),
-        fetch(spreadUrl).then(function(r){ return r.json(); }).catch(function(){ return null; }),
-        fetch(totalUrl ).then(function(r){ return r.json(); }).catch(function(){ return null; })
-      ]);
-    })
-    .then(function(results){
-      var evData     = results[0];
-      var spreadData = results[1];
-      var totalData  = results[2];
-
-      _unabatedEvents = Array.isArray(evData) ? evData : (evData && evData.data ? evData.data : []);
-
-      var spreadMap = buildOddsMap(spreadData, true);
-      var totalMap  = buildOddsMap(totalData, false);
-      console.log('spreadMap entries:', Object.keys(spreadMap).length, spreadMap);
-      console.log('totalMap entries:', Object.keys(totalMap).length, totalMap);
-
-      // Populate week selector
-      var wkData = populateWeekSelector(_unabatedEvents);
-
-      // If no week selected yet, auto-select Week 1
-      var wkSel2 = document.getElementById('unabatedWeek');
-      if (!wkSel2.value && Object.keys(wkData.weekMap).length){
-        wkSel2.value = Object.keys(wkData.weekMap).sort()[0];
-      }
-
-      var eventsToAdd = wkData.weekMap[wkSel2.value] || wkData.regSeason;
-      addEventsToBoard(eventsToAdd, spreadMap, totalMap, status);
-    })
-    .catch(function(err){
-      console.error('Unabated error:', err);
-      status.textContent = 'Error: ' + err.message;
+  function populateWeekSelector(events){
+    var regSeason = events.filter(function(ev){
+      if (!ev.eventStart) return false;
+      var d = new Date(ev.eventStart);
+      var etDate = new Date(d.getTime() + (-4*60*60*1000));
+      var m = etDate.getUTCMonth();
+      return m >= 8 || m <= 1;
     });
+    if (!regSeason.length) regSeason = events;
+    var weekMap = {};
+    regSeason.forEach(function(ev){
+      var wk = getNFLWeekSunday(ev.eventStart);
+      if (!weekMap[wk]) weekMap[wk] = [];
+      weekMap[wk].push(ev);
+    });
+    var weekKeys = Object.keys(weekMap).sort();
+    var wkSel = document.getElementById('unabatedWeek');
+    var prevVal = wkSel.value;
+    wkSel.innerHTML = '<option value="">All regular season</option>';
+    weekKeys.forEach(function(wk,i){
+      var opt = document.createElement('option');
+      opt.value = wk;
+      opt.textContent = 'Week '+(i+1)+' — '+weekMap[wk][0].eventStart.slice(0,10)+' ('+weekMap[wk].length+' games)';
+      wkSel.appendChild(opt);
+    });
+    if (prevVal) wkSel.value = prevVal;
+    return {weekMap:weekMap, regSeason:regSeason};
   }
 
   function addEventsToBoard(eventsToAdd, spreadMap, totalMap, status){
     var added = 0;
     eventsToAdd.forEach(function(ev){
-      var teams    = ev.eventTeams || [];
-      var awayTeam = teams.find(function(t){ return t.sideIndex === 0; }) || teams[0];
-      var homeTeam = teams.find(function(t){ return t.sideIndex === 1; }) || teams[1];
+      var teams = ev.eventTeams || [];
+      var awayTeam = teams.find(function(t){return t.sideIndex===0;}) || teams[0];
+      var homeTeam = teams.find(function(t){return t.sideIndex===1;}) || teams[1];
       if (!awayTeam || !homeTeam) return;
-
-      var away  = teamToAbbr(awayTeam.name);
-      var home  = teamToAbbr(homeTeam.name);
+      var away = teamToAbbr(awayTeam.name||'');
+      var home = teamToAbbr(homeTeam.name||'');
       if (!away || !home) return;
-
-      var eid    = String(ev.eventId);
-      var total  = totalMap[eid]  || 0;
-      var sm     = spreadMap[eid] || {};
+      var eid = String(ev.eventId);
+      var sm = spreadMap[eid] || {};
+      var total = totalMap[eid] || 0;
       var spread = sm.spread !== undefined ? sm.spread : 0;
-      var fav    = sm.fav    || 'pick';
-
-      var exists = games.some(function(g){ return g.home === home && g.away === away; });
+      var fav = sm.fav || 'pick';
+      var exists = games.some(function(g){return g.home===home && g.away===away;});
       if (!exists){
-        games.push({id: Date.now() + added, away: away, home: home,
-          total: total, spread: Math.abs(spread), favorite: fav,
-          kickoff: ev.eventStart || null, _eid: String(ev.eventId)});
+        games.push({id:Date.now()+added, away:away, home:home, total:total,
+          spread:Math.abs(spread), favorite:fav, kickoff:ev.eventStart||null, _eid:eid});
         added++;
       }
     });
-
     renderGames();
     if (players.length) tagPlayers();
     saveState();
-    var hasTotals = Object.keys(totalMap).length;
-    var hasSpreads = Object.keys(spreadMap).length;
-    status.textContent = added + ' game' + (added!==1?'s':'') + ' added' +
-      (hasTotals||hasSpreads ? ' (totals:'+Object.keys(totalMap).length+' spreads:'+Object.keys(spreadMap).length+')' : ' — odds not posted yet') + '.';
+    var msg = added+' game'+(added!==1?'s':'')+' loaded from Unabated.';
+    if (spreadMap && Object.keys(spreadMap).length) msg += ' (Pinnacle lines)';
+    status.textContent = msg;
   }
 
-  document.getElementById('clearGamesBtn').addEventListener('click', function(){
-    if (games.length && confirm('Clear all ' + games.length + ' games?')){
-      games = []; renderGames(); if(players.length) tagPlayers(); saveState();
-    }
-  });
+  function loadUnabated(){
+    var status = document.getElementById('unabatedStatus');
+    var workerUrl = (document.getElementById('unabatedWorkerUrl').value||'').trim().replace(/\/+$/,'');
+    console.log('loadUnabated called, workerUrl:', workerUrl);
+    if (!workerUrl){ status.textContent='Enter your Worker URL first.'; return; }
+    status.textContent = 'Fetching...';
+    var spreadUrl = workerUrl+'/market/nfl/straight/odds?betTypeId='+_unabatedSpreadId;
+    var totalUrl  = workerUrl+'/market/nfl/straight/odds?betTypeId='+_unabatedTotalId;
+    console.log('Fetching:', workerUrl+'/event/nfl/upcoming');
+    Promise.all([
+      fetch(workerUrl+'/event/nfl/upcoming').then(function(r){console.log('events status:',r.status);return r.json();}).catch(function(e){console.error('events error:',e);return null;}),
+      fetch(spreadUrl).then(function(r){console.log('spread status:',r.status);return r.json();}).catch(function(e){console.error('spread error:',e);return null;}),
+      fetch(totalUrl ).then(function(r){console.log('total status:',r.status);return r.json();}).catch(function(e){console.error('total error:',e);return null;})
+    ]).then(function(results){
+      var evData = results[0]; var spreadData = results[1]; var totalData = results[2];
+      console.log('evData:', evData ? 'received ('+(Array.isArray(evData)?evData.length:JSON.stringify(evData).slice(0,50))+')' : 'null');
+      if (!evData){ status.textContent='Failed to fetch events. Check Worker URL and console.'; return; }
+      var evArr = Array.isArray(evData) ? evData : (evData.data||[]);
+      console.log('evArr length:', evArr.length);
+      _unabatedEvents = evArr;
+      var wkData = populateWeekSelector(evArr);
+      var wkSel  = document.getElementById('unabatedWeek');
+      var eventsToAdd = wkSel.value ? (wkData.weekMap[wkSel.value]||wkData.regSeason) : wkData.regSeason;
+      console.log('eventsToAdd:', eventsToAdd.length, 'spreadMap entries:', Object.keys(buildOddsMap(spreadData,true)).length);
+      var spreadMap = buildOddsMap(spreadData, true);
+      var totalMap  = buildOddsMap(totalData, false);
+      addEventsToBoard(eventsToAdd, spreadMap, totalMap, status);
+    }).catch(function(err){ console.error('loadUnabated error:', err); status.textContent='Error: '+err.message; });
+  }
+
   function refreshLines(){
     var status = document.getElementById('unabatedStatus');
-    if (!games.length){ status.textContent = 'No games on board to refresh.'; return; }
-    var workerUrl = (document.getElementById('unabatedWorkerUrl').value || '').trim().replace(/\/+$/, '');
-    if (!workerUrl){ status.textContent = 'Enter your Worker URL first.'; return; }
+    if (!games.length){ status.textContent='No games on board to refresh.'; return; }
+    var workerUrl = (document.getElementById('unabatedWorkerUrl').value||'').trim().replace(/\/+$/,'');
+    if (!workerUrl){ status.textContent='Enter your Worker URL first.'; return; }
     status.textContent = 'Refreshing lines from Pinnacle...';
-    var spreadUrl = workerUrl + '/market/nfl/straight/odds?betTypeId=' + _unabatedSpreadId;
-    var totalUrl  = workerUrl + '/market/nfl/straight/odds?betTypeId=' + _unabatedTotalId;
     Promise.all([
-      fetch(spreadUrl).then(function(r){ return r.json(); }).catch(function(){ return null; }),
-      fetch(totalUrl ).then(function(r){ return r.json(); }).catch(function(){ return null; })
+      fetch(workerUrl+'/market/nfl/straight/odds?betTypeId='+_unabatedSpreadId).then(function(r){return r.json();}).catch(function(){return null;}),
+      fetch(workerUrl+'/market/nfl/straight/odds?betTypeId='+_unabatedTotalId).then(function(r){return r.json();}).catch(function(){return null;})
     ]).then(function(results){
       var spreadMap = buildOddsMap(results[0], true);
       var totalMap  = buildOddsMap(results[1], false);
       var updated = 0;
-      // Need eventId for each game — build from _unabatedEvents if available
       var evMap = {};
       if (_unabatedEvents){
         _unabatedEvents.forEach(function(ev){
-          var teams = ev.eventTeams || [];
-          var away = teamToAbbr((teams.find(function(t){ return t.sideIndex===0; })||{}).name||'');
-          var home = teamToAbbr((teams.find(function(t){ return t.sideIndex===1; })||{}).name||'');
+          var teams = ev.eventTeams||[];
+          var away = teamToAbbr((teams.find(function(t){return t.sideIndex===0;})||{}).name||'');
+          var home = teamToAbbr((teams.find(function(t){return t.sideIndex===1;})||{}).name||'');
           if (away && home) evMap[away+'@'+home] = String(ev.eventId);
         });
       }
       games.forEach(function(g){
-        var key = g.away + '@' + g.home;
-        var eid = evMap[key] || g._eid;
+        var eid = evMap[g.away+'@'+g.home] || g._eid;
         if (!eid) return;
-        var sm = spreadMap[eid];
-        var tot = totalMap[eid];
-        if (sm !== undefined){
-          g.spread   = sm.spread;
-          g.favorite = sm.fav;
-          updated++;
-        }
-        if (tot !== undefined){
-          g.total = tot;
-          if (sm === undefined) updated++;  // count if only total updated
-        }
+        var sm = spreadMap[eid]; var tot = totalMap[eid];
+        if (sm !== undefined){ g.spread=sm.spread; g.favorite=sm.fav; updated++; }
+        if (tot !== undefined){ g.total=tot; if (sm===undefined) updated++; }
       });
-      renderGames();
-      if (players.length) tagPlayers();
-      saveState();
-      status.textContent = updated + ' game' + (updated!==1?'s':'') + ' updated with latest Pinnacle lines.';
-    }).catch(function(err){
-      status.textContent = 'Error: ' + err.message;
-    });
+      renderGames(); if (players.length) tagPlayers(); saveState();
+      status.textContent = updated+' game'+(updated!==1?'s':'')+' updated with latest Pinnacle lines.';
+    }).catch(function(err){ status.textContent='Error: '+err.message; });
   }
 
-  document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
-  document.getElementById('refreshLinesBtn').addEventListener('click', refreshLines);
+  // ── CSV Export ─────────────────────────────────────────────────────────────
+  function exportCSV(){
+    var rows = [], sep = ',';
+    var dq = String.fromCharCode(34);
+    function q(v){ var s=String(v==null?'':v).replace(new RegExp(dq,'g'),dq+dq); return dq+s+dq; }
+    rows.push('GAME ENVIRONMENTS');
+    rows.push(['Away','Home','Total','Spread','Favorite','Away Tag','Away Implied','Home Tag','Home Implied'].map(q).join(sep));
+    games.forEach(function(g){
+      var s = gameSides(g);
+      rows.push([g.away,g.home,g.total,g.spread,g.favorite,TAGS[s.away.tag].label,round1(s.away.implied),TAGS[s.home.tag].label,round1(s.home.implied)].map(q).join(sep));
+    });
+    rows.push('');
+    rows.push('TOP PLAYERS');
+    rows.push(['Position','Tier','Player','Team','Tag','Salary','Proj Pts'].map(q).join(sep));
+    var posOrd = {QB:0,RB:1,WR:2,TE:3,DEF:4};
+    Object.values(topPlayers).sort(function(a,b){return (a.tier||0)-(b.tier||0)||(posOrd[a.position]||9)-(posOrd[b.position]||9)||a.name.localeCompare(b.name);}).forEach(function(p){
+      var t = TAGS[p.tag]||TAGS.unmatched;
+      rows.push([p.position,p.tier||'',p.name,p.team,t.label,p.salary||'',p.fppg||''].map(q).join(sep));
+    });
+    rows.push('');
+    rows.push('LINEUPS');
+    var slotLabels = SLOT_DEFS.map(function(s){return s.key;});
+    rows.push(['Lineup','Salary Used','Proj Pts'].concat(slotLabels).map(q).join(sep));
+    lineups.forEach(function(lu,i){
+      var salUsed = SLOT_DEFS.reduce(function(sum,s){return sum+(lu[s.key]?lu[s.key].salary:0);},0);
+      var proj    = SLOT_DEFS.reduce(function(sum,s){return sum+(lu[s.key]?lu[s.key].fppg:0);},0);
+      if (!SLOT_DEFS.some(function(s){return lu[s.key];})) return;
+      rows.push(['LU '+(i+1),salUsed,proj.toFixed(1)].concat(SLOT_DEFS.map(function(s){return lu[s.key]?lu[s.key].name+' ('+lu[s.key].team+')':'';})).map(q).join(sep));
+    });
+    rows.push('');
+    rows.push('LINEUP DETAIL');
+    rows.push(['Lineup','Slot','Player','Team','Position','Tag','Salary','Proj Pts'].map(q).join(sep));
+    lineups.forEach(function(lu,i){
+      if (!SLOT_DEFS.some(function(s){return lu[s.key];})) return;
+      SLOT_DEFS.forEach(function(s){
+        var p = lu[s.key]; if (!p) return;
+        var t = TAGS[p.tag]||TAGS.unmatched;
+        rows.push(['LU '+(i+1),s.key,p.name,p.team,p.position,t.label,p.salary||'',p.fppg||''].map(q).join(sep));
+      });
+    });
+    var csv = rows.join(String.fromCharCode(10));
+    var blob = new Blob([csv],{type:'text/csv'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href=url; a.download='slate_iq_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+
+  document.getElementById('addGameBtn').addEventListener('click', addGame);
   document.getElementById('thBlowout').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
   document.getElementById('thHighTotal').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
 
@@ -1623,11 +1355,12 @@
   });
   csvFile.addEventListener('change', function(){
     if (csvFile.files.length) parseCSV(csvFile.files[0]);
+  });
 
-  document.getElementById('searchBox').addEventListener('input', renderTable);
-  document.getElementById('posFilter').addEventListener('change', renderTable);
-  document.getElementById('teamFilter').addEventListener('change', renderTable);
-  document.getElementById('tagFilter').addEventListener('change', renderTable);
+  document.getElementById('searchBox').addEventListener('input', function(){ filterSearch=this.value.trim().toLowerCase(); renderTable(); });
+  document.getElementById('posFilter').addEventListener('change', function(){ filterPos=this.value; renderTable(); });
+  document.getElementById('teamFilter').addEventListener('change', function(){ filterTeam=this.value; renderTable(); });
+  document.getElementById('tagFilter').addEventListener('change', function(){ filterTag=this.value; renderTable(); });
 
   document.querySelectorAll('#poolTable th[data-key]').forEach(function(th){
     th.addEventListener('click', function(){
@@ -1642,8 +1375,15 @@
 
   document.getElementById('optimizeBtn').addEventListener('click', optimizeRemaining);
   document.getElementById('loadRostersBtn').addEventListener('click', loadRosters);
-  document.getElementById('clearLineupBtn').addEventListener('click', clearLineup);
   document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
+  document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
+  document.getElementById('refreshLinesBtn').addEventListener('click', refreshLines);
+  document.getElementById('clearGamesBtn').addEventListener('click', function(){
+    if (games.length && confirm('Clear all '+games.length+' games?')){
+      games=[]; renderGames(); if(players.length) tagPlayers(); saveState();
+    }
+  });
+  document.getElementById('clearLineupBtn').addEventListener('click', clearLineup);
   document.getElementById('copyLineupBtn').addEventListener('click', copyLineup);
   document.getElementById('capInput').addEventListener('change', function(){
     salaryCap = parseFloat(this.value) || 60000;
@@ -1651,13 +1391,13 @@
     renderTable();
     saveState();
   });
-  // Export/Import board removed (use Export week to CSV instead)
-  });
 
   loadState();
   renderLegend();
   renderGames();
-  if (players.length) { tagPlayers(); } else { renderTable(); }
+  renderLuTabs();
+  renderTopPlayers();
+  if (players.length) { populateFilterOptions(); tagPlayers(); } else { renderTable(); }
   renderLineupSlots();
   renderLineupBar();
 
