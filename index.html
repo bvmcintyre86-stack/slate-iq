@@ -185,6 +185,12 @@
   .lu-tab-rm{margin-left:4px;font-size:13px;opacity:.5;cursor:pointer;vertical-align:middle;}
   .lu-tab-rm:hover{opacity:1;color:#c00;}
   /* tp-add-lu */
+  .tp-card{display:flex;align-items:center;gap:5px;padding:5px 8px;border-radius:6px;background:var(--panel);border:1px solid var(--line);font-size:12px;}
+  .tp-card .tp-pos{font-size:10px;font-weight:700;background:var(--primary,#1a73e8);color:#fff;padding:1px 4px;border-radius:3px;flex-shrink:0;}
+  .tp-card .tp-name{font-weight:600;white-space:nowrap;}
+  .tp-card .tp-rm{background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0 2px;flex-shrink:0;}
+  .tp-card .tp-rm:hover{color:var(--brick);}
+  .tp-list{display:flex;flex-direction:column;gap:4px;min-height:40px;}
   .tp-card .tp-add-lu{font-size:11px;padding:1px 7px;border-radius:10px;flex-shrink:0;border:1px solid var(--primary,#1a73e8);color:var(--primary,#1a73e8);background:transparent;cursor:pointer;white-space:nowrap;}
   .tp-card .tp-add-lu:hover{background:var(--primary,#1a73e8);color:#fff;}
   .tp-card .tp-add-lu.in-lu{border-color:#2e7d32;color:#2e7d32;}
@@ -1062,11 +1068,11 @@
       : '';
     return '<div class="tp-card">'+
       '<span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="flex-shrink:0;width:18px;height:18px;font-size:10px;">'+(tier===0?'&mdash;':tier)+'</span>'+
-      '<span class="tp-pos">'+p.position+'</span>'+
       '<span class="tp-pos">'+p.position+'</span> '+
       '<span class="tp-name">'+p.name+'</span> '+
-      '<span class="tp-team">'+p.team+'</span> '+
-      (p.salary?'<span class="mono" style="font-size:11px;color:var(--muted);">$'+p.salary.toLocaleString()+'</span>':'')+
+      '<span class="tp-team" style="color:var(--muted);font-size:11px;">'+p.team+'</span> '+
+      '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';font-size:10px;padding:1px 6px;border-radius:10px;">'+t.label+'</span>'+
+      (p.salary?' <span class="mono" style="font-size:11px;color:var(--muted);">$'+p.salary.toLocaleString()+'</span>':'')+
       '<span class="tp-spacer"></span>'+
       tierBtns+addBtn+
       '<button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button>'+
