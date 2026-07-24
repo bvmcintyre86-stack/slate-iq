@@ -1265,31 +1265,47 @@
   function loadUnabated(){
     var status = document.getElementById('unabatedStatus');
     var workerUrl = (document.getElementById('unabatedWorkerUrl').value||'').trim().replace(/\/+$/,'');
-    console.log('loadUnabated called, workerUrl:', workerUrl);
     if (!workerUrl){ status.textContent='Enter your Worker URL first.'; return; }
-    status.textContent = 'Fetching...';
+    status.textContent = 'Fetching lines from Pinnacle...';
     var spreadUrl = workerUrl+'/market/nfl/straight/odds?betTypeId='+_unabatedSpreadId;
     var totalUrl  = workerUrl+'/market/nfl/straight/odds?betTypeId='+_unabatedTotalId;
-    console.log('Fetching:', workerUrl+'/event/nfl/upcoming');
     Promise.all([
-      fetch(workerUrl+'/event/nfl/upcoming').then(function(r){console.log('events status:',r.status);return r.json();}).catch(function(e){console.error('events error:',e);return null;}),
-      fetch(spreadUrl).then(function(r){console.log('spread status:',r.status);return r.json();}).catch(function(e){console.error('spread error:',e);return null;}),
-      fetch(totalUrl ).then(function(r){console.log('total status:',r.status);return r.json();}).catch(function(e){console.error('total error:',e);return null;})
+      fetch(workerUrl+'/event/nfl/upcoming').then(function(r){return r.json();}).catch(function(){return null;}),
+      fetch(spreadUrl).then(function(r){return r.json();}).catch(function(){return null;}),
+      fetch(totalUrl ).then(function(r){return r.json();}).catch(function(){return null;})
     ]).then(function(results){
       var evData = results[0]; var spreadData = results[1]; var totalData = results[2];
-      console.log('evData:', evData ? 'received ('+(Array.isArray(evData)?evData.length:JSON.stringify(evData).slice(0,50))+')' : 'null');
-      if (!evData){ status.textContent='Failed to fetch events. Check Worker URL and console.'; return; }
+      if (!evData){ status.textContent='Failed to fetch events. Check Worker URL.'; return; }
       var evArr = Array.isArray(evData) ? evData : (evData.data||[]);
-      console.log('evArr length:', evArr.length);
       _unabatedEvents = evArr;
       var wkData = populateWeekSelector(evArr);
       var wkSel  = document.getElementById('unabatedWeek');
-      var eventsToAdd = wkSel.value ? (wkData.weekMap[wkSel.value]||wkData.regSeason) : wkData.regSeason;
-      console.log('eventsToAdd:', eventsToAdd.length, 'spreadMap entries:', Object.keys(buildOddsMap(spreadData,true)).length);
+
+      // Auto-select the nearest upcoming week if none selected
+      if (!wkSel.value && wkSel.options.length > 1) {
+        var today = new Date().toISOString().slice(0,10);
+        var nearest = null;
+        for (var i = 1; i < wkSel.options.length; i++) {
+          var wkDate = wkSel.options[i].value;
+          if (wkDate >= today) { nearest = wkSel.options[i].value; break; }
+        }
+        // If all weeks are in the past, pick last one
+        if (!nearest) nearest = wkSel.options[wkSel.options.length-1].value;
+        wkSel.value = nearest;
+      }
+
       var spreadMap = buildOddsMap(spreadData, true);
       var totalMap  = buildOddsMap(totalData, false);
+      var eventsToAdd = wkSel.value ? (wkData.weekMap[wkSel.value]||wkData.regSeason) : wkData.regSeason;
+
+      // Clear existing games for this week before loading fresh
+      if (wkSel.value && eventsToAdd.length) {
+        var eids = eventsToAdd.map(function(ev){ return String(ev.eventId); });
+        games = games.filter(function(g){ return !eids.includes(g._eid); });
+      }
+
       addEventsToBoard(eventsToAdd, spreadMap, totalMap, status);
-    }).catch(function(err){ console.error('loadUnabated error:', err); status.textContent='Error: '+err.message; });
+    }).catch(function(err){ status.textContent='Error: '+err.message; });
   }
 
   function refreshLines(){
