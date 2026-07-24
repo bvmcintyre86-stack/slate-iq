@@ -187,14 +187,13 @@
   /* tp-add-lu */
   .tp-card{display:flex;align-items:center;gap:5px;padding:5px 8px;border-radius:6px;background:var(--panel);border:1px solid var(--line);font-size:12px;}
   .tp-card .tp-pos{font-size:10px;font-weight:700;background:var(--primary,#1a73e8);color:#fff;padding:1px 4px;border-radius:3px;flex-shrink:0;}
-  .tp-card .tp-name{font-weight:600;white-space:nowrap;}
+  .tp-card .tp-name{font-weight:600;white-space:nowrap;flex:1;}
   .tp-card .tp-rm{background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0 2px;flex-shrink:0;}
   .tp-card .tp-rm:hover{color:var(--brick);}
   .tp-list{display:flex;flex-direction:column;gap:4px;min-height:40px;}
   .tp-card .tp-add-lu{font-size:11px;padding:1px 7px;border-radius:10px;flex-shrink:0;border:1px solid var(--primary,#1a73e8);color:var(--primary,#1a73e8);background:transparent;cursor:pointer;white-space:nowrap;}
   .tp-card .tp-add-lu:hover{background:var(--primary,#1a73e8);color:#fff;}
   .tp-card .tp-add-lu.in-lu{border-color:#2e7d32;color:#2e7d32;}
-  .tp-card .tp-spacer{flex:1;min-width:4px;}
 </style>
 </head>
 <body>
@@ -510,12 +509,19 @@
     var grid = document.getElementById('gamesGrid');
     grid.innerHTML = '';
     var maxImplied = 1;
-    games.forEach(function(g){
+    // Sort chronologically by kickoff; games without kickoff go last
+    var sorted = games.slice().sort(function(a,b){
+      if (!a.kickoff && !b.kickoff) return 0;
+      if (!a.kickoff) return 1;
+      if (!b.kickoff) return -1;
+      return a.kickoff < b.kickoff ? -1 : a.kickoff > b.kickoff ? 1 : 0;
+    });
+    sorted.forEach(function(g){
       var s = gameSides(g);
       maxImplied = Math.max(maxImplied, s.away.implied, s.home.implied);
     });
 
-    games.forEach(function(g){
+    sorted.forEach(function(g){
       var s = gameSides(g);
       var card = document.createElement('div');
       card.className = 'game-card';
@@ -1073,7 +1079,6 @@
       '<span class="tp-team" style="color:var(--muted);font-size:11px;">'+p.team+'</span> '+
       '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';font-size:10px;padding:1px 6px;border-radius:10px;">'+t.label+'</span>'+
       (p.salary?' <span class="mono" style="font-size:11px;color:var(--muted);">$'+p.salary.toLocaleString()+'</span>':'')+
-      '<span class="tp-spacer"></span>'+
       tierBtns+addBtn+
       '<button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button>'+
     '</div>';
