@@ -298,14 +298,6 @@
       <div class="sub">Tag key plays by position before building lineups. Click a player in the pool to add them here.</div>
     </div>
     <div class="tp-tabs" id="tpTabs"></div>
-    <div id="tpColHeader" style="display:none;padding:3px 10px 3px;gap:8px;align-items:center;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">
-      <span style="width:20px;flex-shrink:0;"></span>
-      <span style="width:28px;flex-shrink:0;"></span>
-      <span style="flex:1;">Player</span>
-      <span style="width:36px;flex-shrink:0;">Team</span>
-      <span style="width:52px;flex-shrink:0;font-family:'IBM Plex Mono',monospace;">Total</span>
-      <span style="width:110px;flex-shrink:0;">Script</span>
-    </div>
     <div class="tp-list" id="tpList"></div>
   </section>
 
@@ -1115,7 +1107,6 @@
     var tabs = document.getElementById('tpTabs');
     var list = document.getElementById('tpList');
     if (!tabs || !list) return;
-    var hdr = document.getElementById('tpColHeader');
     tabs.innerHTML = TP_POSITIONS.map(function(pos){
       var count = pos==='ALL' ? Object.keys(topPlayers).length
         : Object.values(topPlayers).filter(function(p){return p.position===pos;}).length;
@@ -1127,7 +1118,6 @@
     var subset = Object.values(topPlayers).filter(function(p){return tpActivePos==='ALL'||p.position===tpActivePos;});
     if (!subset.length){
       list.innerHTML = '<div class="tp-empty">No '+(tpActivePos==='ALL'?'':tpActivePos+' ')+'players starred yet.</div>';
-      if (hdr) hdr.style.display='none';
       return;
     }
     var posOrder = {QB:0,RB:1,WR:2,TE:3,DEF:4};
@@ -1137,11 +1127,10 @@
       [1,2,3,0].forEach(function(tier){byTier[tier].sort(function(a,b){return (posOrder[a.position]||9)-(posOrder[b.position]||9)||(a.rank||0)-(b.rank||0)||a.name.localeCompare(b.name);});});
       var tl = {1:'Tier 1',2:'Tier 2',3:'Tier 3',0:'Untiered'};
       var tc2 = {1:'t1',2:'t2',3:'t3',0:'t0'};
-      if (hdr) hdr.style.display='flex';
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier[tier].length) return '';
         return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')</div>'+
-        '<div class="tp-col-header"><span style="width:20px;flex-shrink:0;"></span><span style="width:28px;flex-shrink:0;"></span><span style="flex:1;">Player</span><span style="width:36px;flex-shrink:0;">Team</span><span style="width:52px;flex-shrink:0;">Total</span><span style="width:110px;flex-shrink:0;">Script</span><span style="width:70px;flex-shrink:0;"></span><span style="width:18px;flex-shrink:0;"></span></div>'+
+        '<div class="tp-col-header"><span style="width:20px;flex-shrink:0;"></span><span style="width:28px;flex-shrink:0;"></span><span style="flex:1;min-width:0;">Player</span><span style="width:36px;flex-shrink:0;text-align:left;">Team</span><span style="width:52px;flex-shrink:0;text-align:left;">Total</span><span style="width:110px;flex-shrink:0;text-align:left;">Script</span></div>'+
         byTier[tier].map(function(p){return renderTPCard(p,false);}).join('')+'</div>';
       }).join('');
     } else {
@@ -1150,11 +1139,10 @@
       [1,2,3,0].forEach(function(tier){byTier2[tier].sort(function(a,b){return (a.rank||0)-(b.rank||0)||a.name.localeCompare(b.name);});});
       var tl2 = {1:'Tier 1',2:'Tier 2',3:'Tier 3',0:'Untiered'};
       var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
-      if (hdr) hdr.style.display='flex';
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier2[tier].length) return '';
         return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div>'+
-        '<div class="tp-col-header"><span style="width:20px;flex-shrink:0;"></span><span style="width:28px;flex-shrink:0;"></span><span style="flex:1;">Player</span><span style="width:36px;flex-shrink:0;">Team</span><span style="width:52px;flex-shrink:0;">Total</span><span style="width:110px;flex-shrink:0;">Script</span><span style="width:22px;flex-shrink:0;">Rank</span><span style="width:28px;flex-shrink:0;"></span><span style="width:62px;flex-shrink:0;">Tier</span><span style="width:52px;flex-shrink:0;"></span><span style="width:18px;flex-shrink:0;"></span></div>'+
+        '<div class="tp-col-header"><span style="width:20px;flex-shrink:0;"></span><span style="width:28px;flex-shrink:0;"></span><span style="flex:1;min-width:0;">Player</span><span style="width:36px;flex-shrink:0;text-align:left;">Team</span><span style="width:52px;flex-shrink:0;text-align:left;">Total</span><span style="width:110px;flex-shrink:0;text-align:left;">Script</span><span style="width:22px;flex-shrink:0;text-align:center;">Rank</span><span style="width:28px;flex-shrink:0;"></span><span style="width:62px;flex-shrink:0;text-align:center;">Tier</span></div>'+
         byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('')+'</div>';
       }).join('');
     }
