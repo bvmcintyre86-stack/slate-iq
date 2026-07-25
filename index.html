@@ -1124,7 +1124,7 @@
       var tc2 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header" style="position:relative;"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')<span style="position:absolute;right:284px;font-size:10px;opacity:.6;">Team</span><span style="position:absolute;right:223px;font-size:10px;opacity:.6;">Total</span><span style="position:absolute;right:143px;font-size:10px;opacity:.6;">Script</span></div>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header" style="position:relative;"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')<span style="position:absolute;right:292px;font-size:10px;opacity:.6;">Team</span><span style="position:absolute;right:240px;font-size:10px;opacity:.6;">Total</span><span style="position:absolute;right:151px;font-size:10px;opacity:.6;">Script</span></div>'+
         byTier[tier].map(function(p){return renderTPCard(p,false);}).join('')+'</div>';
       }).join('');
     } else {
@@ -1135,7 +1135,7 @@
       var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier2[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header" style="position:relative;"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')<span style="position:absolute;right:436px;font-size:10px;opacity:.6;">Team</span><span style="position:absolute;right:375px;font-size:10px;opacity:.6;">Total</span><span style="position:absolute;right:295px;font-size:10px;opacity:.6;">Script</span><span style="position:absolute;right:200px;font-size:10px;opacity:.6;">Rank</span><span style="position:absolute;right:108px;font-size:10px;opacity:.6;">Tier</span></div>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header" style="position:relative;"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')<span style="position:absolute;right:446px;font-size:10px;opacity:.6;">Team</span><span style="position:absolute;right:394px;font-size:10px;opacity:.6;">Total</span><span style="position:absolute;right:305px;font-size:10px;opacity:.6;">Script</span><span style="position:absolute;right:209px;font-size:10px;opacity:.6;">Rank</span><span style="position:absolute;right:132px;font-size:10px;opacity:.6;">Tier</span></div>'+
         byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('')+'</div>';
       }).join('');
     }
