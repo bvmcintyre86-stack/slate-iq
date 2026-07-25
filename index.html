@@ -157,7 +157,6 @@
   /* Tier styles */
   .tp-tier-group { margin-bottom:10px; }
   .tp-tier-header { display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
-  .tp-hdr-labels { margin-left:auto; display:flex; gap:16px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); opacity:.7; }
   .tp-tier-badge { width:20px; height:20px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; flex-shrink:0; }
   .tp-tier-badge.t1 { background:#2e7d32; }
   .tp-tier-badge.t2 { background:#1a73e8; }
@@ -1125,7 +1124,7 @@
       var tc2 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')<span class="tp-hdr-labels"><span>Team</span><span>Total</span><span>Script</span></span></div>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header" style="position:relative;"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')<span style="position:absolute;right:284px;font-size:10px;opacity:.6;">Team</span><span style="position:absolute;right:223px;font-size:10px;opacity:.6;">Total</span><span style="position:absolute;right:143px;font-size:10px;opacity:.6;">Script</span></div>'+
         byTier[tier].map(function(p){return renderTPCard(p,false);}).join('')+'</div>';
       }).join('');
     } else {
@@ -1136,7 +1135,7 @@
       var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier2[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')<span class="tp-hdr-labels"><span>Team</span><span>Total</span><span>Script</span><span>Rank</span><span>Tier</span></span></div>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header" style="position:relative;"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')<span style="position:absolute;right:436px;font-size:10px;opacity:.6;">Team</span><span style="position:absolute;right:375px;font-size:10px;opacity:.6;">Total</span><span style="position:absolute;right:295px;font-size:10px;opacity:.6;">Script</span><span style="position:absolute;right:200px;font-size:10px;opacity:.6;">Rank</span><span style="position:absolute;right:108px;font-size:10px;opacity:.6;">Tier</span></div>'+
         byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('')+'</div>';
       }).join('');
     }
