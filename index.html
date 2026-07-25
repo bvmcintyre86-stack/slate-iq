@@ -1089,7 +1089,7 @@
       '<span class="tp-pos">'+p.position+'</span>'+
       '<span class="tp-name">'+p.name+'</span>'+
       '<span class="tp-team">'+p.team+'</span>'+
-      (p.teamImplied!==null&&p.teamImplied!==undefined?'<span class="tp-implied">'+p.teamImplied.toFixed(1)+'</span>':'')+
+      (p.teamImplied!==null&&p.teamImplied!==undefined?'<span class="tp-implied">'+p.teamImplied.toFixed(2)+'</span>':'')+
       '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span>'+
       (p.salary?'<span class="tp-sal mono">$'+p.salary.toLocaleString()+'</span>':'')+
       rankCtrl+tierBtns+addBtn+
@@ -1133,7 +1133,7 @@
       var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier2[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div>'+byTier2[tier].map(function(p){return renderTPCard(p,true);}).join('')+'</div>';
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div>'+byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('')+'</div>';
       }).join('');
     }
     list.querySelectorAll('[data-tp-add]').forEach(function(btn){
