@@ -588,7 +588,7 @@
     var pct = Math.max(4, Math.round((val/max)*100));
     return '<div class="bar-row"><div class="bar-team mono">'+team+'</div>'+
       '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:'+color+';"></div></div>'+
-      '<div class="bar-val mono">'+round1(val)+'</div></div>';
+      '<div class="bar-val mono">'+val.toFixed(2)+'</div></div>';
   }
 
   function findGameForTeam(team){
@@ -1081,8 +1081,8 @@
       : '';
     var rankCtrl = showTierBtns && rankNum !== undefined
       ? '<span class="tp-rank-num">#'+rankNum+'</span>'+
-        '<button class="tp-rank-btn" data-tp-up="'+p.id+'" title="Move up">&#8679;</button>'+
-        '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&#8681;</button>'
+        '<button class="tp-rank-btn" data-tp-up="'+p.id+'" title="Move up">&uarr;</button>'+
+        '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&darr;</button>'
       : '';
     return '<div class="tp-card">'+
       '<span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="flex-shrink:0;width:20px;height:20px;font-size:11px;">'+(tier===0?'&mdash;':tier)+'</span>'+
