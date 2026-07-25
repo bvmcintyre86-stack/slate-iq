@@ -186,16 +186,16 @@
   .lu-tab-rm:hover{opacity:1;color:#c00;}
   /* tp-add-lu */
   .tp-table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;}
-  .tp-table thead th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;text-align:left;border-bottom:1px solid var(--line);}
+  .tp-table thead th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;text-align:center;border-bottom:1px solid var(--line);}
   .tp-table thead th.tp-th-badge,.tp-table thead th.tp-th-pos,.tp-table thead th.tp-th-arrows,.tp-table thead th.tp-th-action,.tp-table thead th.tp-th-rm{width:1%;white-space:nowrap;}
   .tp-table thead th.tp-th-rank,.tp-table thead th.tp-th-tier{text-align:center;}
   .tp-card{background:var(--panel);border-bottom:1px solid var(--line);font-size:13px;}
-  .tp-card td{padding:6px 8px;vertical-align:middle;white-space:nowrap;}
-  .tp-card td.tp-name{white-space:nowrap;font-weight:600;width:99%;}
+  .tp-card td{padding:6px 8px;vertical-align:middle;white-space:nowrap;text-align:center;}
+  .tp-card td.tp-name{white-space:nowrap;font-weight:600;width:99%;text-align:left;}
   .tp-card td.tp-rank-cell{text-align:center;}
 
   .tp-card .tp-pos{font-size:10px;font-weight:700;background:var(--primary,#1a73e8);color:#fff;padding:1px 5px;border-radius:3px;text-align:center;display:inline-block;}
-  .tp-card td.tp-team{color:var(--muted);font-size:12px;}
+  .tp-card td.tp-team{color:var(--muted);font-size:12px;text-align:center;}
   .tp-card td.tp-implied{color:var(--muted);font-size:12px;font-family:'IBM Plex Mono',monospace;text-align:left;}
   .tp-card .tp-tag{font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;display:inline-block;}
   .tp-card .tp-sal{color:var(--muted);font-size:12px;}
@@ -1098,7 +1098,7 @@
       '<td class="tp-team">'+p.team+'</td>'+
       '<td class="tp-implied">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+
       '<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
-      (showTierBtns ? '<td class="tp-rank-cell">'+rankCtrl+'</td><td>'+tierBtns+'</td>' : '')+
+      (showTierBtns ? '<td class="tp-rank-cell">'+rankCtrl+'</td><td class="tp-tier-cell">'+tierBtns+'</td>' : '')+
       '<td>'+addBtn+'</td>'+
       '<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+
     '</tr>';
@@ -1141,7 +1141,7 @@
       var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier2[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div><table class="tp-table"><thead><tr><th class="tp-th-badge"></th><th class="tp-th-pos"></th><th class="tp-th-name">Player</th><th class="tp-th-team">Team</th><th class="tp-th-implied">Total</th><th class="tp-th-tag">Script</th><th class="tp-th-rank">Rank</th><th class="tp-th-arrows"></th><th class="tp-th-tier">Tier</th><th class="tp-th-action"></th><th class="tp-th-rm"></th></tr></thead><tbody>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div><table class="tp-table"><thead><tr><th class="tp-th-badge"></th><th class="tp-th-pos"></th><th class="tp-th-name">Player</th><th class="tp-th-team">Team</th><th class="tp-th-implied">Total</th><th class="tp-th-tag">Script</th><th class="tp-th-rank">Rank</th><th class="tp-th-tier">Tier</th><th class="tp-th-action"></th><th class="tp-th-rm"></th></tr></thead><tbody>'+
         byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('')+'</tbody></table></div>';
       }).join('');
     }
