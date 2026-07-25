@@ -157,6 +157,7 @@
   /* Tier styles */
   .tp-tier-group { margin-bottom:10px; }
   .tp-tier-header { display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
+  .tp-hdr-labels { margin-left:auto; display:flex; gap:16px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); opacity:.7; }
   .tp-tier-badge { width:20px; height:20px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; flex-shrink:0; }
   .tp-tier-badge.t1 { background:#2e7d32; }
   .tp-tier-badge.t2 { background:#1a73e8; }
@@ -192,7 +193,7 @@
   .tp-card .tp-implied{color:var(--muted);font-size:12px;width:52px;flex-shrink:0;font-family:'IBM Plex Mono',monospace;}
   .tp-card .tp-tag{font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;width:110px;flex-shrink:0;text-align:center;}
   .tp-card .tp-sal{color:var(--muted);font-size:12px;}
-  .tp-col-header{display:flex;align-items:center;gap:8px;padding:4px 10px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line);margin-bottom:2px;}
+  .tp-col-header{display:none;}
   .tp-rank-num{font-size:11px;color:var(--muted);width:22px;text-align:right;font-family:'IBM Plex Mono',monospace;flex-shrink:0;}
   .tp-card .tp-rank-btn{background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 1px;flex-shrink:0;width:14px;}
   .tp-card .tp-rank-btn:hover{color:var(--gold);}
@@ -1124,8 +1125,7 @@
       var tc2 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')</div>'+
-        '<div class="tp-col-header"><span style="width:20px;flex-shrink:0;"></span><span style="width:28px;flex-shrink:0;"></span><span style="flex:1;min-width:0;"></span><span style="width:36px;flex-shrink:0;text-align:left;">Team</span><span style="width:52px;flex-shrink:0;text-align:left;">Total</span><span style="width:110px;flex-shrink:0;text-align:left;">Script</span></div>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')<span class="tp-hdr-labels"><span>Team</span><span>Total</span><span>Script</span></span></div>'+
         byTier[tier].map(function(p){return renderTPCard(p,false);}).join('')+'</div>';
       }).join('');
     } else {
@@ -1136,8 +1136,7 @@
       var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier2[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div>'+
-        '<div class="tp-col-header"><span style="width:20px;flex-shrink:0;"></span><span style="width:28px;flex-shrink:0;"></span><span style="flex:1;min-width:0;"></span><span style="width:36px;flex-shrink:0;">Team</span><span style="width:52px;flex-shrink:0;">Total</span><span style="width:110px;flex-shrink:0;">Script</span><span style="width:58px;flex-shrink:0;text-align:center;">Rank</span><span style="width:68px;flex-shrink:0;text-align:center;">Tier</span></div>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')<span class="tp-hdr-labels"><span>Team</span><span>Total</span><span>Script</span><span>Rank</span><span>Tier</span></span></div>'+
         byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('')+'</div>';
       }).join('');
     }
