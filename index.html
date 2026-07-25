@@ -185,7 +185,12 @@
   .lu-tab-rm{margin-left:4px;font-size:13px;opacity:.5;cursor:pointer;vertical-align:middle;}
   .lu-tab-rm:hover{opacity:1;color:#c00;}
   /* tp-add-lu */
-  .tp-card{display:flex;align-items:center;gap:5px;padding:5px 8px;border-radius:6px;background:var(--panel);border:1px solid var(--line);font-size:12px;}
+  .tp-card{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;background:var(--panel);border:1px solid var(--line);font-size:13px;}
+  .tp-card .tp-team{color:var(--muted);font-size:12px;min-width:28px;}
+  .tp-card .tp-implied{color:var(--muted);font-size:12px;min-width:32px;font-family:'IBM Plex Mono',monospace;}
+  .tp-card .tp-sal{color:var(--muted);font-size:12px;}
+  .tp-card .tp-tag{font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;}
+  .tp-rank-num{font-size:11px;color:var(--muted);min-width:22px;text-align:right;font-family:'IBM Plex Mono',monospace;}
   .tp-card .tp-pos{font-size:10px;font-weight:700;background:var(--primary,#1a73e8);color:#fff;padding:1px 4px;border-radius:3px;flex-shrink:0;}
   .tp-card .tp-name{font-weight:600;white-space:nowrap;flex:1;}
   .tp-card .tp-rm{background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0 2px;flex-shrink:0;}
@@ -1060,7 +1065,7 @@
   }
 
   // ── Top Players ────────────────────────────────────────────────────────────
-  function renderTPCard(p, showTierBtns){
+  function renderTPCard(p, showTierBtns, rankNum){
     var t = TAGS[p.tag] || TAGS.unmatched;
     var tier = p.tier || 0;
     var tc = {1:'t1',2:'t2',3:'t3',0:'t0'};
@@ -1068,23 +1073,26 @@
     var canAdd = !inLu && !!firstEmptySlotFor(p.position);
     var addBtn = '<button class="tp-add-lu'+(inLu?' in-lu':'')+'" data-tp-add="'+p.id+'" '+
       (inLu||!canAdd?'disabled':'')+' title="'+(inLu?'In lineup':canAdd?'Add to lineup':'No open slot')+'">'+
-      (inLu?'In LU':canAdd?'+ Add':'Full')+'</button>';
+      (inLu?'&#10003; In LU':canAdd?'+ Add':'Full')+'</button>';
     var tierBtns = showTierBtns
       ? '<div class="tp-tier-btns">'+[1,2,3].map(function(n){
           return '<button class="tp-tier-btn'+(tier===n?' active-t'+n:'')+'" data-tp-settier="'+p.id+'" data-tier="'+n+'">'+n+'</button>';
         }).join('')+'</div>'
       : '';
+    var rankCtrl = showTierBtns && rankNum !== undefined
+      ? '<span class="tp-rank-num">#'+rankNum+'</span>'+
+        '<button class="tp-rank-btn" data-tp-up="'+p.id+'" title="Move up">&#8679;</button>'+
+        '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&#8681;</button>'
+      : '';
     return '<div class="tp-card">'+
-      '<span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="flex-shrink:0;width:18px;height:18px;font-size:10px;">'+(tier===0?'&mdash;':tier)+'</span>'+
-      '<span class="tp-pos">'+p.position+'</span> '+
-      '<span class="tp-name">'+p.name+'</span> '+
-      '<span class="tp-team" style="color:var(--muted);font-size:11px;">'+p.team+'</span> '+
-      (p.teamImplied!==null&&p.teamImplied!==undefined?'<span style="font-size:11px;color:var(--muted);">'+round1(p.teamImplied)+'</span> ':'')+
-      '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';font-size:10px;padding:1px 6px;border-radius:10px;">'+t.label+'</span>'+
-      (p.salary?' <span class="mono" style="font-size:11px;color:var(--muted);">$'+p.salary.toLocaleString()+'</span>':'')+
-      '<button class="tp-rank-btn" data-tp-up="'+p.id+'" title="Move up">&#8679;</button>'+
-      '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&#8681;</button>'+
-      tierBtns+addBtn+
+      '<span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="flex-shrink:0;width:20px;height:20px;font-size:11px;">'+(tier===0?'&mdash;':tier)+'</span>'+
+      '<span class="tp-pos">'+p.position+'</span>'+
+      '<span class="tp-name">'+p.name+'</span>'+
+      '<span class="tp-team">'+p.team+'</span>'+
+      (p.teamImplied!==null&&p.teamImplied!==undefined?'<span class="tp-implied">'+p.teamImplied.toFixed(1)+'</span>':'')+
+      '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span>'+
+      (p.salary?'<span class="tp-sal mono">$'+p.salary.toLocaleString()+'</span>':'')+
+      rankCtrl+tierBtns+addBtn+
       '<button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button>'+
     '</div>';
   }
