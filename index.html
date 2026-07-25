@@ -185,14 +185,20 @@
   .lu-tab-rm{margin-left:4px;font-size:13px;opacity:.5;cursor:pointer;vertical-align:middle;}
   .lu-tab-rm:hover{opacity:1;color:#c00;}
   /* tp-add-lu */
-  .tp-card{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;background:var(--panel);border:1px solid var(--line);font-size:13px;}
-  .tp-card .tp-pos{font-size:10px;font-weight:700;background:var(--primary,#1a73e8);color:#fff;padding:1px 4px;border-radius:3px;flex-shrink:0;width:28px;text-align:center;}
-  .tp-card .tp-name{font-weight:600;white-space:nowrap;flex:1;}
-  .tp-card .tp-team{color:var(--muted);font-size:12px;width:36px;flex-shrink:0;}
-  .tp-card .tp-implied{color:var(--muted);font-size:12px;width:52px;flex-shrink:0;font-family:'IBM Plex Mono',monospace;}
-  .tp-card .tp-tag{font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;width:110px;flex-shrink:0;text-align:center;}
+  .tp-table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;}
+  .tp-table thead th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;text-align:left;border-bottom:1px solid var(--line);}
+  .tp-table thead th.tp-th-badge,.tp-table thead th.tp-th-pos,.tp-table thead th.tp-th-arrows,.tp-table thead th.tp-th-action,.tp-table thead th.tp-th-rm{width:1%;white-space:nowrap;}
+  .tp-table thead th.tp-th-rank,.tp-table thead th.tp-th-tier{text-align:center;}
+  .tp-card{background:var(--panel);border-bottom:1px solid var(--line);font-size:13px;}
+  .tp-card td{padding:6px 8px;vertical-align:middle;white-space:nowrap;}
+  .tp-card td.tp-name{white-space:nowrap;font-weight:600;width:99%;}
+  .tp-card td.tp-rank-cell{text-align:center;}
+
+  .tp-card .tp-pos{font-size:10px;font-weight:700;background:var(--primary,#1a73e8);color:#fff;padding:1px 5px;border-radius:3px;text-align:center;display:inline-block;}
+  .tp-card td.tp-team{color:var(--muted);font-size:12px;}
+  .tp-card td.tp-implied{color:var(--muted);font-size:12px;font-family:'IBM Plex Mono',monospace;text-align:left;}
+  .tp-card .tp-tag{font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;display:inline-block;}
   .tp-card .tp-sal{color:var(--muted);font-size:12px;}
-  .tp-col-header{display:none;}
   .tp-rank-num{font-size:11px;color:var(--muted);width:22px;text-align:right;font-family:'IBM Plex Mono',monospace;flex-shrink:0;}
   .tp-card .tp-rank-btn{background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 1px;flex-shrink:0;width:14px;}
   .tp-card .tp-rank-btn:hover{color:var(--gold);}
@@ -1085,17 +1091,17 @@
         '<button class="tp-rank-btn" data-tp-up="'+p.id+'" title="Move up">&uarr;</button>'+
         '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&darr;</button>'
       : '';
-    return '<div class="tp-card">'+
-      '<span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="flex-shrink:0;width:20px;height:20px;font-size:11px;">'+(tier===0?'&mdash;':tier)+'</span>'+
-      '<span class="tp-pos">'+p.position+'</span>'+
-      '<span class="tp-name">'+p.name+'</span>'+
-      '<span class="tp-team">'+p.team+'</span>'+
-      '<span class="tp-implied">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</span>'+
-      '<span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span>'+
-      (p.salary?'<span class="tp-sal mono">$'+p.salary.toLocaleString()+'</span>':'')+
-      rankCtrl+tierBtns+addBtn+
-      '<button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button>'+
-    '</div>';
+    return '<tr class="tp-card">'+
+      '<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'">'+( tier===0?'&mdash;':tier)+'</span></td>'+
+      '<td><span class="tp-pos">'+p.position+'</span></td>'+
+      '<td class="tp-name">'+p.name+'</td>'+
+      '<td class="tp-team">'+p.team+'</td>'+
+      '<td class="tp-implied">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+
+      '<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
+      (showTierBtns ? '<td class="tp-rank-cell">'+rankCtrl+'</td><td>'+tierBtns+'</td>' : '')+
+      '<td>'+addBtn+'</td>'+
+      '<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+
+    '</tr>';
   }
 
   function renderTopPlayers(){
@@ -1124,8 +1130,8 @@
       var tc2 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header" style="position:relative;"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')<span style="position:absolute;right:272px;font-size:10px;opacity:.6;">Team</span><span style="position:absolute;right:220px;font-size:10px;opacity:.6;">Total</span><span style="position:absolute;right:131px;font-size:10px;opacity:.6;">Script</span></div>'+
-        byTier[tier].map(function(p){return renderTPCard(p,false);}).join('')+'</div>';
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')</div><table class="tp-table"><thead><tr><th class="tp-th-badge"></th><th class="tp-th-pos"></th><th class="tp-th-name">Player</th><th class="tp-th-team">Team</th><th class="tp-th-implied">Total</th><th class="tp-th-tag">Script</th><th class="tp-th-action"></th><th class="tp-th-rm"></th></tr></thead><tbody>'+
+        byTier[tier].map(function(p){return renderTPCard(p,false);}).join('')+'</tbody></table></div>';
       }).join('');
     } else {
       var byTier2 = {1:[],2:[],3:[],0:[]};
@@ -1135,8 +1141,8 @@
       var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier2[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header" style="position:relative;"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')<span style="position:absolute;right:446px;font-size:10px;opacity:.6;">Team</span><span style="position:absolute;right:394px;font-size:10px;opacity:.6;">Total</span><span style="position:absolute;right:305px;font-size:10px;opacity:.6;">Script</span><span style="position:absolute;right:209px;font-size:10px;opacity:.6;">Rank</span><span style="position:absolute;right:135px;font-size:10px;opacity:.6;">Tier</span></div>'+
-        byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('')+'</div>';
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div><table class="tp-table"><thead><tr><th class="tp-th-badge"></th><th class="tp-th-pos"></th><th class="tp-th-name">Player</th><th class="tp-th-team">Team</th><th class="tp-th-implied">Total</th><th class="tp-th-tag">Script</th><th class="tp-th-rank">Rank</th><th class="tp-th-arrows"></th><th class="tp-th-tier">Tier</th><th class="tp-th-action"></th><th class="tp-th-rm"></th></tr></thead><tbody>'+
+        byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('')+'</tbody></table></div>';
       }).join('');
     }
     list.querySelectorAll('[data-tp-add]').forEach(function(btn){
