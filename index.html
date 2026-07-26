@@ -199,7 +199,8 @@
 
   .tp-card .tp-pos{font-size:10px;font-weight:700;background:var(--primary,#1a73e8);color:#fff;padding:1px 5px;border-radius:3px;text-align:center;display:inline-block;}
   .tp-card td.tp-team{color:var(--muted);font-size:12px;text-align:center;}
-  .tp-card td.tp-implied{color:var(--muted);font-size:12px;font-family:'IBM Plex Mono',monospace;text-align:left;}
+  .tp-card td.tp-implied{color:var(--muted);font-size:12px;font-family:'IBM Plex Mono',monospace;text-align:center;}
+  .tp-card td.tp-sal{color:var(--muted);font-size:12px;font-family:'IBM Plex Mono',monospace;text-align:center;}
   .tp-card .tp-tag{font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;display:inline-block;}
   .tp-card .tp-sal{color:var(--muted);font-size:12px;}
   .tp-rank-num{font-size:11px;color:var(--muted);width:22px;text-align:right;font-family:'IBM Plex Mono',monospace;flex-shrink:0;margin-right:4px;}
@@ -1099,6 +1100,7 @@
       '<td><span class="tp-pos">'+p.position+'</span></td>'+
       '<td class="tp-name">'+p.name+'</td>'+
       '<td class="tp-team">'+p.team+'</td>'+
+      '<td class="tp-sal">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+
       '<td class="tp-implied">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+
       '<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
       (showTierBtns ? '<td class="tp-rank-cell">'+rankCtrl+'</td><td class="tp-tier-cell">'+tierBtns+'</td>' : '')+
@@ -1133,7 +1135,7 @@
       var tc2 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')</div><table class="tp-table"><thead><tr><th class="tp-th-badge"></th><th class="tp-th-pos"></th><th class="tp-th-name">Player</th><th class="tp-th-team">Team</th><th class="tp-th-implied">Total</th><th class="tp-th-tag">Script</th><th class="tp-th-action"></th><th class="tp-th-rm"></th></tr></thead><tbody>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')</div><table class="tp-table"><thead><tr><th class="tp-th-badge"></th><th class="tp-th-pos"></th><th class="tp-th-name">Player</th><th class="tp-th-team">Team</th><th class="tp-th-sal">Salary</th><th class="tp-th-implied">Total</th><th class="tp-th-tag">Script</th><th class="tp-th-action"></th><th class="tp-th-rm"></th></tr></thead><tbody>'+
         byTier[tier].map(function(p){return renderTPCard(p,false);}).join('')+'</tbody></table></div>';
       }).join('');
     } else {
@@ -1144,7 +1146,7 @@
       var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier2[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div><table class="tp-table"><thead><tr><th class="tp-th-badge"></th><th class="tp-th-pos"></th><th class="tp-th-name">Player</th><th class="tp-th-team">Team</th><th class="tp-th-implied">Total</th><th class="tp-th-tag">Script</th><th class="tp-th-rank">Rank</th><th class="tp-th-tier">Tier</th><th class="tp-th-action"></th><th class="tp-th-rm"></th></tr></thead><tbody>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div><table class="tp-table"><thead><tr><th class="tp-th-badge"></th><th class="tp-th-pos"></th><th class="tp-th-name">Player</th><th class="tp-th-team">Team</th><th class="tp-th-sal">Salary</th><th class="tp-th-implied">Total</th><th class="tp-th-tag">Script</th><th class="tp-th-rank">Rank</th><th class="tp-th-tier">Tier</th><th class="tp-th-action"></th><th class="tp-th-rm"></th></tr></thead><tbody>'+
         byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('')+'</tbody></table></div>';
       }).join('');
     }
