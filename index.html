@@ -1060,7 +1060,19 @@
     var teamSel = document.getElementById('teamFilter');
     var tagSel  = document.getElementById('tagFilter');
     var positions = Array.from(new Set(players.map(function(p){return p.position;}))).filter(Boolean).sort();
-    var teams     = Array.from(new Set(players.map(function(p){return p.team;}))).filter(Boolean).sort();
+    // Team dropdown: only show teams that appear in the current game board
+    var gameTeams = [];
+    if (games.length > 0){
+      var seen = {};
+      games.forEach(function(g){
+        if (!seen[g.away]){ seen[g.away]=true; gameTeams.push(g.away); }
+        if (!seen[g.home]){ seen[g.home]=true; gameTeams.push(g.home); }
+      });
+      gameTeams.sort();
+    } else {
+      gameTeams = Array.from(new Set(players.map(function(p){return p.team;}))).filter(Boolean).sort();
+    }
+    var teams = gameTeams;
     posSel.innerHTML  = '<option value="">All positions</option>' + positions.map(function(p){return '<option value="'+p+'">'+p+'</option>';}).join('');
     teamSel.innerHTML = '<option value="">All teams</option>'     + teams.map(function(t){return '<option value="'+t+'">'+t+'</option>';}).join('');
     tagSel.innerHTML  = '<option value="">All script tags</option>' + Object.keys(TAGS).map(function(k){return '<option value="'+k+'">'+TAGS[k].label+'</option>';}).join('');
