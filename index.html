@@ -397,6 +397,11 @@
   ];
   var slateMode = 'main';
   var activeSLOT_DEFS = SLOT_DEFS;
+  // Separate lineup state per mode
+  var modeState = {
+    main: { lineups: null, activeIdx: 0 },
+    sg:   { lineups: null, activeIdx: 0 }
+  };
   function emptyLineup(){ var l={}; activeSLOT_DEFS.forEach(function(s){l[s.key]=null;}); return l; }
   var lineups    = [emptyLineup()];
   var activeIdx  = 0;
@@ -678,11 +683,24 @@
         players: players,
         topPlayers: topPlayers,
         activeIdx: activeIdx,
+        slateMode: slateMode,
         lineups: lineups.map(function(lu){
+          var obj={};
+          activeSLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
+          return obj;
+        }),
+        mainLineups: (modeState.main.lineups||lineups).map(function(lu){
           var obj={};
           SLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
           return obj;
-        })
+        }),
+        mainActiveIdx: slateMode==='main'?activeIdx:modeState.main.activeIdx,
+        sgLineups: (modeState.sg.lineups||[]).map(function(lu){
+          var obj={};
+          SG_SLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
+          return obj;
+        }),
+        sgActiveIdx: slateMode==='sg'?activeIdx:modeState.sg.activeIdx
       };
       localStorage.setItem('slateBoardState', JSON.stringify(state));
     }catch(e){ /* storage unavailable, skip silently */ }
@@ -706,18 +724,31 @@
       });
       players = state.players || [];
       topPlayers = state.topPlayers || {};
-      if (state.lineups && state.lineups.length){
-        lineups = state.lineups.map(function(lu){
-          var obj = emptyLineup();
-          SLOT_DEFS.forEach(function(s){
-            var id = lu[s.key];
-            obj[s.key] = id ? (players.find(function(p){return p.id===id;}) || null) : null;
-          });
-          return obj;
+      // Restore main slate lineups
+      if (state.mainLineups && state.mainLineups.length){
+        modeState.main.lineups = state.mainLineups.map(function(lu){
+          var obj={}; SLOT_DEFS.forEach(function(s){l=lu[s.key];obj[s.key]=l?(players.find(function(p){return p.id===l;})||null):null;}); return obj;
         });
-        activeIdx = state.activeIdx || 0;
-        lineup = lineups[activeIdx];
+        modeState.main.activeIdx = state.mainActiveIdx || 0;
       }
+      // Restore SG lineups
+      if (state.sgLineups && state.sgLineups.length){
+        modeState.sg.lineups = state.sgLineups.map(function(lu){
+          var obj={}; SG_SLOT_DEFS.forEach(function(s){l=lu[s.key];obj[s.key]=l?(players.find(function(p){return p.id===l;})||null):null;}); return obj;
+        });
+        modeState.sg.activeIdx = state.sgActiveIdx || 0;
+      }
+      // Restore active mode
+      if (state.slateMode && state.slateMode !== slateMode){
+        slateMode = state.slateMode;
+        activeSLOT_DEFS = slateMode==='sg' ? SG_SLOT_DEFS : SLOT_DEFS;
+        document.getElementById('mainSlateBtn').classList.toggle('active', slateMode==='main');
+        document.getElementById('singleGameBtn').classList.toggle('active', slateMode==='sg');
+      }
+      var ms = modeState[slateMode];
+      if (ms.lineups){ lineups=ms.lineups; activeIdx=ms.activeIdx; }
+      else { lineups=[emptyLineup()]; activeIdx=0; }
+      lineup = lineups[activeIdx];
       if (players.length){
         document.getElementById('poolStatus').textContent = players.length+' players loaded.';
       }
@@ -1498,12 +1529,23 @@
   // ── Mode Toggle ────────────────────────────────────────────────────────────
   function switchMode(mode){
     if (slateMode === mode) return;
+    // Save current mode state before switching
+    modeState[slateMode].lineups   = lineups;
+    modeState[slateMode].activeIdx = activeIdx;
+    // Switch
     slateMode = mode;
     activeSLOT_DEFS = mode === 'sg' ? SG_SLOT_DEFS : SLOT_DEFS;
     document.getElementById('mainSlateBtn').classList.toggle('active', mode==='main');
     document.getElementById('singleGameBtn').classList.toggle('active', mode==='sg');
-    // Reset lineups for new mode
-    lineups = [emptyLineup()]; activeIdx = 0; lineup = lineups[0];
+    // Restore or init lineups for new mode
+    if (modeState[mode].lineups) {
+      lineups   = modeState[mode].lineups;
+      activeIdx = modeState[mode].activeIdx;
+    } else {
+      lineups   = [emptyLineup()];
+      activeIdx = 0;
+    }
+    lineup = lineups[activeIdx];
     setMsg('');
     var luSub = document.getElementById('luSub');
     if (luSub) luSub.textContent = mode==='sg'
