@@ -125,6 +125,9 @@
   .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:8px;}
   .slot-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:70px;position:relative;}
   .slot-card.filled{border-color:var(--gold);}
+  .slot-card.mvp-slot{border-color:var(--primary,#1a73e8);border-width:2px;}
+  .slot-card.mvp-slot .slot-key{color:var(--primary,#1a73e8);font-size:13px;}
+  .slot-card.mvp-slot.filled{border-color:var(--gold);}
   .slot-key{font-family:'Oswald',sans-serif;font-size:12px;color:var(--gold);letter-spacing:0.06em;margin-bottom:4px;}
   .slot-empty{color:var(--muted);font-size:13px;}
   .slot-name{font-size:13px;font-weight:500;padding-right:16px;}
@@ -399,8 +402,8 @@
   var activeSLOT_DEFS = SLOT_DEFS;
   // Separate state per mode
   var modeState = {
-    main: { lineups: null, activeIdx: 0, games: [] },
-    sg:   { lineups: null, activeIdx: 0, games: [] }
+    main: { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} },
+    sg:   { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} }
   };
   function emptyLineup(){ var l={}; activeSLOT_DEFS.forEach(function(s){l[s.key]=null;}); return l; }
   var lineups    = [emptyLineup()];
@@ -697,6 +700,10 @@
         mainActiveIdx: slateMode==='main'?activeIdx:modeState.main.activeIdx,
         mainGames: slateMode==='main'?games:(modeState.main.games||[]),
         sgGames: slateMode==='sg'?games:(modeState.sg.games||[]),
+        mainPlayers: slateMode==='main'?players:(modeState.main.players||[]),
+        mainTopPlayers: slateMode==='main'?topPlayers:(modeState.main.topPlayers||{}),
+        sgPlayers: slateMode==='sg'?players:(modeState.sg.players||[]),
+        sgTopPlayers: slateMode==='sg'?topPlayers:(modeState.sg.topPlayers||{}),
         sgLineups: (modeState.sg.lineups||[]).map(function(lu){
           var obj={};
           SG_SLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
@@ -749,6 +756,10 @@
       }
       if (state.mainGames) modeState.main.games = state.mainGames.map(function(g){ g.away=normalizeTeam(g.away); g.home=normalizeTeam(g.home); return g; });
       if (state.sgGames)   modeState.sg.games   = state.sgGames.map(function(g){ g.away=normalizeTeam(g.away); g.home=normalizeTeam(g.home); return g; });
+      if (state.mainPlayers)    modeState.main.players    = state.mainPlayers;
+      if (state.mainTopPlayers) modeState.main.topPlayers = state.mainTopPlayers;
+      if (state.sgPlayers)      modeState.sg.players      = state.sgPlayers;
+      if (state.sgTopPlayers)   modeState.sg.topPlayers   = state.sgTopPlayers;
       var ms = modeState[slateMode];
       games     = ms.games || [];
       if (ms.lineups){ lineups=ms.lineups; activeIdx=ms.activeIdx; }
@@ -932,11 +943,15 @@
     grid.innerHTML = SLOT_DEFS.map(function(s){
       var p = lineup[s.key];
       if (!p){
-        return '<div class="slot-card"><div class="slot-key">'+s.label+'</div><div class="slot-empty">Empty</div></div>';
+        var mvpClass = (slateMode==='sg' && s.mvp) ? ' mvp-slot' : '';
+        var mvpLabel = (slateMode==='sg' && s.mvp) ? ' <span style="font-size:10px;opacity:.7;">(1.5x)</span>' : '';
+        return '<div class="slot-card'+mvpClass+'"><div class="slot-key">'+s.label+mvpLabel+'</div><div class="slot-empty">Empty</div></div>';
       }
-      return '<div class="slot-card filled">'+
+      var mvpClass2 = (slateMode==='sg' && s.mvp) ? ' mvp-slot' : '';
+      var mvpLabel2 = (slateMode==='sg' && s.mvp) ? ' <span style="font-size:10px;opacity:.7;">(1.5x)</span>' : '';
+      return '<div class="slot-card filled'+mvpClass2+'">'+
         '<button class="slot-remove" data-slot="'+s.key+'" title="Remove">&times;</button>'+
-        '<div class="slot-key">'+s.label+'</div>'+
+        '<div class="slot-key">'+s.label+mvpLabel2+'</div>'+
         '<div class="slot-name">'+p.name+'</div>'+
         '<div class="slot-meta mono">'+p.team+' &middot; '+money(p.salary)+' &middot; '+p.fppg.toFixed(1)+' pts</div>'+
       '</div>';
@@ -1056,7 +1071,15 @@
     var teamF  = filterTeam;
     var tagF   = filterTag;
 
+    // In SG mode, auto-restrict to teams in current game board
+    var sgTeams = null;
+    if (slateMode === 'sg' && games.length > 0) {
+      sgTeams = {};
+      games.forEach(function(g){ sgTeams[g.away]=true; sgTeams[g.home]=true; });
+    }
+
     var rows = players.filter(function(p){
+      if (sgTeams && !sgTeams[p.team]) return false;
       if (posF  && p.position !== posF)  return false;
       if (teamF && p.team     !== teamF) return false;
       if (tagF  && p.tag      !== tagF)  return false;
@@ -1535,16 +1558,20 @@
   function switchMode(mode){
     if (slateMode === mode) return;
     // Save current mode state before switching
-    modeState[slateMode].lineups   = lineups;
-    modeState[slateMode].activeIdx = activeIdx;
-    modeState[slateMode].games     = games;
+    modeState[slateMode].lineups    = lineups;
+    modeState[slateMode].activeIdx  = activeIdx;
+    modeState[slateMode].games      = games;
+    modeState[slateMode].players    = players;
+    modeState[slateMode].topPlayers = topPlayers;
     // Switch
     slateMode = mode;
     activeSLOT_DEFS = mode === 'sg' ? SG_SLOT_DEFS : SLOT_DEFS;
     document.getElementById('mainSlateBtn').classList.toggle('active', mode==='main');
     document.getElementById('singleGameBtn').classList.toggle('active', mode==='sg');
     // Restore or init for new mode
-    games     = modeState[mode].games || [];
+    games      = modeState[mode].games || [];
+    players    = modeState[mode].players || [];
+    topPlayers = modeState[mode].topPlayers || {};
     if (modeState[mode].lineups) {
       lineups   = modeState[mode].lineups;
       activeIdx = modeState[mode].activeIdx;
@@ -1558,7 +1585,10 @@
     if (luSub) luSub.textContent = mode==='sg'
       ? 'Single Game: 1 MVP (1.5x pts) + 4 FLEX. Roster from one game only.'
       : 'Build up to 20 lineups. Switch between them with the tabs.';
-    renderGames(); if (players.length) tagPlayers();
+    renderGames();
+    if (players.length){ populateFilterOptions(); tagPlayers(); }
+    else { renderTable(); document.getElementById('poolStatus').textContent = players.length ? players.length+' players loaded.' : 'No players loaded.'; }
+    renderTopPlayers();
     renderLuTabs(); refreshLineupUI(); saveState();
   }
 
