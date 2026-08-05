@@ -766,7 +766,14 @@
       else { lineups=[emptyLineup()]; activeIdx=0; }
       lineup = lineups[activeIdx];
       if (players.length){
+        var sgTeamCount = 0;
+      if (slateMode === 'sg' && games.length > 0){
+        var sgT = {}; games.forEach(function(g){sgT[g.away]=true;sgT[g.home]=true;});
+        sgTeamCount = players.filter(function(p){return sgT[p.team];}).length;
+        document.getElementById('poolStatus').textContent = sgTeamCount+' players from game teams ('+players.length+' total loaded).';
+      } else {
         document.getElementById('poolStatus').textContent = players.length+' players loaded.';
+      }
       }
       return true;
     }catch(e){ return false; }
@@ -814,8 +821,8 @@
   }
 
   function playerInSlot(p){
-    for (var i=0;i<SLOT_DEFS.length;i++){
-      var k = SLOT_DEFS[i].key;
+    for (var i=0;i<activeSLOT_DEFS.length;i++){
+      var k = activeSLOT_DEFS[i].key;
       if (lineup[k] && lineup[k].id === p.id) return k;
     }
     return null;
@@ -868,7 +875,7 @@
   }
 
   function clearLineup(){
-    SLOT_DEFS.forEach(function(s){lineup[s.key] = null;});
+    activeSLOT_DEFS.forEach(function(s){lineup[s.key] = null;});
     lineups[activeIdx] = lineup;
     setMsg('');
     refreshLineupUI();
@@ -940,7 +947,7 @@
 
   function renderLineupSlots(){
     var grid = document.getElementById('slotsGrid');
-    grid.innerHTML = SLOT_DEFS.map(function(s){
+    grid.innerHTML = activeSLOT_DEFS.map(function(s){
       var p = lineup[s.key];
       if (!p){
         var mvpClass = (slateMode==='sg' && s.mvp) ? ' mvp-slot' : '';
