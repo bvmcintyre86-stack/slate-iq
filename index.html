@@ -1099,6 +1099,8 @@
 
     var rows = players.filter(function(p){
       if (sgTeams && !sgTeams[p.team]) return false;
+      // Hide unmatched players when games are loaded (unless explicitly filtering for them)
+      if (games.length > 0 && p.tag === 'unmatched' && tagF !== 'unmatched') return false;
       if (posF  && p.position !== posF)  return false;
       if (teamF && p.team     !== teamF) return false;
       if (tagF  && p.tag      !== tagF)  return false;
