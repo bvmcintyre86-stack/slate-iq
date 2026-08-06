@@ -1075,7 +1075,7 @@
     var teams = gameTeams;
     posSel.innerHTML  = '<option value="">All positions</option>' + positions.map(function(p){return '<option value="'+p+'">'+p+'</option>';}).join('');
     teamSel.innerHTML = '<option value="">All teams</option>'     + teams.map(function(t){return '<option value="'+t+'">'+t+'</option>';}).join('');
-    tagSel.innerHTML  = '<option value="">All script tags</option>' + Object.keys(TAGS).map(function(k){return '<option value="'+k+'">'+TAGS[k].label+'</option>';}).join('');
+    tagSel.innerHTML  = '<option value="">All script tags</option>' + Object.keys(TAGS).filter(function(k){return k!=='unmatched';}).map(function(k){return '<option value="'+k+'">'+TAGS[k].label+'</option>';}).join('');
     // Restore JS filter state
     posSel.value  = filterPos;
     teamSel.value = filterTeam;
