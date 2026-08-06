@@ -341,6 +341,7 @@
       <input type="text" id="searchBox" placeholder="Search player or team">
       <select id="posFilter"><option value="">All positions</option></select>
       <select id="teamFilter"><option value="">All teams</option></select>
+      <select id="matchupFilter"><option value="">All matchups</option></select>
       <select id="tagFilter"><option value="">All script tags</option></select>
       <span class="row-count" id="rowCount"></span>
     </div>
@@ -412,7 +413,7 @@
   var salaryCap  = 60000;
   var sortKey = 'value';
   var sortDir = 'desc';
-  var filterPos = ''; var filterTeam = ''; var filterTag = ''; var filterSearch = '';
+  var filterPos = ''; var filterTeam = ''; var filterTag = ''; var filterSearch = ''; var filterMatchup = '';
   var topPlayers = {};
   var tpActivePos = 'ALL';
   var TP_POSITIONS = ['ALL','QB','RB','WR','TE','DEF'];
@@ -1075,6 +1076,10 @@
     var teams = gameTeams;
     posSel.innerHTML  = '<option value="">All positions</option>' + positions.map(function(p){return '<option value="'+p+'">'+p+'</option>';}).join('');
     teamSel.innerHTML = '<option value="">All teams</option>'     + teams.map(function(t){return '<option value="'+t+'">'+t+'</option>';}).join('');
+    var matchupSel = document.getElementById('matchupFilter');
+    var matchups = games.map(function(g){ return g.away+'@'+g.home; }).sort();
+    matchupSel.innerHTML = '<option value="">All matchups</option>' + matchups.map(function(m){return '<option value="'+m+'">'+m+'</option>';}).join('');
+    matchupSel.value = filterMatchup;
     tagSel.innerHTML  = '<option value="">All script tags</option>' + Object.keys(TAGS).filter(function(k){return k!=='unmatched';}).map(function(k){return '<option value="'+k+'">'+TAGS[k].label+'</option>';}).join('');
     // Restore JS filter state
     posSel.value  = filterPos;
@@ -1099,8 +1104,13 @@
 
     var rows = players.filter(function(p){
       if (sgTeams && !sgTeams[p.team]) return false;
-      // Hide unmatched players when games are loaded (unless explicitly filtering for them)
+      // Hide unmatched players when games are loaded
       if (games.length > 0 && p.tag === 'unmatched' && tagF !== 'unmatched') return false;
+      // Matchup filter
+      if (filterMatchup){
+        var parts = filterMatchup.split('@');
+        if (p.team !== parts[0] && p.team !== parts[1]) return false;
+      }
       if (posF  && p.position !== posF)  return false;
       if (teamF && p.team     !== teamF) return false;
       if (tagF  && p.tag      !== tagF)  return false;
@@ -1637,6 +1647,7 @@
   document.getElementById('posFilter').addEventListener('change', function(){ filterPos=this.value; renderTable(); });
   document.getElementById('teamFilter').addEventListener('change', function(){ filterTeam=this.value; renderTable(); });
   document.getElementById('tagFilter').addEventListener('change', function(){ filterTag=this.value; renderTable(); });
+  document.getElementById('matchupFilter').addEventListener('change', function(){ filterMatchup=this.value; renderTable(); });
 
   document.querySelectorAll('#poolTable th[data-key]').forEach(function(th){
     th.addEventListener('click', function(){
