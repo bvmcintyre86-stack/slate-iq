@@ -193,8 +193,7 @@
   .tp-table thead th:nth-child(3){text-align:left;}
   .tp-card td{padding:6px 8px;text-align:center;vertical-align:middle;white-space:nowrap;border-bottom:1px solid var(--line);}
   .tp-card td.tp-name{text-align:left;font-weight:600;}
-  .tp-card{}
-  .tp-card_OLD{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;background:var(--panel);border:1px solid var(--line);font-size:13px;}
+  .tp-card{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;background:var(--panel);border:1px solid var(--line);font-size:13px;}
   .tp-card .tp-pos{font-size:10px;font-weight:700;background:var(--primary,#1a73e8);color:#fff;padding:1px 4px;border-radius:3px;flex-shrink:0;width:28px;text-align:center;}
   .tp-card .tp-name{font-weight:600;white-space:nowrap;flex:1;}
   .tp-card .tp-team{color:var(--muted);font-size:12px;width:36px;flex-shrink:0;}
@@ -316,14 +315,6 @@
       <div class="sub">Tag key plays by position before building lineups. Click a player in the pool to add them here.</div>
     </div>
     <div class="tp-tabs" id="tpTabs"></div>
-    <div id="tpColHeader" style="display:none;padding:3px 10px 3px;gap:8px;align-items:center;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">
-      <span style="width:20px;flex-shrink:0;"></span>
-      <span style="width:28px;flex-shrink:0;"></span>
-      <span style="flex:1;">Player</span>
-      <span style="width:36px;flex-shrink:0;">Team</span>
-      <span style="width:52px;flex-shrink:0;font-family:'IBM Plex Mono',monospace;">Total</span>
-      <span style="width:110px;flex-shrink:0;">Script</span>
-    </div>
     <div class="tp-list" id="tpList"></div>
   </section>
 
@@ -338,6 +329,10 @@
       <div class="pool-status" id="poolStatus">No file loaded yet.</div>
     </div>
     <input type="file" id="csvFile" accept=".csv" style="display:none;">
+    <div style="margin-top:8px;">
+      <button id="loadRostersBtn">Load 2026 NFL rosters</button>
+      <span class="sub" style="margin-left:8px;">Use before FanDuel posts the slate — loads full player pool from nfl_rosters_2026.js</span>
+    </div>
 
     <div class="filters">
       <input type="text" id="searchBox" placeholder="Search player or team">
@@ -372,6 +367,7 @@
 
 </div>
 
+<script src="nfl_rosters_2026.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script>
 (function(){
@@ -811,40 +807,9 @@
           };
         }).filter(function(p){return p.name !== 'Unknown' && p.team;});
 
-        // Refresh topPlayers with updated salary/fppg from new CSV
-        var newTopPlayers = {};
-        Object.values(topPlayers).forEach(function(tp){
-          var fresh = players.find(function(p){
-            return p.name === tp.name && p.team === tp.team && p.position === tp.position;
-          }) || players.find(function(p){
-            return p.name === tp.name && p.position === tp.position;
-          });
-          if (fresh){
-            var updated = Object.assign({}, fresh, {tier: tp.tier, rank: tp.rank});
-            newTopPlayers[fresh.id] = updated;
-          }
-        });
-        topPlayers = newTopPlayers;
-
-        // Refresh lineup slots with updated player data
-        lineups.forEach(function(lu){
-          activeSLOT_DEFS.forEach(function(s){
-            if (lu[s.key]){
-              var fresh = players.find(function(p){
-                return p.name === lu[s.key].name && p.team === lu[s.key].team;
-              });
-              if (fresh) lu[s.key] = fresh;
-              else lu[s.key] = null;
-            }
-          });
-        });
-        lineup = lineups[activeIdx];
-
+        clearLineup();
         document.getElementById('poolStatus').textContent = players.length+' players loaded.';
-        populateFilterOptions();
         tagPlayers();
-        renderTopPlayers();
-        refreshLineupUI();
         saveState();
       },
       error:function(err){
@@ -1213,6 +1178,21 @@
   }
 
   // ── Load rosters ──────────────────────────────────────────────────────────
+  function loadRosters(){
+    if (typeof NFL_ROSTERS === 'undefined'){
+      document.getElementById('poolStatus').textContent = 'Roster file not found — put nfl_rosters_2026.js in the same folder.';
+      return;
+    }
+    players = NFL_ROSTERS.players.map(function(r){
+      var team = normalizeTeam(r.team);
+      return {id:r.name+'|'+team+'|'+r.pos, name:r.name, position:r.pos, team:team,
+        salary:0, fppg:0, value:0, tag:'unmatched', teamImplied:null};
+    });
+    document.getElementById('poolStatus').textContent =
+      players.length+' players loaded from 2026 NFL rosters ('+(NFL_ROSTERS.meta.pulled||'')+').';
+    populateFilterOptions(); tagPlayers(); renderTopPlayers(); saveState();
+  }
+
   // ── Top Players ────────────────────────────────────────────────────────────
   function renderTPCard(p, showTierBtns, rankNum){
     var t = TAGS[p.tag] || TAGS.unmatched;
@@ -1233,18 +1213,8 @@
         '<button class="tp-rank-btn" data-tp-up="'+p.id+'" title="Move up">&uarr;</button>'+
         '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&darr;</button>'
       : '';
-    return '<tr class="tp-card">'+
-      '<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+
-      '<td><span class="tp-pos">'+p.position+'</span></td>'+
-      '<td class="tp-name" style="text-align:left;">'+p.name+'</td>'+
-      '<td>'+p.team+'</td>'+
-      '<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+
-      '<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+
-      '<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
-      (showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+
-      '<td>'+addBtn+'</td>'+
-      '<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+
-    '</tr>';
+    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
+  }
 
   function renderTopPlayers(){
     var tabs = document.getElementById('tpTabs');
@@ -1272,7 +1242,8 @@
       var tc2 = {1:'t1',2:'t2',3:'t3',0:'t0'};
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')</div><table class="tp-table"><thead><tr><th style="width:26px;"></th><th style="width:36px;"></th><th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Script</th><th></th><th></th></tr></thead><tbody>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc2[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl[tier]+' ('+byTier[tier].length+')</div>'+
+        '<table class="tp-table"><thead><tr><th style="width:26px;"></th><th style="width:36px;"></th><th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Script</th><th></th><th></th></tr></thead><tbody>'+
         byTier[tier].map(function(p){return renderTPCard(p,false);}).join('')+'</tbody></table></div>';
       }).join('');
     } else {
@@ -1281,9 +1252,11 @@
       [1,2,3,0].forEach(function(tier){byTier2[tier].sort(function(a,b){return (a.rank||0)-(b.rank||0)||a.name.localeCompare(b.name);});});
       var tl2 = {1:'Tier 1',2:'Tier 2',3:'Tier 3',0:'Untiered'};
       var tc3 = {1:'t1',2:'t2',3:'t3',0:'t0'};
+      if (hdr) hdr.style.display='flex';
       list.innerHTML = [1,2,3,0].map(function(tier){
         if (!byTier2[tier].length) return '';
-        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div><table class="tp-table"><thead><tr><th style="width:26px;"></th><th style="width:36px;"></th><th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Script</th><th>Rank</th><th>Tier</th><th></th><th></th></tr></thead><tbody>'+
+        return '<div class="tp-tier-group"><div class="tp-tier-header"><span class="tp-tier-badge '+tc3[tier]+'">'+(tier===0?'&mdash;':tier)+'</span>'+tl2[tier]+' ('+byTier2[tier].length+')</div>'+
+        '<table class="tp-table"><thead><tr><th style="width:26px;"></th><th style="width:36px;"></th><th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Script</th><th>Rank</th><th>Tier</th><th></th><th></th></tr></thead><tbody>'+
         byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('')+'</tbody></table></div>';
       }).join('');
     }
@@ -1672,6 +1645,7 @@
   });
 
   document.getElementById('optimizeBtn').addEventListener('click', optimizeRemaining);
+  document.getElementById('loadRostersBtn').addEventListener('click', loadRosters);
   document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
   document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
   document.getElementById('refreshLinesBtn').addEventListener('click', refreshLines);
@@ -1698,7 +1672,6 @@
   renderLineupSlots();
   renderLineupBar();
 
-  }
 })();
 </script>
 </body>
