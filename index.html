@@ -1012,7 +1012,7 @@
 
     var usedIds = {};
     SLOT_DEFS.forEach(function(s){ if (lineup[s.key]) usedIds[lineup[s.key].id] = true; });
-    var pool = players.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
+    var pool = candidatePool.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
 
     var order = emptySlots.slice().sort(function(a,b){
       return (a.eligible.length - b.eligible.length);
@@ -1048,7 +1048,7 @@
     while (improved && guard < 300){
       improved = false; guard++;
       var totalSalary = salaryUsed();
-      var currentPool = players.filter(function(p){
+      var currentPool = candidatePool.filter(function(p){
         return !SLOT_DEFS.some(function(s){return lineup[s.key] && lineup[s.key].id===p.id;});
       });
       var bestGain = 0, bestSlotKey = null, bestCandidate = null;
