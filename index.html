@@ -144,7 +144,8 @@
   .filters input[type=text]{width:200px;}
 
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);}
+  th,td{padding:9px 10px;text-align:center;border-bottom:1px solid var(--line);}
+  th[data-key="name"]{text-align:left;}
   th{
     font-family:'Inter',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;
     color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap;
@@ -197,6 +198,7 @@
   .tp-table thead th:nth-child(3){text-align:left;}
   .tp-card td{padding:6px 8px;text-align:center;vertical-align:middle;white-space:nowrap;border-bottom:1px solid var(--line);}
   .tp-card td.tp-name{text-align:left;font-weight:600;}
+  .tp-card td:first-child,.tp-card td:nth-child(2){text-align:center;}
   .tp-card{background:var(--panel);font-size:13px;}
   .tp-card .tp-pos{font-size:10px;font-weight:700;background:var(--primary,#1a73e8);color:#fff;padding:1px 4px;border-radius:3px;display:inline-block;min-width:28px;text-align:center;}
   .tp-card .tp-name{font-weight:600;white-space:nowrap;}
@@ -394,11 +396,11 @@
   ];
   var MAX_LINEUPS = 20;
   var SG_SLOT_DEFS = [
-    {key:'MVP',   label:'MVP',  eligible:['QB','RB','WR','TE','D'], mvp:true},
-    {key:'FLEX1', label:'FLEX', eligible:['QB','RB','WR','TE','D']},
-    {key:'FLEX2', label:'FLEX', eligible:['QB','RB','WR','TE','D']},
-    {key:'FLEX3', label:'FLEX', eligible:['QB','RB','WR','TE','D']},
-    {key:'FLEX4', label:'FLEX', eligible:['QB','RB','WR','TE','D']}
+    {key:'MVP',   label:'MVP',  eligible:['QB','RB','WR','TE','DEF'], mvp:true},
+    {key:'FLEX1', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
+    {key:'FLEX2', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
+    {key:'FLEX3', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
+    {key:'FLEX4', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']}
   ];
   var slateMode = 'main';
   var activeSLOT_DEFS = SLOT_DEFS;
@@ -812,9 +814,37 @@
           };
         }).filter(function(p){return p.name !== 'Unknown' && p.team;});
 
-        clearLineup();
+        // Normalize D->DEF in existing topPlayers
+        var newTP = {};
+        Object.values(topPlayers).forEach(function(tp){
+          if (tp.position === 'D') tp.position = 'DEF';
+          var fresh = players.find(function(p){
+            return p.name === tp.name && p.team === tp.team && p.position === tp.position;
+          }) || players.find(function(p){
+            return p.name === tp.name && p.position === tp.position;
+          });
+          if (fresh){
+            newTP[fresh.id] = Object.assign({}, fresh, {tier: tp.tier||0, rank: tp.rank||0});
+          } else {
+            newTP[tp.id] = tp;
+          }
+        });
+        topPlayers = newTP;
+        // Refresh lineup slots with new player data
+        lineups.forEach(function(lu){
+          activeSLOT_DEFS.forEach(function(s){
+            if (lu[s.key]){
+              var fresh = players.find(function(p){return p.name===lu[s.key].name && p.team===lu[s.key].team;});
+              lu[s.key] = fresh || null;
+            }
+          });
+        });
+        lineup = lineups[activeIdx];
         document.getElementById('poolStatus').textContent = players.length+' players loaded.';
+        populateFilterOptions();
         tagPlayers();
+        renderTopPlayers();
+        refreshLineupUI();
         saveState();
       },
       error:function(err){
@@ -1152,7 +1182,7 @@
         action = '<span class="row-tag-full">Full</span>';
       }
       return '<tr>'+
-        '<td>'+p.name+'</td>'+
+        '<td style="text-align:left;">'+p.name+'</td>'+
         '<td class="pos-pill">'+p.position+'</td>'+
         '<td class="mono">'+p.team+'</td>'+
         '<td class="num">'+money(p.salary)+'</td>'+
