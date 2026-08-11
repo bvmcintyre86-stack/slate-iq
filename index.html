@@ -166,7 +166,7 @@
   .tp-tier-badge.t2 { background:#1a73e8; }
   .tp-tier-badge.t3 { background:#e65100; }
   .tp-tier-badge.t0 { background:#aaa; }
-  .tp-tier-btns { display:flex; gap:3px; margin-left:auto; }
+  .tp-tier-btns { display:flex; gap:3px; justify-content:center; }
   .tp-tier-btn { width:22px; height:22px; border-radius:50%; border:2px solid #ddd; background:#fff; cursor:pointer; font-size:10px; font-weight:700; color:#999; display:flex; align-items:center; justify-content:center; }
   .tp-tier-btn.active-t1 { border-color:#2e7d32; background:#2e7d32; color:#fff; }
   .tp-tier-btn.active-t2 { border-color:#1a73e8; background:#1a73e8; color:#fff; }
@@ -219,6 +219,7 @@
   .tp-rank-btn:hover{color:var(--gold);}
   .tp-list{display:flex;flex-direction:column;gap:4px;min-height:40px;}
   .tp-card .tp-add-lu{font-size:11px;padding:1px 7px;border-radius:10px;flex-shrink:0;border:1px solid var(--primary,#1a73e8);color:var(--primary,#1a73e8);background:transparent;cursor:pointer;white-space:nowrap;}
+  .tp-card .tp-add-lu.full-lu{border-color:var(--muted);color:var(--muted);cursor:default;}
   .tp-card .tp-add-lu:hover{background:var(--primary,#1a73e8);color:#fff;}
   .tp-card .tp-add-lu.in-lu{border-color:#2e7d32;color:#2e7d32;}
   /* ── Mode Toggle ───────────────────────── */
@@ -1003,6 +1004,9 @@
 
   function optimizeRemaining(){
     var emptySlots = activeSLOT_DEFS.filter(function(s){return !lineup[s.key];});
+    // Use Top Players as the candidate pool if any are starred, otherwise use full player pool
+    var tpList = Object.values(topPlayers);
+    var candidatePool = tpList.length > 0 ? tpList : players;
     if (!emptySlots.length){ setMsg('Lineup is already full. Clear a slot to optimize around it.'); return; }
 
     var usedIds = {};
@@ -1235,8 +1239,8 @@
     var tc = {1:'t1',2:'t2',3:'t3',0:'t0'};
     var inLu = isPlayerInLineup(p);
     var canAdd = !inLu && !!firstEmptySlotFor(p.position);
-    var addBtn = '<button class="tp-add-lu'+(inLu?' in-lu':'')+'" data-tp-add="'+p.id+'" '+
-      (inLu||!canAdd?'disabled':'')+' title="'+(inLu?'In lineup':canAdd?'Add to lineup':'No open slot')+'">'+
+    var addBtn = '<button class="tp-add-lu'+(inLu?' in-lu':canAdd?'':' full-lu')+'" data-tp-add="'+p.id+'" '+
+      (inLu?'disabled':'')+' title="'+(inLu?'In lineup':canAdd?'Add to lineup':'No open slot - lineup full')+'">'+
       (inLu?'&#10003; In LU':canAdd?'+ Add':'Full')+'</button>';
     var tierBtns = showTierBtns
       ? '<div class="tp-tier-btns">'+[1,2,3].map(function(n){
@@ -1297,7 +1301,28 @@
     list.querySelectorAll('[data-tp-add]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var p = topPlayers[btn.getAttribute('data-tp-add')];
-        if (p) { addToLineup(p); renderTopPlayers(); }
+        if (!p) return;
+        if (!isPlayerInLineup(p) && !firstEmptySlotFor(p.position)){
+          // Current lineup full - try to find another lineup with space
+          var found = false;
+          for (var li=0; li<lineups.length; li++){
+            if (li === activeIdx) continue;
+            var savedLineup = lineup;
+            var savedIdx = activeIdx;
+            activeIdx = li; lineup = lineups[li];
+            if (firstEmptySlotFor(p.position)){
+              switchLineup(li);
+              addToLineup(p);
+              found = true;
+              break;
+            }
+            activeIdx = savedIdx; lineup = savedLineup;
+          }
+          if (!found) setMsg('No lineup has an open '+p.position+' slot. Add a new lineup first.');
+        } else {
+          addToLineup(p);
+        }
+        renderTopPlayers();
       });
     });
     list.querySelectorAll('[data-tp-up]').forEach(function(btn){
