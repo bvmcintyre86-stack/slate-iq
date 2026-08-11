@@ -188,6 +188,10 @@
   .lu-tab-rm{margin-left:4px;font-size:13px;opacity:.5;cursor:pointer;vertical-align:middle;}
   .lu-tab-rm:hover{opacity:1;color:#c00;}
   /* tp-add-lu */
+  .tp-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
+  .tp-tab{padding:4px 14px;border-radius:20px;border:1px solid var(--line);background:transparent;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);}
+  .tp-tab.active{background:var(--primary,#1a73e8);color:#fff;border-color:var(--primary,#1a73e8);}
+  .tp-tab:hover{border-color:var(--primary,#1a73e8);color:var(--primary,#1a73e8);}
   .tp-table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;}
   .tp-table thead th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:4px 8px;text-align:center;border-bottom:1px solid var(--line);white-space:nowrap;}
   .tp-table thead th:nth-child(3){text-align:left;}
@@ -792,7 +796,8 @@
           var salary = parseFloat((keys['salary']||'0').toString().replace(/[^0-9.]/g,'')) || 0;
           var fppg = parseFloat(keys['fppg']||'0') || 0;
           var team = normalizeTeam(keys['team']||'');
-          var position = (keys['position']||'').toString().trim().toUpperCase();
+          var rawPos = (keys['position']||'').toString().trim().toUpperCase();
+          var position = rawPos === 'D' ? 'DEF' : rawPos;
           var id = (keys['id']||'').toString().trim();
           return {
             id: id || (name+'|'+team+'|'+position),
