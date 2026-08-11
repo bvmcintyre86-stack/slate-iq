@@ -810,9 +810,44 @@
           };
         }).filter(function(p){return p.name !== 'Unknown' && p.team;});
 
-        clearLineup();
-        document.getElementById('poolStatus').textContent = players.length+' players loaded.';
+        // Update topPlayers with fresh salary/fppg from new CSV (matched by name+team+position)
+        Object.keys(topPlayers).forEach(function(id){
+          var tp = topPlayers[id];
+          var fresh = players.find(function(p){
+            return p.name === tp.name && p.team === tp.team && p.position === tp.position;
+          });
+          if (fresh){
+            tp.salary = fresh.salary;
+            tp.fppg   = fresh.fppg;
+            tp.value  = fresh.value;
+            tp.id     = fresh.id;
+            topPlayers[fresh.id] = tp;
+            if (fresh.id !== id) delete topPlayers[id];
+          }
+        });
+
+        // Update lineup slots with fresh data
+        activeSLOT_DEFS.forEach(function(s){
+          if (lineup[s.key]){
+            var fresh = players.find(function(p){
+              return p.name === lineup[s.key].name && p.team === lineup[s.key].team;
+            });
+            if (fresh) lineup[s.key] = fresh;
+          }
+        });
+
+        var sgT = {};
+        if (slateMode === 'sg' && games.length > 0){
+          games.forEach(function(g){sgT[g.away]=true;sgT[g.home]=true;});
+          var sgCount = players.filter(function(p){return sgT[p.team];}).length;
+          document.getElementById('poolStatus').textContent = sgCount+' players from game teams ('+players.length+' total loaded).';
+        } else {
+          document.getElementById('poolStatus').textContent = players.length+' players loaded.';
+        }
+        populateFilterOptions();
         tagPlayers();
+        renderTopPlayers();
+        refreshLineupUI();
         saveState();
       },
       error:function(err){
