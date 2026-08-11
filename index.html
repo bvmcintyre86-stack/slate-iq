@@ -332,10 +332,6 @@
       <div class="pool-status" id="poolStatus">No file loaded yet.</div>
     </div>
     <input type="file" id="csvFile" accept=".csv" style="display:none;">
-    <div style="margin-top:8px;">
-      <button id="loadRostersBtn">Load 2026 NFL rosters</button>
-      <span class="sub" style="margin-left:8px;">Use before FanDuel posts the slate — loads full player pool from nfl_rosters_2026.js</span>
-    </div>
 
     <div class="filters">
       <input type="text" id="searchBox" placeholder="Search player or team">
@@ -370,7 +366,6 @@
 
 </div>
 
-<script src="nfl_rosters_2026.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script>
 (function(){
@@ -810,40 +805,36 @@
           };
         }).filter(function(p){return p.name !== 'Unknown' && p.team;});
 
-        // Update topPlayers with fresh salary/fppg from new CSV (matched by name+team+position)
-        Object.keys(topPlayers).forEach(function(id){
-          var tp = topPlayers[id];
+        // Refresh topPlayers with updated salary/fppg from new CSV
+        var newTopPlayers = {};
+        Object.values(topPlayers).forEach(function(tp){
           var fresh = players.find(function(p){
             return p.name === tp.name && p.team === tp.team && p.position === tp.position;
+          }) || players.find(function(p){
+            return p.name === tp.name && p.position === tp.position;
           });
           if (fresh){
-            tp.salary = fresh.salary;
-            tp.fppg   = fresh.fppg;
-            tp.value  = fresh.value;
-            tp.id     = fresh.id;
-            topPlayers[fresh.id] = tp;
-            if (fresh.id !== id) delete topPlayers[id];
+            var updated = Object.assign({}, fresh, {tier: tp.tier, rank: tp.rank});
+            newTopPlayers[fresh.id] = updated;
           }
         });
+        topPlayers = newTopPlayers;
 
-        // Update lineup slots with fresh data
-        activeSLOT_DEFS.forEach(function(s){
-          if (lineup[s.key]){
-            var fresh = players.find(function(p){
-              return p.name === lineup[s.key].name && p.team === lineup[s.key].team;
-            });
-            if (fresh) lineup[s.key] = fresh;
-          }
+        // Refresh lineup slots with updated player data
+        lineups.forEach(function(lu){
+          activeSLOT_DEFS.forEach(function(s){
+            if (lu[s.key]){
+              var fresh = players.find(function(p){
+                return p.name === lu[s.key].name && p.team === lu[s.key].team;
+              });
+              if (fresh) lu[s.key] = fresh;
+              else lu[s.key] = null;
+            }
+          });
         });
+        lineup = lineups[activeIdx];
 
-        var sgT = {};
-        if (slateMode === 'sg' && games.length > 0){
-          games.forEach(function(g){sgT[g.away]=true;sgT[g.home]=true;});
-          var sgCount = players.filter(function(p){return sgT[p.team];}).length;
-          document.getElementById('poolStatus').textContent = sgCount+' players from game teams ('+players.length+' total loaded).';
-        } else {
-          document.getElementById('poolStatus').textContent = players.length+' players loaded.';
-        }
+        document.getElementById('poolStatus').textContent = players.length+' players loaded.';
         populateFilterOptions();
         tagPlayers();
         renderTopPlayers();
@@ -1216,21 +1207,6 @@
   }
 
   // ── Load rosters ──────────────────────────────────────────────────────────
-  function loadRosters(){
-    if (typeof NFL_ROSTERS === 'undefined'){
-      document.getElementById('poolStatus').textContent = 'Roster file not found — put nfl_rosters_2026.js in the same folder.';
-      return;
-    }
-    players = NFL_ROSTERS.players.map(function(r){
-      var team = normalizeTeam(r.team);
-      return {id:r.name+'|'+team+'|'+r.pos, name:r.name, position:r.pos, team:team,
-        salary:0, fppg:0, value:0, tag:'unmatched', teamImplied:null};
-    });
-    document.getElementById('poolStatus').textContent =
-      players.length+' players loaded from 2026 NFL rosters ('+(NFL_ROSTERS.meta.pulled||'')+').';
-    populateFilterOptions(); tagPlayers(); renderTopPlayers(); saveState();
-  }
-
   // ── Top Players ────────────────────────────────────────────────────────────
   function renderTPCard(p, showTierBtns, rankNum){
     var t = TAGS[p.tag] || TAGS.unmatched;
@@ -1696,7 +1672,6 @@
   });
 
   document.getElementById('optimizeBtn').addEventListener('click', optimizeRemaining);
-  document.getElementById('loadRostersBtn').addEventListener('click', loadRosters);
   document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
   document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
   document.getElementById('refreshLinesBtn').addEventListener('click', refreshLines);
