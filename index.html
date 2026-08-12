@@ -125,6 +125,10 @@
   .construction-badge{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;min-height:22px;}
   .construction-badge .cb-main{font-size:12px;font-weight:600;padding:3px 10px;border-radius:12px;white-space:nowrap;}
   .construction-badge .cb-note{font-size:11px;color:var(--muted);}
+  .stack-settings{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:10px;padding:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;}
+  .stack-settings select{background:var(--panel-2);color:var(--chalk);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px;}
+  .stack-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--chalk);cursor:pointer;}
+  .stack-chk input{accent-color:var(--teal);}
   .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:8px;}
   .slot-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:70px;position:relative;}
   .slot-card.filled{border-color:var(--gold);}
@@ -317,6 +321,19 @@
       </div>
     </div>
     <div class="construction-badge" id="constructionBadge"></div>
+    <div class="stack-settings" id="stackSettings">
+      <div class="field">
+        <label>Stack level</label>
+        <select id="stackLevelSel">
+          <option value="0">No forced stack</option>
+          <option value="1">QB + 1</option>
+          <option value="2">QB + 2</option>
+          <option value="3">QB + 3</option>
+        </select>
+      </div>
+      <label class="stack-chk"><input type="checkbox" id="bringBackChk"> Require bring-back</label>
+      <label class="stack-chk"><input type="checkbox" id="onslaughtOnlyChk"> Onslaught-tagged team only</label>
+    </div>
     <div class="lineup-msg" id="lineupMsg"></div>
     <div class="slots-grid" id="slotsGrid"></div>
   </section>
@@ -420,6 +437,7 @@
   var activeIdx  = 0;
   var lineup     = lineups[activeIdx];
   var salaryCap  = 60000;
+  var stackSettings = { level: 0, bringBack: false, onslaughtOnly: false };
   var sortKey = 'value';
   var sortDir = 'desc';
   var filterPos = ''; var filterTeam = ''; var filterTag = ''; var filterSearch = ''; var filterMatchup = '';
@@ -770,6 +788,7 @@
           highTotal: document.getElementById('thHighTotal').value
         },
         cap: salaryCap,
+        stackSettings: stackSettings,
         games: games,
         players: players,
         topPlayers: topPlayers,
@@ -816,6 +835,12 @@
       }
       salaryCap = state.cap || 60000;
       document.getElementById('capInput').value = salaryCap;
+      if (state.stackSettings){
+        stackSettings = Object.assign({level:0,bringBack:false,onslaughtOnly:false}, state.stackSettings);
+        document.getElementById('stackLevelSel').value = stackSettings.level;
+        document.getElementById('bringBackChk').checked = stackSettings.bringBack;
+        document.getElementById('onslaughtOnlyChk').checked = stackSettings.onslaughtOnly;
+      }
       games = (state.games || []).map(function(g){
         g.away = normalizeTeam(g.away); g.home = normalizeTeam(g.home); return g;
       });
@@ -1098,16 +1123,97 @@
     var pool = candidatePool.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
     var fullPool = players.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
 
-    // Phase 1: guarantee a feasible lineup by filling every empty slot with the
-    // CHEAPEST eligible option (Top Players preferred, full pool as fallback).
+    var picks = {};
+    var slotTeamConstraint = {};
+    var stackNote = null;
+
+    // Phase 0: reserve stack / bring-back slots per the Stack Settings panel.
+    // Only applies to Main Slate, and only once a QB is already in the lineup
+    // (we build stacks around your QB choice, not the other way around).
+    var wantsStack = slateMode === 'main' && (stackSettings.level > 0 || stackSettings.bringBack);
+    if (wantsStack && !lineup.QB){
+      stackNote = 'Add a QB to your lineup first to apply stack settings.';
+    } else if (wantsStack && lineup.QB){
+      var qb = lineup.QB;
+      if (stackSettings.onslaughtOnly && qb.tag !== 'onslaught'){
+        stackNote = qb.team + ' isn\'t tagged Onslaught, so the stack wasn\'t forced this run.';
+      } else {
+        var corrPositions = ['WR','TE','RB'];
+        var corrSlots = emptySlots.filter(function(s){
+          return corrPositions.some(function(pos){ return s.eligible.indexOf(pos) !== -1; });
+        }).sort(function(a,b){ return a.eligible.length - b.eligible.length; });
+
+        // Stack: QB + N pass catchers from the QB's team
+        if (stackSettings.level > 0){
+          var stackTeamPool = pool.filter(function(p){
+            return p.team === qb.team && p.id !== qb.id && corrPositions.indexOf(p.position) !== -1;
+          });
+          if (!stackTeamPool.length){
+            stackTeamPool = fullPool.filter(function(p){
+              return p.team === qb.team && p.id !== qb.id && corrPositions.indexOf(p.position) !== -1;
+            });
+          }
+          var assigned = 0;
+          for (var si=0; si<corrSlots.length && assigned<stackSettings.level; si++){
+            var s1 = corrSlots[si];
+            if (lineup[s1.key]) continue;
+            var opts1 = stackTeamPool.filter(function(p){
+              return s1.eligible.indexOf(p.position)!==-1 && !picks[p.id];
+            });
+            if (!opts1.length) continue;
+            var cheap1 = opts1.reduce(function(m,p){return p.salary<m.salary?p:m;}, opts1[0]);
+            picks[cheap1.id] = true;
+            lineup[s1.key] = cheap1;
+            slotTeamConstraint[s1.key] = qb.team;
+            assigned++;
+          }
+          if (assigned < stackSettings.level){
+            stackNote = 'Could only find ' + assigned + ' of ' + stackSettings.level + ' stack piece(s) for ' + qb.team + '.';
+          }
+        }
+
+        // Bring-back: 1 player from the QB's opponent
+        if (stackSettings.bringBack && qb.oppTeam){
+          var bbPool = pool.filter(function(p){
+            return p.team === qb.oppTeam && corrPositions.indexOf(p.position) !== -1;
+          });
+          if (!bbPool.length){
+            bbPool = fullPool.filter(function(p){
+              return p.team === qb.oppTeam && corrPositions.indexOf(p.position) !== -1;
+            });
+          }
+          var bbSlot = null, bbPlayer = null;
+          for (var bi=0; bi<corrSlots.length; bi++){
+            var s2 = corrSlots[bi];
+            if (lineup[s2.key]) continue;
+            var opts2 = bbPool.filter(function(p){ return s2.eligible.indexOf(p.position)!==-1 && !picks[p.id]; });
+            if (opts2.length){
+              bbSlot = s2;
+              bbPlayer = opts2.reduce(function(m,p){return p.salary<m.salary?p:m;}, opts2[0]);
+              break;
+            }
+          }
+          if (bbSlot){
+            picks[bbPlayer.id] = true;
+            lineup[bbSlot.key] = bbPlayer;
+            slotTeamConstraint[bbSlot.key] = qb.oppTeam;
+          } else {
+            stackNote = (stackNote ? stackNote + ' ' : '') + 'No bring-back candidate found for ' + qb.oppTeam + '.';
+          }
+        }
+      }
+    }
+
+    // Phase 1: guarantee a feasible lineup by filling every remaining empty slot
+    // with the CHEAPEST eligible option (Top Players preferred, full pool as fallback).
     // Process the most-constrained slots (fewest eligible positions) first so
     // scarce cheap players at narrow slots aren't grabbed by a flexible slot first.
     var order = emptySlots.slice().sort(function(a,b){
       return (a.eligible.length - b.eligible.length);
     });
-    var picks = {};
     var unfilled = [];
     order.forEach(function(slot){
+      if (lineup[slot.key]) return; // already assigned in Phase 0
       var candidates = pool.filter(function(p){
         return slot.eligible.indexOf(p.position)!==-1 && !picks[p.id];
       });
@@ -1129,8 +1235,8 @@
     }
 
     // Phase 2: greedily upgrade picks (highest fppg gain per swap) as long as
-    // the swap keeps the lineup under the cap. Safe by construction - never
-    // exceeds salaryCap since every swap is individually cap-checked.
+    // the swap keeps the lineup under the cap. Slots reserved in Phase 0 can only
+    // upgrade within the same required team, preserving the stack/bring-back.
     var improved = true;
     var guard = 0;
     while (improved && guard < 300){
@@ -1143,7 +1249,11 @@
       emptySlots.forEach(function(slot){
         var current = lineup[slot.key];
         if (!current) return;
-        var opts = currentPool.filter(function(p){return slot.eligible.indexOf(p.position)!==-1;});
+        var reqTeam = slotTeamConstraint[slot.key];
+        var opts = currentPool.filter(function(p){
+          if (reqTeam && p.team !== reqTeam) return false;
+          return slot.eligible.indexOf(p.position)!==-1;
+        });
         opts.forEach(function(cand){
           var delta = cand.salary - current.salary;
           if (totalSalary + delta <= salaryCap && (cand.fppg - current.fppg) > bestGain){
@@ -1159,7 +1269,10 @@
       }
     }
 
-    setMsg(unfilled.length ? ('Could not fill: ' + unfilled.join(', ')) : '');
+    var msgParts = [];
+    if (stackNote) msgParts.push(stackNote);
+    if (unfilled.length) msgParts.push('Could not fill: ' + unfilled.join(', '));
+    setMsg(msgParts.join(' '));
     refreshLineupUI();
   }
 
@@ -1756,6 +1869,8 @@
     if (luSub) luSub.textContent = mode==='sg'
       ? 'Single Game: 1 MVP (1.5x pts) + 4 FLEX. Roster from one game only.'
       : 'Build up to 20 lineups. Switch between them with the tabs.';
+    var stackEl = document.getElementById('stackSettings');
+    if (stackEl) stackEl.style.display = mode==='sg' ? 'none' : 'flex';
     renderGames();
     if (players.length){ populateFilterOptions(); tagPlayers(); }
     else { renderTable(); document.getElementById('poolStatus').textContent = players.length ? players.length+' players loaded.' : 'No players loaded.'; }
@@ -1765,6 +1880,18 @@
 
   document.getElementById('mainSlateBtn').addEventListener('click', function(){ switchMode('main'); });
   document.getElementById('singleGameBtn').addEventListener('click', function(){ switchMode('sg'); });
+  document.getElementById('stackLevelSel').addEventListener('change', function(){
+    stackSettings.level = parseInt(this.value,10) || 0;
+    saveState();
+  });
+  document.getElementById('bringBackChk').addEventListener('change', function(){
+    stackSettings.bringBack = this.checked;
+    saveState();
+  });
+  document.getElementById('onslaughtOnlyChk').addEventListener('change', function(){
+    stackSettings.onslaughtOnly = this.checked;
+    saveState();
+  });
 
   document.getElementById('addGameBtn').addEventListener('click', addGame);
   document.getElementById('thBlowout').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
@@ -1827,6 +1954,9 @@
   if (players.length) { populateFilterOptions(); tagPlayers(); } else { renderTable(); }
   renderLineupSlots();
   renderLineupBar();
+  renderConstructionBadge();
+  var stackElInit = document.getElementById('stackSettings');
+  if (stackElInit) stackElInit.style.display = slateMode==='sg' ? 'none' : 'flex';
 
 })();
 </script>
