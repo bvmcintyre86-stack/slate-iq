@@ -1011,56 +1011,50 @@
     if (!emptySlots.length){ setMsg('Lineup is already full. Clear a slot to optimize around it.'); return; }
 
     var usedIds = {};
-    SLOT_DEFS.forEach(function(s){ if (lineup[s.key]) usedIds[lineup[s.key].id] = true; });
+    activeSLOT_DEFS.forEach(function(s){ if (lineup[s.key]) usedIds[lineup[s.key].id] = true; });
     var pool = candidatePool.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
     var fullPool = players.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
 
+    // Phase 1: guarantee a feasible lineup by filling every empty slot with the
+    // CHEAPEST eligible option (Top Players preferred, full pool as fallback).
+    // Process the most-constrained slots (fewest eligible positions) first so
+    // scarce cheap players at narrow slots aren't grabbed by a flexible slot first.
     var order = emptySlots.slice().sort(function(a,b){
       return (a.eligible.length - b.eligible.length);
     });
     var picks = {};
-    var remaining = order.slice();
-    var budget = salaryCap - salaryUsed();
-
-    for (var i=0;i<order.length;i++){
-      var slot = order[i];
-      var stillAfter = remaining.filter(function(s){return s.key!==slot.key;});
+    var unfilled = [];
+    order.forEach(function(slot){
       var candidates = pool.filter(function(p){
         return slot.eligible.indexOf(p.position)!==-1 && !picks[p.id];
       });
       if (!candidates.length){
-        // Top Players pool has no eligible player left for this slot - fall back to full pool
         candidates = fullPool.filter(function(p){
           return slot.eligible.indexOf(p.position)!==-1 && !picks[p.id];
         });
       }
-      var minRestCost = stillAfter.reduce(function(sum, s){
-        var opts = pool.filter(function(p){return s.eligible.indexOf(p.position)!==-1 && !picks[p.id];});
-        if (!opts.length){
-          opts = fullPool.filter(function(p){return s.eligible.indexOf(p.position)!==-1 && !picks[p.id];});
-        }
-        if (!opts.length) return sum;
-        var cheapest = opts.reduce(function(m,p){return p.salary<m.salary?p:m;}, opts[0]);
-        return sum + cheapest.salary;
-      }, 0);
-      var hardAffordable = candidates.filter(function(p){ return p.salary <= budget; });
-      var softAffordable = hardAffordable.filter(function(p){ return p.salary <= (budget - minRestCost); });
-      var pickFrom = softAffordable.length ? softAffordable : hardAffordable;
-      if (!pickFrom.length){ continue; }
-      var best = pickFrom.reduce(function(m,p){ return p.fppg > m.fppg ? p : m; }, pickFrom[0]);
-      picks[best.id] = true;
-      lineup[slot.key] = best;
-      budget -= best.salary;
-      remaining = remaining.filter(function(s){return s.key!==slot.key;});
+      if (!candidates.length){ unfilled.push(slot.label); return; }
+      var cheapest = candidates.reduce(function(m,p){ return p.salary<m.salary?p:m; }, candidates[0]);
+      picks[cheapest.id] = true;
+      lineup[slot.key] = cheapest;
+    });
+
+    if (salaryUsed() > salaryCap){
+      setMsg('Even the cheapest eligible players exceed the salary cap - check your player pool.');
+      refreshLineupUI();
+      return;
     }
 
+    // Phase 2: greedily upgrade picks (highest fppg gain per swap) as long as
+    // the swap keeps the lineup under the cap. Safe by construction - never
+    // exceeds salaryCap since every swap is individually cap-checked.
     var improved = true;
     var guard = 0;
     while (improved && guard < 300){
       improved = false; guard++;
       var totalSalary = salaryUsed();
       var currentPool = candidatePool.filter(function(p){
-        return !SLOT_DEFS.some(function(s){return lineup[s.key] && lineup[s.key].id===p.id;});
+        return !activeSLOT_DEFS.some(function(s){return lineup[s.key] && lineup[s.key].id===p.id;});
       });
       var bestGain = 0, bestSlotKey = null, bestCandidate = null;
       emptySlots.forEach(function(slot){
@@ -1082,7 +1076,7 @@
       }
     }
 
-    setMsg('');
+    setMsg(unfilled.length ? ('Could not fill: ' + unfilled.join(', ')) : '');
     refreshLineupUI();
   }
 
