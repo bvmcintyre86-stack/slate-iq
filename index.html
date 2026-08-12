@@ -1111,6 +1111,17 @@
     });
   }
 
+  // Blends your manual Top Players tier/rank into a single comparable score.
+  // Tiered players get a strong bonus (Tier 1 > Tier 2 > Tier 3) so the optimizer
+  // treats your rankings as the primary signal, with rank breaking ties within a
+  // tier and raw fppg still deciding among untiered/fallback players.
+  function playerScore(p){
+    var tier = p.tier || 0;
+    var tierBonus = tier===1 ? 100 : tier===2 ? 50 : tier===3 ? 20 : 0;
+    var rank = p.rank || 0;
+    return p.fppg + tierBonus - (rank * 0.1);
+  }
+
   function optimizeRemaining(){
     var emptySlots = activeSLOT_DEFS.filter(function(s){return !lineup[s.key];});
     // Use Top Players as the candidate pool if any are starred, otherwise use full player pool
@@ -1256,8 +1267,9 @@
         });
         opts.forEach(function(cand){
           var delta = cand.salary - current.salary;
-          if (totalSalary + delta <= salaryCap && (cand.fppg - current.fppg) > bestGain){
-            bestGain = cand.fppg - current.fppg;
+          var gain = playerScore(cand) - playerScore(current);
+          if (totalSalary + delta <= salaryCap && gain > bestGain){
+            bestGain = gain;
             bestSlotKey = slot.key;
             bestCandidate = cand;
           }
