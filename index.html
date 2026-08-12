@@ -1013,6 +1013,7 @@
     var usedIds = {};
     SLOT_DEFS.forEach(function(s){ if (lineup[s.key]) usedIds[lineup[s.key].id] = true; });
     var pool = candidatePool.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
+    var fullPool = players.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
 
     var order = emptySlots.slice().sort(function(a,b){
       return (a.eligible.length - b.eligible.length);
@@ -1027,8 +1028,17 @@
       var candidates = pool.filter(function(p){
         return slot.eligible.indexOf(p.position)!==-1 && !picks[p.id];
       });
+      var usingFallback = false;
+      if (!candidates.length){
+        // Top Players pool has no eligible player left for this slot - fall back to full pool
+        candidates = fullPool.filter(function(p){
+          return slot.eligible.indexOf(p.position)!==-1 && !picks[p.id];
+        });
+        usingFallback = true;
+      }
+      var restPool = usingFallback ? fullPool : pool;
       var minRestCost = stillAfter.reduce(function(sum, s){
-        var opts = pool.filter(function(p){return s.eligible.indexOf(p.position)!==-1 && !picks[p.id];});
+        var opts = restPool.filter(function(p){return s.eligible.indexOf(p.position)!==-1 && !picks[p.id];});
         if (!opts.length) return sum;
         var cheapest = opts.reduce(function(m,p){return p.salary<m.salary?p:m;}, opts[0]);
         return sum + cheapest.salary;
