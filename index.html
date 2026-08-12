@@ -1281,9 +1281,53 @@
       }
     }
 
+    // Phase 3: salary floor enforcement. The quality-upgrade pass above can
+    // leave cap space unused if a cheaper player scores nearly as well - but
+    // you want 99%+ cap utilization every time. Swap toward pricier eligible
+    // options (biggest salary jump first, without busting the cap) until we're
+    // in the target range. Slots reserved in Phase 0 stay team-constrained.
+    var salaryFloor = salaryCap - 300;
+    var floorGuard = 0;
+    while (salaryUsed() < salaryFloor && floorGuard < 300){
+      floorGuard++;
+      var totalSalary3 = salaryUsed();
+      var currentPool3 = candidatePool.filter(function(p){
+        return !activeSLOT_DEFS.some(function(s){return lineup[s.key] && lineup[s.key].id===p.id;});
+      });
+      var bestDelta = 0, bestSlotKey3 = null, bestCandidate3 = null, bestScoreDelta = -Infinity;
+      emptySlots.forEach(function(slot){
+        var current = lineup[slot.key];
+        if (!current) return;
+        var reqTeam = slotTeamConstraint[slot.key];
+        var opts = currentPool3.filter(function(p){
+          if (reqTeam && p.team !== reqTeam) return false;
+          return slot.eligible.indexOf(p.position)!==-1;
+        });
+        opts.forEach(function(cand){
+          var delta = cand.salary - current.salary;
+          if (delta <= 0 || totalSalary3 + delta > salaryCap) return;
+          var scoreDelta = playerScore(cand) - playerScore(current);
+          if (delta > bestDelta || (delta === bestDelta && scoreDelta > bestScoreDelta)){
+            bestDelta = delta;
+            bestSlotKey3 = slot.key;
+            bestCandidate3 = cand;
+            bestScoreDelta = scoreDelta;
+          }
+        });
+      });
+      if (bestSlotKey3){
+        lineup[bestSlotKey3] = bestCandidate3;
+      } else {
+        break; // no higher-priced eligible replacement exists anywhere
+      }
+    }
+
     var msgParts = [];
     if (stackNote) msgParts.push(stackNote);
     if (unfilled.length) msgParts.push('Could not fill: ' + unfilled.join(', '));
+    if (salaryUsed() < salaryFloor){
+      msgParts.push('Could not reach the ' + money(salaryFloor) + ' salary floor - no higher-priced eligible replacements available.');
+    }
     setMsg(msgParts.join(' '));
     refreshLineupUI();
   }
