@@ -122,6 +122,9 @@
   .lineup-stat .val.over{color:var(--brick);}
   .lineup-actions{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;}
   .lineup-msg{font-size:12px;color:var(--amber);min-height:16px;margin-bottom:8px;}
+  .construction-badge{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;min-height:22px;}
+  .construction-badge .cb-main{font-size:12px;font-weight:600;padding:3px 10px;border-radius:12px;white-space:nowrap;}
+  .construction-badge .cb-note{font-size:11px;color:var(--muted);}
   .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:8px;}
   .slot-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:70px;position:relative;}
   .slot-card.filled{border-color:var(--gold);}
@@ -313,6 +316,7 @@
         <button id="copyLineupBtn">Copy lineup</button>
       </div>
     </div>
+    <div class="construction-badge" id="constructionBadge"></div>
     <div class="lineup-msg" id="lineupMsg"></div>
     <div class="slots-grid" id="slotsGrid"></div>
   </section>
@@ -664,6 +668,84 @@
     renderTable();
   }
 
+  // ── Lineup construction (stack / bring-back / onslaught / shootout) ─────
+  function lineupConstruction(){
+    var filled = activeSLOT_DEFS
+      .filter(function(s){return lineup[s.key];})
+      .map(function(s){return {slot:s, player:lineup[s.key]};});
+    if (!filled.length) return null;
+
+    var teamCounts = {};
+    filled.forEach(function(f){ teamCounts[f.player.team] = (teamCounts[f.player.team]||0) + 1; });
+    var teams = Object.keys(teamCounts);
+
+    var result = {
+      teamCounts: teamCounts,
+      stackCount: 0, stackTeam: null,
+      bringBack: false, bringBackTeam: null, bringBackCount: 0,
+      onslaught: false, onslaughtTeam: null,
+      shootoutBuild: false,
+      envNote: null,
+      label: 'No stack'
+    };
+
+    var qbEntry = filled.find(function(f){ return f.player.position === 'QB'; });
+    if (qbEntry){
+      var qb = qbEntry.player;
+      var passCatchers = filled.filter(function(f){
+        return f.player.team === qb.team && f.player.id !== qb.id &&
+          ['WR','TE','RB'].indexOf(f.player.position) !== -1;
+      });
+      result.stackCount = passCatchers.length;
+      result.stackTeam = qb.team;
+      if (qb.oppTeam){
+        var bb = filled.filter(function(f){ return f.player.team === qb.oppTeam; });
+        result.bringBack = bb.length > 0;
+        result.bringBackTeam = qb.oppTeam;
+        result.bringBackCount = bb.length;
+      }
+      if (qb.tag && TAGS[qb.tag]) result.envNote = TAGS[qb.tag];
+    }
+
+    // Onslaught / shootout builds are a Single Game concept (5 total roster spots, 1 game)
+    if (slateMode === 'sg'){
+      var maxTeam = teams.reduce(function(m,t){ return teamCounts[t] > teamCounts[m] ? t : m; }, teams[0]);
+      if (teamCounts[maxTeam] >= 4){
+        result.onslaught = true;
+        result.onslaughtTeam = maxTeam;
+      } else if (teams.length === 2 && filled.length >= 4){
+        result.shootoutBuild = true;
+      }
+    }
+
+    if (slateMode === 'sg' && result.onslaught){
+      result.label = result.onslaughtTeam + ' Onslaught (' + teamCounts[result.onslaughtTeam] + '/' + filled.length + ')';
+    } else if (slateMode === 'sg' && result.shootoutBuild){
+      result.label = 'Shootout build (' + teams.join(' / ') + ')';
+    } else if (result.stackCount > 0 && result.bringBack){
+      result.label = (result.stackCount+1) + 'x Stack (' + result.stackTeam + ') + Bring-back (' + result.bringBackTeam + ')';
+    } else if (result.stackCount > 0){
+      result.label = (result.stackCount+1) + 'x Stack (' + result.stackTeam + ')';
+    } else if (qbEntry){
+      result.label = 'Naked QB (' + qbEntry.player.team + ', no stack)';
+    }
+
+    return result;
+  }
+
+  function renderConstructionBadge(){
+    var el = document.getElementById('constructionBadge');
+    if (!el) return;
+    var c = lineupConstruction();
+    if (!c){ el.innerHTML = ''; return; }
+    var color = 'var(--muted)', bg = 'var(--panel-2)';
+    if (c.onslaught || (c.stackCount > 0 && c.bringBack)) { color = 'var(--green)'; bg = 'var(--green-bg)'; }
+    else if (c.shootoutBuild || c.stackCount > 0) { color = 'var(--teal)'; bg = 'var(--teal-bg)'; }
+    var html = '<span class="cb-main" style="color:'+color+';background:'+bg+';">'+c.label+'</span>';
+    if (c.envNote){ html += '<span class="cb-note">'+c.envNote.note+'</span>'; }
+    el.innerHTML = html;
+  }
+
   var TEAM_ALIASES = {
     'JAX':'JAC', 'WSH':'WAS', 'WFT':'WAS',
     'KAN':'KC', 'GNB':'GB', 'SFO':'SF', 'TAM':'TB',
@@ -962,6 +1044,7 @@
     renderLuTabs();
     renderLineupSlots();
     renderLineupBar();
+    renderConstructionBadge();
     renderTable();
     renderTopPlayers();
     saveState();
