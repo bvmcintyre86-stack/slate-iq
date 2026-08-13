@@ -1115,6 +1115,13 @@
   // Tiered players get a strong bonus (Tier 1 > Tier 2 > Tier 3) so the optimizer
   // treats your rankings as the primary signal, with rank breaking ties within a
   // tier and raw fppg still deciding among untiered/fallback players.
+  // Effective cap cost of a player in a given slot - applies the Single Game
+  // MVP 1.5x multiplier, matching salaryUsed()'s logic, so the optimizer's
+  // swap math never under-counts what an MVP swap actually costs against the cap.
+  function slotSalary(slot, p){
+    return (slateMode === 'sg' && slot.mvp) ? Math.round(p.salary * 1.5) : p.salary;
+  }
+
   function playerScore(p){
     var tier = p.tier || 0;
     var tierBonus = tier===1 ? 100 : tier===2 ? 50 : tier===3 ? 20 : 0;
@@ -1266,7 +1273,7 @@
           return slot.eligible.indexOf(p.position)!==-1;
         });
         opts.forEach(function(cand){
-          var delta = cand.salary - current.salary;
+          var delta = slotSalary(slot, cand) - slotSalary(slot, current);
           var gain = playerScore(cand) - playerScore(current);
           if (totalSalary + delta <= salaryCap && gain > bestGain){
             bestGain = gain;
@@ -1304,7 +1311,7 @@
           return slot.eligible.indexOf(p.position)!==-1;
         });
         opts.forEach(function(cand){
-          var delta = cand.salary - current.salary;
+          var delta = slotSalary(slot, cand) - slotSalary(slot, current);
           if (delta <= 0 || totalSalary3 + delta > salaryCap) return;
           var scoreDelta = playerScore(cand) - playerScore(current);
           if (delta > bestDelta || (delta === bestDelta && scoreDelta > bestScoreDelta)){
