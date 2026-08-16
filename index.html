@@ -504,8 +504,9 @@
     var cursor = null;
     var pageGuard = 0;
     do {
-      var peopleUrl = workerUrl + '/market/nfl/props/people' + (cursor ? ('?cursor=' + encodeURIComponent(cursor)) : '');
-      var peopleResp = await fetch(peopleUrl).then(function(r){return r.json();}).catch(function(){return null;});
+      var cbParam = cursor ? ('&cursor=' + encodeURIComponent(cursor)) : '';
+      var peopleUrl = workerUrl + '/market/nfl/props/people?_cb=' + Date.now() + cbParam;
+      var peopleResp = await fetch(peopleUrl, {cache: 'no-store'}).then(function(r){return r.json();}).catch(function(){return null;});
       if (!peopleResp || !peopleResp.data) break;
       Object.assign(people, peopleResp.data);
       cursor = peopleResp.pagination ? peopleResp.pagination.nextCursor : null;
@@ -519,9 +520,13 @@
 
     function sleep(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
 
+    // Cache-bust every call - a timestamp query param plus cache:'no-store' forces
+    // a genuinely fresh request per betTypeId, rather than a cached response from
+    // an earlier call in this same loop (browser cache and/or edge cache in front
+    // of the Worker can otherwise key on the URL in a way that ignores betTypeId).
     async function fetchOdds(betTypeId){
-      var url = workerUrl + '/market/nfl/props/odds?betTypeId=' + betTypeId;
-      return fetch(url).then(function(r){return r.json();}).catch(function(){return null;});
+      var url = workerUrl + '/market/nfl/props/odds?betTypeId=' + betTypeId + '&_cb=' + Date.now();
+      return fetch(url, {cache: 'no-store'}).then(function(r){return r.json();}).catch(function(){return null;});
     }
 
     for (var k=0;k<keys.length;k++){
