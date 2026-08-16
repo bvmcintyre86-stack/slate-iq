@@ -291,6 +291,17 @@
         <input id="unabatedWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://unabated-proxy.bvmcintyre86.workers.dev">
         <span id="unabatedStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
       </div>
+      <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);margin-top:4px;">
+        <button id="loadPropsBtn">Load player props</button>
+        <span style="color:var(--line);padding:0 4px;">|</span>
+        <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Projection source</label>
+        <select id="projSourceSel" style="font-size:12px;">
+          <option value="fppg">FanDuel fppg</option>
+          <option value="market">Market (props)</option>
+          <option value="blend">Blend (50/50)</option>
+        </select>
+        <span id="propsStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+      </div>
     </div>
 
     <div class="legend" id="legend"></div>
@@ -439,6 +450,121 @@
   var lineup     = lineups[activeIdx];
   var salaryCap  = 60000;
   var stackSettings = { level: 0, bringBack: false, onslaughtOnly: false };
+
+  // ── Market-based projections (Unabated player props) ─────────────────────
+  var SPORTSBOOK_PRIORITY = [1, 2, 86, 4, 20, 17]; // DK, FanDuel, Fanatics, BetMGM, Caesars, BetRivers
+  var PROP_BET_TYPES = {
+    passYards:    { id: 14,  kind: 'yardage', mult: 0.04 },
+    passAttempts: { id: 61,  kind: 'yardage', mult: 0 },     // informational only, no direct point value
+    passComp:     { id: 13,  kind: 'yardage', mult: 0 },
+    passTD:       { id: 65,  kind: 'binary',  mult: 4 },
+    rushYards:    { id: 12,  kind: 'yardage', mult: 0.1 },
+    rushAttempts: { id: 11,  kind: 'yardage', mult: 0 },
+    rushTD:       { id: 102, kind: 'binary',  mult: 6 },
+    recYards:     { id: 16,  kind: 'yardage', mult: 0.1 },
+    receptions:   { id: 15,  kind: 'yardage', mult: 0.5 },   // FanDuel standard (0.5 PPR)
+    attd:         { id: 216, kind: 'binary',  mult: 6 }
+  };
+  var marketProjections = {}; // normalized "first last" -> {fp, breakdown, personId}
+  var projSource = 'fppg';    // 'fppg' | 'market' | 'blend'
+
+  function normalizeName(n){
+    return (n || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g,' ').trim();
+  }
+
+  function americanToProb(price){
+    price = Number(price);
+    if (!price && price !== 0) return null;
+    return price > 0 ? 100 / (price + 100) : (-price) / ((-price) + 100);
+  }
+
+  // Walks the fallback order (DK -> FD -> Fanatics -> BetMGM -> Caesars -> BetRivers)
+  // and returns the first sportsbook that has actually posted a line for this player/stat.
+  function pickBestLine(marketSourceLines){
+    if (!marketSourceLines) return null;
+    for (var i=0;i<SPORTSBOOK_PRIORITY.length;i++){
+      var srcId = String(SPORTSBOOK_PRIORITY[i]);
+      var line = marketSourceLines[srcId];
+      if (!line || line.statusId === 3) continue; // 3 = suspended/unavailable
+      var alt = (line.alternateLines && line.alternateLines.length) ? line.alternateLines[0] : line;
+      if (alt.price === undefined || alt.price === null) continue;
+      return { price: alt.price, points: (alt.points !== undefined ? alt.points : line.points), sourceId: srcId };
+    }
+    return null;
+  }
+
+  async function fetchMarketProjections(){
+    var workerUrl = (document.getElementById('unabatedWorkerUrl').value||'').trim().replace(/\/+$/,'');
+    var statusEl = document.getElementById('propsStatus');
+    if (!workerUrl){ setPropsStatus('Set your Proxy URL above first.'); return; }
+
+    setPropsStatus('Loading people...');
+    var peopleResp = await fetch(workerUrl + '/market/nfl/props/people').then(function(r){return r.json();}).catch(function(){return null;});
+    var people = (peopleResp && peopleResp.data) || {};
+
+    var accum = {}; // personId -> {stats:{}}
+    var keys = Object.keys(PROP_BET_TYPES);
+    for (var k=0;k<keys.length;k++){
+      var key = keys[k];
+      var betTypeId = PROP_BET_TYPES[key].id;
+      setPropsStatus('Loading ' + key + ' (' + (k+1) + '/' + keys.length + ')...');
+      var resp = await fetch(workerUrl + '/market/nfl/props/odds?betTypeId=' + betTypeId).then(function(r){return r.json();}).catch(function(){return null;});
+      var periods = resp && resp.data && resp.data.odds && resp.data.odds.nfl && resp.data.odds.nfl.periodTypes;
+      var game = periods && periods.game;
+      if (!game || !game.pregame) continue;
+      for (var eventKey in game.pregame){
+        var entry = game.pregame[eventKey];
+        if (entry.betSubType) continue; // skip alt-line variants for this first pass
+        var sides = entry.sides || {};
+        for (var sideKey in sides){
+          var side = sides[sideKey];
+          var personId = side.personId;
+          if (!personId) continue;
+          var best = pickBestLine(side.marketSourceLines);
+          if (!best) continue;
+          if (!accum[personId]) accum[personId] = {};
+          accum[personId][key] = best;
+        }
+      }
+    }
+
+    // Convert accumulated lines into fantasy-point projections
+    marketProjections = {};
+    var matched = 0;
+    for (var pid in accum){
+      var person = people[pid];
+      if (!person) continue;
+      var stats = accum[pid];
+      var fp = 0;
+      var breakdown = {};
+      for (var sk in PROP_BET_TYPES){
+        var cfg = PROP_BET_TYPES[sk];
+        var line = stats[sk];
+        if (!line || !cfg.mult) continue;
+        var contribution;
+        if (cfg.kind === 'yardage'){
+          contribution = (line.points || 0) * cfg.mult; // O/U line as expected-value proxy
+        } else {
+          var prob = americanToProb(line.price);
+          contribution = prob === null ? 0 : prob * cfg.mult;
+        }
+        fp += contribution;
+        breakdown[sk] = { value: contribution, sourceId: line.sourceId };
+      }
+      var name = normalizeName(person.firstName + ' ' + person.lastName);
+      marketProjections[name] = { fp: fp, breakdown: breakdown, personId: pid };
+      matched++;
+    }
+
+    setPropsStatus(matched + ' players loaded with market projections.');
+    renderTable();
+    saveState();
+  }
+
+  function setPropsStatus(msg){
+    var el = document.getElementById('propsStatus');
+    if (el) el.textContent = msg;
+  }
   var sortKey = 'value';
   var sortDir = 'desc';
   var filterPos = ''; var filterTeam = ''; var filterTag = ''; var filterSearch = ''; var filterMatchup = '';
@@ -791,6 +917,7 @@
         },
         cap: salaryCap,
         stackSettings: stackSettings,
+        projSource: projSource,
         games: games,
         players: players,
         topPlayers: topPlayers,
@@ -842,6 +969,11 @@
         document.getElementById('stackLevelSel').value = stackSettings.level;
         document.getElementById('bringBackChk').checked = stackSettings.bringBack;
         document.getElementById('onslaughtOnlyChk').checked = stackSettings.onslaughtOnly;
+      }
+      if (state.projSource){
+        projSource = state.projSource;
+        var projSel = document.getElementById('projSourceSel');
+        if (projSel) projSel.value = projSource;
       }
       games = (state.games || []).map(function(g){
         g.away = normalizeTeam(g.away); g.home = normalizeTeam(g.home); return g;
@@ -1128,7 +1260,17 @@
     var tier = p.tier || 0;
     var tierBonus = tier===1 ? 100 : tier===2 ? 50 : tier===3 ? 20 : 0;
     var rank = p.rank || 0;
-    return p.fppg + tierBonus - (rank * 0.1);
+    return effectiveFppg(p) + tierBonus - (rank * 0.1);
+  }
+
+  // Blends FanDuel's own fppg with the market-derived projection (if loaded),
+  // per the Projection Source dropdown. Falls back to fppg alone whenever a
+  // player has no market data yet (partial props coverage is expected/common).
+  function effectiveFppg(p){
+    var mp = marketProjections[normalizeName(p.name)];
+    if (!mp || projSource === 'fppg') return p.fppg;
+    if (projSource === 'market') return mp.fp;
+    return (p.fppg + mp.fp) / 2; // blend
   }
 
   // Nudges stack-slot picks toward pass catchers (WR/TE) over RBs, since a
@@ -1983,6 +2125,14 @@
   });
   document.getElementById('onslaughtOnlyChk').addEventListener('change', function(){
     stackSettings.onslaughtOnly = this.checked;
+    saveState();
+  });
+  document.getElementById('loadPropsBtn').addEventListener('click', function(){
+    fetchMarketProjections();
+  });
+  document.getElementById('projSourceSel').addEventListener('change', function(){
+    projSource = this.value;
+    renderTable();
     saveState();
   });
 
