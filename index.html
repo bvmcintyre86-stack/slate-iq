@@ -392,6 +392,7 @@
             <th data-key="team">Team</th>
             <th data-key="salary">Salary</th>
             <th data-key="fppg">FPPG</th>
+            <th>Mkt</th>
             <th data-key="value">Value</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="tag">Script</th>
@@ -499,8 +500,18 @@
     if (!workerUrl){ setPropsStatus('Set your Proxy URL above first.'); return; }
 
     setPropsStatus('Loading people...');
-    var peopleResp = await fetch(workerUrl + '/market/nfl/props/people').then(function(r){return r.json();}).catch(function(){return null;});
-    var people = (peopleResp && peopleResp.data) || {};
+    var people = {};
+    var cursor = null;
+    var pageGuard = 0;
+    do {
+      var peopleUrl = workerUrl + '/market/nfl/props/people' + (cursor ? ('?cursor=' + encodeURIComponent(cursor)) : '');
+      var peopleResp = await fetch(peopleUrl).then(function(r){return r.json();}).catch(function(){return null;});
+      if (!peopleResp || !peopleResp.data) break;
+      Object.assign(people, peopleResp.data);
+      cursor = peopleResp.pagination ? peopleResp.pagination.nextCursor : null;
+      pageGuard++;
+      setPropsStatus('Loading people... (' + Object.keys(people).length + ' so far)');
+    } while (cursor && pageGuard < 30);
 
     var accum = {}; // personId -> {stats:{}}
     var keys = Object.keys(PROP_BET_TYPES);
@@ -556,7 +567,7 @@
       matched++;
     }
 
-    setPropsStatus(matched + ' players loaded with market projections.');
+    setPropsStatus(matched + ' of ' + Object.keys(accum).length + ' players matched (' + Object.keys(people).length + ' names loaded).');
     renderTable();
     saveState();
   }
@@ -1622,12 +1633,14 @@
       } else {
         action = '<span class="row-tag-full">Full</span>';
       }
+      var mp = marketProjections[normalizeName(p.name)];
       return '<tr>'+
         '<td style="text-align:left;">'+p.name+'</td>'+
         '<td class="pos-pill">'+p.position+'</td>'+
         '<td class="mono">'+p.team+'</td>'+
         '<td class="num">'+money(p.salary)+'</td>'+
         '<td class="num">'+p.fppg.toFixed(1)+'</td>'+
+        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';">'+(mp ? mp.fp.toFixed(1) : '—')+'</td>'+
         '<td class="num">'+p.value.toFixed(2)+'</td>'+
         '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
         '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
