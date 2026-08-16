@@ -1131,6 +1131,13 @@
     return p.fppg + tierBonus - (rank * 0.1);
   }
 
+  // Nudges stack-slot picks toward pass catchers (WR/TE) over RBs, since a
+  // QB's yardage/TDs correlate most directly with his receivers - RBs still
+  // get picked when they're clearly the better play, just not by default.
+  function stackPositionBonus(p){
+    return (p.position === 'WR' || p.position === 'TE') ? 10 : 0;
+  }
+
   function optimizeRemaining(){
     var emptySlots = activeSLOT_DEFS.filter(function(s){return !lineup[s.key];});
     // Use Top Players as the candidate pool if any are starred, otherwise use full player pool
@@ -1145,6 +1152,7 @@
 
     var picks = {};
     var slotTeamConstraint = {};
+    var slotStackRole = {};
     var stackNote = null;
 
     // Phase 0: reserve stack / bring-back slots per the Stack Settings panel.
@@ -1163,15 +1171,30 @@
           return corrPositions.some(function(pos){ return s.eligible.indexOf(pos) !== -1; });
         }).sort(function(a,b){ return a.eligible.length - b.eligible.length; });
 
-        // Stack: QB + N pass catchers from the QB's team
+        // Stack: QB + N pass catchers from the QB's team. Prefer WR/TE - only
+        // reach for an RB if there aren't enough WR/TE options to hit the level.
         if (stackSettings.level > 0){
-          var stackTeamPool = pool.filter(function(p){
-            return p.team === qb.team && p.id !== qb.id && corrPositions.indexOf(p.position) !== -1;
+          var passCatcherPool = pool.filter(function(p){
+            return p.team === qb.team && p.id !== qb.id && ['WR','TE'].indexOf(p.position) !== -1;
           });
-          if (!stackTeamPool.length){
-            stackTeamPool = fullPool.filter(function(p){
+          if (passCatcherPool.length < stackSettings.level){
+            var fallbackPC = fullPool.filter(function(p){
+              return p.team === qb.team && p.id !== qb.id && ['WR','TE'].indexOf(p.position) !== -1;
+            });
+            if (fallbackPC.length > passCatcherPool.length) passCatcherPool = fallbackPC;
+          }
+          var stackTeamPool = passCatcherPool;
+          if (stackTeamPool.length < stackSettings.level){
+            // not enough WR/TE - widen to include RB so the stack level can still be hit
+            var withRb = pool.filter(function(p){
               return p.team === qb.team && p.id !== qb.id && corrPositions.indexOf(p.position) !== -1;
             });
+            if (withRb.length < stackSettings.level){
+              withRb = fullPool.filter(function(p){
+                return p.team === qb.team && p.id !== qb.id && corrPositions.indexOf(p.position) !== -1;
+              });
+            }
+            stackTeamPool = withRb;
           }
           var assigned = 0;
           for (var si=0; si<corrSlots.length && assigned<stackSettings.level; si++){
@@ -1185,6 +1208,7 @@
             picks[cheap1.id] = true;
             lineup[s1.key] = cheap1;
             slotTeamConstraint[s1.key] = qb.team;
+            slotStackRole[s1.key] = 'stack';
             assigned++;
           }
           if (assigned < stackSettings.level){
@@ -1276,7 +1300,9 @@
         });
         opts.forEach(function(cand){
           var delta = slotSalary(slot, cand) - slotSalary(slot, current);
-          var gain = playerScore(cand) - playerScore(current);
+          var candScore = playerScore(cand) + (slotStackRole[slot.key]==='stack' ? stackPositionBonus(cand) : 0);
+          var curScore  = playerScore(current) + (slotStackRole[slot.key]==='stack' ? stackPositionBonus(current) : 0);
+          var gain = candScore - curScore;
           if (totalSalary + delta <= salaryCap && gain > bestGain){
             bestGain = gain;
             bestSlotKey = slot.key;
@@ -1315,7 +1341,9 @@
         opts.forEach(function(cand){
           var delta = slotSalary(slot, cand) - slotSalary(slot, current);
           if (delta <= 0 || totalSalary3 + delta > salaryCap) return;
-          var scoreDelta = playerScore(cand) - playerScore(current);
+          var stackBonus = slotStackRole[slot.key]==='stack' ? 1 : 0;
+          var scoreDelta = (playerScore(cand) + stackBonus*stackPositionBonus(cand))
+                          - (playerScore(current) + stackBonus*stackPositionBonus(current));
           if (delta > bestDelta || (delta === bestDelta && scoreDelta > bestScoreDelta)){
             bestDelta = delta;
             bestSlotKey3 = slot.key;
