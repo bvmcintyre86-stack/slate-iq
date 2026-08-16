@@ -575,6 +575,7 @@
     // Convert accumulated lines into fantasy-point projections
     marketProjections = {};
     var matched = 0;
+    var matchedNames = [];
     for (var pid in accum){
       var person = people[pid];
       if (!person) continue;
@@ -597,10 +598,12 @@
       }
       var name = normalizeName(person.firstName + ' ' + person.lastName);
       marketProjections[name] = { fp: fp, breakdown: breakdown, personId: pid };
+      matchedNames.push(person.firstName + ' ' + person.lastName + ' - ' + fp.toFixed(1) + ' pts (' + Object.keys(breakdown).join(', ') + ')');
       matched++;
     }
+    console.log('Matched players with an approved-book line:\n' + (matchedNames.length ? matchedNames.join('\n') : '(none)'));
 
-    setPropsStatus(matched + ' of ' + Object.keys(accum).length + ' players matched (' + Object.keys(people).length + ' names loaded). Open the browser console (F12) for a per-stat breakdown.');
+    setPropsStatus(matched + ' of ' + Object.keys(accum).length + ' players matched (' + Object.keys(people).length + ' names loaded). Open the browser console (F12) for names + a per-stat breakdown.');
     renderTable();
     saveState();
   }
