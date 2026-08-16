@@ -423,7 +423,8 @@
     {key:'FLEX1', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
     {key:'FLEX2', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
     {key:'FLEX3', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
-    {key:'FLEX4', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']}
+    {key:'FLEX4', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
+    {key:'FLEX5', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']}
   ];
   var slateMode = 'main';
   var activeSLOT_DEFS = SLOT_DEFS;
@@ -725,13 +726,14 @@
       if (qb.tag && TAGS[qb.tag]) result.envNote = TAGS[qb.tag];
     }
 
-    // Onslaught / shootout builds are a Single Game concept (5 total roster spots, 1 game)
+    // Onslaught / shootout builds are a Single Game concept (6 total roster spots, 1 game)
     if (slateMode === 'sg'){
       var maxTeam = teams.reduce(function(m,t){ return teamCounts[t] > teamCounts[m] ? t : m; }, teams[0]);
-      if (teamCounts[maxTeam] >= 4){
+      var onslaughtThreshold = Math.ceil(SG_SLOT_DEFS.length * 0.8); // e.g. 5 of 6
+      if (teamCounts[maxTeam] >= onslaughtThreshold){
         result.onslaught = true;
         result.onslaughtTeam = maxTeam;
-      } else if (teams.length === 2 && filled.length >= 4){
+      } else if (teams.length === 2 && filled.length >= SG_SLOT_DEFS.length - 1){
         result.shootoutBuild = true;
       }
     }
@@ -1930,7 +1932,7 @@
     setMsg('');
     var luSub = document.getElementById('luSub');
     if (luSub) luSub.textContent = mode==='sg'
-      ? 'Single Game: 1 MVP (1.5x pts) + 4 FLEX. Roster from one game only.'
+      ? 'Single Game: 1 MVP (1.5x pts) + 5 FLEX. Roster from one game only.'
       : 'Build up to 20 lineups. Switch between them with the tabs.';
     var stackEl = document.getElementById('stackSettings');
     if (stackEl) stackEl.style.display = mode==='sg' ? 'none' : 'flex';
