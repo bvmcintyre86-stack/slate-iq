@@ -599,6 +599,13 @@
       var name = normalizeName(person.firstName + ' ' + person.lastName);
       marketProjections[name] = { fp: fp, breakdown: breakdown, personId: pid };
       matchedNames.push(person.firstName + ' ' + person.lastName + ' - ' + fp.toFixed(1) + ' pts (' + Object.keys(breakdown).join(', ') + ')');
+      // Full raw detail (line points/price used + the resulting point contribution)
+      // for every matched stat, so we can spot exactly which one is off.
+      var rawDetail = {};
+      for (var bk in breakdown){
+        rawDetail[bk] = { rawLine: stats[bk], pointsContributed: breakdown[bk].value };
+      }
+      console.log(person.firstName + ' ' + person.lastName + ' raw breakdown:', rawDetail);
       matched++;
     }
     console.log('Matched players with an approved-book line:\n' + (matchedNames.length ? matchedNames.join('\n') : '(none)'));
