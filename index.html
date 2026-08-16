@@ -515,6 +515,7 @@
 
     var accum = {}; // personId -> {stats:{}}
     var keys = Object.keys(PROP_BET_TYPES);
+    var diag = []; // per-bet-type diagnostic counts, shown at the end
     for (var k=0;k<keys.length;k++){
       var key = keys[k];
       var betTypeId = PROP_BET_TYPES[key].id;
@@ -522,22 +523,32 @@
       var resp = await fetch(workerUrl + '/market/nfl/props/odds?betTypeId=' + betTypeId).then(function(r){return r.json();}).catch(function(){return null;});
       var periods = resp && resp.data && resp.data.odds && resp.data.odds.nfl && resp.data.odds.nfl.periodTypes;
       var game = periods && periods.game;
-      if (!game || !game.pregame) continue;
-      for (var eventKey in game.pregame){
-        var entry = game.pregame[eventKey];
-        if (entry.betSubType) continue; // skip alt-line variants for this first pass
-        var sides = entry.sides || {};
-        for (var sideKey in sides){
-          var side = sides[sideKey];
-          var personId = side.personId;
-          if (!personId) continue;
-          var best = pickBestLine(side.marketSourceLines);
-          if (!best) continue;
-          if (!accum[personId]) accum[personId] = {};
-          accum[personId][key] = best;
+      var entriesSeen = 0, sidesSeen = 0, anyBookMatched = 0, approvedBookMatched = 0;
+      if (!game || !game.pregame){
+        diag.push(key + ': no data returned');
+      } else {
+        for (var eventKey in game.pregame){
+          entriesSeen++;
+          var entry = game.pregame[eventKey];
+          if (entry.betSubType) continue; // skip alt-line variants for this first pass
+          var sides = entry.sides || {};
+          for (var sideKey in sides){
+            sidesSeen++;
+            var side = sides[sideKey];
+            var personId = side.personId;
+            if (!personId) continue;
+            if (side.marketSourceLines && Object.keys(side.marketSourceLines).length) anyBookMatched++;
+            var best = pickBestLine(side.marketSourceLines);
+            if (!best) continue;
+            approvedBookMatched++;
+            if (!accum[personId]) accum[personId] = {};
+            accum[personId][key] = best;
+          }
         }
+        diag.push(key + ': ' + entriesSeen + ' lines, ' + sidesSeen + ' sides, ' + anyBookMatched + ' with any book, ' + approvedBookMatched + ' with an approved book');
       }
     }
+    console.log('Props fetch diagnostics:\n' + diag.join('\n'));
 
     // Convert accumulated lines into fantasy-point projections
     marketProjections = {};
@@ -567,7 +578,7 @@
       matched++;
     }
 
-    setPropsStatus(matched + ' of ' + Object.keys(accum).length + ' players matched (' + Object.keys(people).length + ' names loaded).');
+    setPropsStatus(matched + ' of ' + Object.keys(accum).length + ' players matched (' + Object.keys(people).length + ' names loaded). Open the browser console (F12) for a per-stat breakdown.');
     renderTable();
     saveState();
   }
