@@ -529,6 +529,15 @@
       return fetch(url, {cache: 'no-store'}).then(function(r){return r.json();}).catch(function(){return null;});
     }
 
+    // Debug trace: find Darnold & Maye's personIds from the real people map (not
+    // guessed), then print what each individual bet-type call actually returns
+    // for them as it happens - this pinpoints exactly where the values collapse.
+    var debugTargets = [];
+    for (var ppid in people){
+      var pn = normalizeName(people[ppid].firstName + ' ' + people[ppid].lastName);
+      if (pn === 'sam darnold' || pn === 'drake maye') debugTargets.push(ppid);
+    }
+
     for (var k=0;k<keys.length;k++){
       var key = keys[k];
       var betTypeId = PROP_BET_TYPES[key].id;
@@ -574,6 +583,12 @@
         }
         diag.push(key + ': ' + entriesSeen + ' lines, ' + sidesSeen + ' sides, ' + anyBookMatched + ' with any book, ' + approvedBookMatched + ' with an approved book' + (retried ? ' (after retry)' : ''));
       }
+
+      // Live trace for this one call
+      debugTargets.forEach(function(pid){
+        var nm = people[pid].firstName + ' ' + people[pid].lastName;
+        console.log('[' + key + ' / betTypeId=' + betTypeId + '] ' + nm + ':', accum[pid] && accum[pid][key]);
+      });
     }
     console.log('Props fetch diagnostics:\n' + diag.join('\n'));
 
