@@ -499,7 +499,7 @@
     var statusEl = document.getElementById('propsStatus');
     if (!workerUrl){ setPropsStatus('Set your Proxy URL above first.'); return; }
 
-    setPropsStatus('Loading people...');
+    setPropsStatus('Loading people (this can take ~20-30s to stay within Unabated\'s rate guidance)...');
     var people = {};
     var cursor = null;
     var pageGuard = 0;
@@ -516,16 +516,38 @@
     var accum = {}; // personId -> {stats:{}}
     var keys = Object.keys(PROP_BET_TYPES);
     var diag = []; // per-bet-type diagnostic counts, shown at the end
+
+    function sleep(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
+
+    async function fetchOdds(betTypeId){
+      var url = workerUrl + '/market/nfl/props/odds?betTypeId=' + betTypeId;
+      return fetch(url).then(function(r){return r.json();}).catch(function(){return null;});
+    }
+
     for (var k=0;k<keys.length;k++){
       var key = keys[k];
       var betTypeId = PROP_BET_TYPES[key].id;
       setPropsStatus('Loading ' + key + ' (' + (k+1) + '/' + keys.length + ')...');
-      var resp = await fetch(workerUrl + '/market/nfl/props/odds?betTypeId=' + betTypeId).then(function(r){return r.json();}).catch(function(){return null;});
+      if (k > 0) await sleep(1100); // stay under Unabated's "no more than 1 req/sec" guidance
+
+      var resp = await fetchOdds(betTypeId);
       var periods = resp && resp.data && resp.data.odds && resp.data.odds.nfl && resp.data.odds.nfl.periodTypes;
       var game = periods && periods.game;
+
+      // One retry if a call comes back empty - could be a transient throttle response
+      // rather than a genuine "nothing posted" result.
+      var retried = false;
+      if (!game || !game.pregame || !Object.keys(game.pregame).length){
+        await sleep(1200);
+        resp = await fetchOdds(betTypeId);
+        periods = resp && resp.data && resp.data.odds && resp.data.odds.nfl && resp.data.odds.nfl.periodTypes;
+        game = periods && periods.game;
+        retried = true;
+      }
+
       var entriesSeen = 0, sidesSeen = 0, anyBookMatched = 0, approvedBookMatched = 0;
       if (!game || !game.pregame){
-        diag.push(key + ': no data returned');
+        diag.push(key + ': no data returned' + (retried ? ' (after retry)' : ''));
       } else {
         for (var eventKey in game.pregame){
           entriesSeen++;
@@ -545,7 +567,7 @@
             accum[personId][key] = best;
           }
         }
-        diag.push(key + ': ' + entriesSeen + ' lines, ' + sidesSeen + ' sides, ' + anyBookMatched + ' with any book, ' + approvedBookMatched + ' with an approved book');
+        diag.push(key + ': ' + entriesSeen + ' lines, ' + sidesSeen + ' sides, ' + anyBookMatched + ' with any book, ' + approvedBookMatched + ' with an approved book' + (retried ? ' (after retry)' : ''));
       }
     }
     console.log('Props fetch diagnostics:\n' + diag.join('\n'));
