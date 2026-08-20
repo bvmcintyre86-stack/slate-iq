@@ -473,6 +473,31 @@
     return (n || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g,' ').trim();
   }
 
+  var SPORTSBOOK_NAMES = {1:'DK', 2:'FD', 86:'Fanatics', 4:'BetMGM', 20:'Caesars', 17:'BetRivers'};
+  var STAT_LABELS = {
+    passYards:'Pass Yds', passAttempts:'Pass Att', passComp:'Pass Comp', passTD:'Pass TD',
+    rushYards:'Rush Yds', rushAttempts:'Rush Att', rushTD:'Rush TD',
+    recYards:'Rec Yds', receptions:'Rec', attd:'ATTD'
+  };
+
+  // Builds a plain-text, newline-separated summary of every tracked prop stat
+  // for a player - what's matched (with the line/price and which book it came
+  // from) and what's still missing - for use as a hover tooltip on the Mkt column.
+  function mktTooltip(mp){
+    if (!mp) return 'No market data loaded for this player yet.';
+    var lines = ['Market projection: ' + mp.fp.toFixed(1) + ' pts', ''];
+    for (var sk in STAT_LABELS){
+      var b = mp.breakdown && mp.breakdown[sk];
+      if (b){
+        var book = SPORTSBOOK_NAMES[b.sourceId] || ('src' + b.sourceId);
+        lines.push(STAT_LABELS[sk] + ': ' + b.value.toFixed(1) + ' pts (' + book + ')');
+      } else {
+        lines.push(STAT_LABELS[sk] + ': not posted yet');
+      }
+    }
+    return lines.join('\n');
+  }
+
   function americanToProb(price){
     price = Number(price);
     if (!price && price !== 0) return null;
@@ -1698,7 +1723,7 @@
         '<td class="mono">'+p.team+'</td>'+
         '<td class="num">'+money(p.salary)+'</td>'+
         '<td class="num">'+p.fppg.toFixed(1)+'</td>'+
-        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';">'+(mp ? mp.fp.toFixed(1) : '—')+'</td>'+
+        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp).replace(/"/g,'&quot;')+'">'+(mp ? mp.fp.toFixed(1) : '—')+'</td>'+
         '<td class="num">'+p.value.toFixed(2)+'</td>'+
         '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
         '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
@@ -1761,7 +1786,7 @@
         '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&darr;</button>'
       : '';
     var mkt = marketProjections[normalizeName(p.name)];
-    var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';">'+(mkt ? mkt.fp.toFixed(1) : '—')+'</td>';
+    var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mkt).replace(/"/g,'&quot;')+'">'+(mkt ? mkt.fp.toFixed(1) : '—')+'</td>';
     return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
   }
 
