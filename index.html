@@ -480,12 +480,37 @@
     recYards:'Rec Yds', receptions:'Rec', attd:'ATTD'
   };
 
+  // The scoring pathways that actually apply to each position - used only to
+  // compute a "coverage" fraction (how much of THIS player's relevant profile
+  // is priced in yet), never to restrict what counts toward their points.
+  // Positions naturally have different numbers of ways to score in real
+  // football (RBs have 5 pathways, WR/TE have 3), so raw point totals aren't
+  // directly comparable across positions until coverage is similarly complete -
+  // this fraction makes that visible instead of hiding it.
+  var POSITION_RELEVANT_STATS = {
+    QB:  ['passYards','passTD','rushYards','rushTD'],
+    RB:  ['rushYards','rushTD','recYards','receptions','attd'],
+    WR:  ['recYards','receptions','attd'],
+    TE:  ['recYards','receptions','attd'],
+  };
+
+  function mktCoverage(mp, position){
+    var relevant = POSITION_RELEVANT_STATS[position];
+    if (!relevant || !mp) return null;
+    var matched = 0;
+    relevant.forEach(function(sk){ if (mp.breakdown && mp.breakdown[sk]) matched++; });
+    return { matched: matched, total: relevant.length };
+  }
+
   // Builds a plain-text, newline-separated summary of every tracked prop stat
   // for a player - what's matched (with the line/price and which book it came
   // from) and what's still missing - for use as a hover tooltip on the Mkt column.
-  function mktTooltip(mp){
+  function mktTooltip(mp, position){
     if (!mp) return 'No market data loaded for this player yet.';
-    var lines = ['Market projection: ' + mp.fp.toFixed(1) + ' pts', ''];
+    var cov = mktCoverage(mp, position);
+    var lines = ['Market projection: ' + mp.fp.toFixed(1) + ' pts'];
+    if (cov) lines.push('Coverage: ' + cov.matched + ' of ' + cov.total + ' relevant props posted for ' + position);
+    lines.push('');
     for (var sk in STAT_LABELS){
       var b = mp.breakdown && mp.breakdown[sk];
       if (b){
@@ -1731,7 +1756,7 @@
         '<td class="mono">'+p.team+'</td>'+
         '<td class="num">'+money(p.salary)+'</td>'+
         '<td class="num">'+p.fppg.toFixed(1)+'</td>'+
-        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp).replace(/"/g,'&quot;')+'">'+(mp ? mp.fp.toFixed(1) : '—')+'</td>'+
+        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mp.fp.toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : '—')+'</td>'+
         '<td class="num">'+p.value.toFixed(2)+'</td>'+
         '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
         '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
@@ -1794,7 +1819,7 @@
         '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&darr;</button>'
       : '';
     var mkt = marketProjections[normalizeName(p.name)];
-    var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mkt).replace(/"/g,'&quot;')+'">'+(mkt ? mkt.fp.toFixed(1) : '—')+'</td>';
+    var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mkt,p.position).replace(/"/g,'&quot;')+'">'+(mkt ? mkt.fp.toFixed(1)+(mktCoverage(mkt,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mkt,p.position).matched+'/'+mktCoverage(mkt,p.position).total+')</span>':'') : '—')+'</td>';
     return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
   }
 
