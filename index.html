@@ -515,81 +515,76 @@
     } while (cursor && pageGuard < 30);
 
     var accum = {}; // personId -> {stats:{}}
-    var keys = Object.keys(PROP_BET_TYPES);
     var diag = []; // per-bet-type diagnostic counts, shown at the end
 
     function sleep(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
 
-    // Cache-bust every call - a timestamp query param plus cache:'no-store' forces
-    // a genuinely fresh request per betTypeId, rather than a cached response from
-    // an earlier call in this same loop (browser cache and/or edge cache in front
-    // of the Worker can otherwise key on the URL in a way that ignores betTypeId).
-    async function fetchOdds(betTypeId){
-      var url = workerUrl + '/market/nfl/props/odds?betTypeId=' + betTypeId + '&_cb=' + Date.now();
-      return fetch(url, {cache: 'no-store'}).then(function(r){return r.json();}).catch(function(){return null;});
+    // Reverse-lookup from Unabated's betTypeId -> our internal stat key,
+    // built from PROP_BET_TYPES so it stays in sync automatically.
+    var BET_TYPE_ID_TO_KEY = {};
+    for (var pbtKey in PROP_BET_TYPES){
+      BET_TYPE_ID_TO_KEY[PROP_BET_TYPES[pbtKey].id] = pbtKey;
     }
 
-    // Debug trace: find Darnold & Maye's personIds from the real people map (not
-    // guessed), then print what each individual bet-type call actually returns
-    // for them as it happens - this pinpoints exactly where the values collapse.
+    // IMPORTANT: we make exactly ONE request here with no betTypeId filter,
+    // rather than looping through all 10 bet types individually. Unabated's
+    // API has a confirmed bug where requesting different betTypeId values in
+    // quick succession returns the WRONG bet type's data back (proven via
+    // direct API testing, bypassing this Worker entirely - it's not
+    // something in our control). A single unfiltered request returns every
+    // bet type at once in one response, which sidesteps the bug completely
+    // since there's no switching between values at all. We then sort results
+    // into the right stat bucket using the betTypeId embedded in each entry,
+    // rather than trusting which URL we requested.
+    setPropsStatus('Loading all props in a single request...');
+    var url = workerUrl + '/market/nfl/props/odds?_cb=' + Date.now();
+    var resp = await fetch(url, {cache: 'no-store'}).then(function(r){return r.json();}).catch(function(){return null;});
+    var periods = resp && resp.data && resp.data.odds && resp.data.odds.nfl && resp.data.odds.nfl.periodTypes;
+    var game = periods && periods.game;
+
     var debugTargets = [];
     for (var ppid in people){
       var pn = normalizeName(people[ppid].firstName + ' ' + people[ppid].lastName);
       if (pn === 'sam darnold' || pn === 'drake maye') debugTargets.push(ppid);
     }
 
-    for (var k=0;k<keys.length;k++){
-      var key = keys[k];
-      var betTypeId = PROP_BET_TYPES[key].id;
-      setPropsStatus('Loading ' + key + ' (' + (k+1) + '/' + keys.length + ')...');
-      if (k > 0) await sleep(1100); // stay under Unabated's "no more than 1 req/sec" guidance
+    var statsByKey = {}; // key -> {entriesSeen, sidesSeen, anyBookMatched, approvedBookMatched}
+    for (var kk in PROP_BET_TYPES) statsByKey[kk] = {entriesSeen:0, sidesSeen:0, anyBookMatched:0, approvedBookMatched:0};
 
-      var resp = await fetchOdds(betTypeId);
-      var periods = resp && resp.data && resp.data.odds && resp.data.odds.nfl && resp.data.odds.nfl.periodTypes;
-      var game = periods && periods.game;
-
-      // One retry if a call comes back empty - could be a transient throttle response
-      // rather than a genuine "nothing posted" result.
-      var retried = false;
-      if (!game || !game.pregame || !Object.keys(game.pregame).length){
-        await sleep(1200);
-        resp = await fetchOdds(betTypeId);
-        periods = resp && resp.data && resp.data.odds && resp.data.odds.nfl && resp.data.odds.nfl.periodTypes;
-        game = periods && periods.game;
-        retried = true;
-      }
-
-      var entriesSeen = 0, sidesSeen = 0, anyBookMatched = 0, approvedBookMatched = 0;
-      if (!game || !game.pregame){
-        diag.push(key + ': no data returned' + (retried ? ' (after retry)' : ''));
-      } else {
-        for (var eventKey in game.pregame){
-          entriesSeen++;
-          var entry = game.pregame[eventKey];
-          if (entry.betSubType) continue; // skip alt-line variants for this first pass
-          var sides = entry.sides || {};
-          for (var sideKey in sides){
-            sidesSeen++;
-            var side = sides[sideKey];
-            var personId = side.personId;
-            if (!personId) continue;
-            if (side.marketSourceLines && Object.keys(side.marketSourceLines).length) anyBookMatched++;
-            var best = pickBestLine(side.marketSourceLines);
-            if (!best) continue;
-            approvedBookMatched++;
-            if (!accum[personId]) accum[personId] = {};
-            accum[personId][key] = best;
-          }
+    if (!game || !game.pregame){
+      diag.push('single unfiltered request: no data returned');
+    } else {
+      for (var eventKey in game.pregame){
+        var entry = game.pregame[eventKey];
+        if (entry.betSubType) continue; // skip alt-line variants for this first pass
+        var thisKey = BET_TYPE_ID_TO_KEY[entry.betTypeId]; // trust the embedded id, not the request
+        if (!thisKey) continue; // a bet type we haven't mapped/don't care about
+        var s = statsByKey[thisKey];
+        s.entriesSeen++;
+        var sides = entry.sides || {};
+        for (var sideKey in sides){
+          s.sidesSeen++;
+          var side = sides[sideKey];
+          var personId = side.personId;
+          if (!personId) continue;
+          if (side.marketSourceLines && Object.keys(side.marketSourceLines).length) s.anyBookMatched++;
+          var best = pickBestLine(side.marketSourceLines);
+          if (!best) continue;
+          s.approvedBookMatched++;
+          if (!accum[personId]) accum[personId] = {};
+          accum[personId][thisKey] = best;
         }
-        diag.push(key + ': ' + entriesSeen + ' lines, ' + sidesSeen + ' sides, ' + anyBookMatched + ' with any book, ' + approvedBookMatched + ' with an approved book' + (retried ? ' (after retry)' : ''));
       }
-
-      // Live trace for this one call
-      debugTargets.forEach(function(pid){
-        var nm = people[pid].firstName + ' ' + people[pid].lastName;
-        console.log('[' + key + ' / betTypeId=' + betTypeId + '] ' + nm + ':', accum[pid] && accum[pid][key]);
-      });
+      for (var dk in statsByKey){
+        var d = statsByKey[dk];
+        diag.push(dk + ': ' + d.entriesSeen + ' lines, ' + d.sidesSeen + ' sides, ' + d.anyBookMatched + ' with any book, ' + d.approvedBookMatched + ' with an approved book');
+      }
     }
+
+    debugTargets.forEach(function(pid){
+      var nm = people[pid].firstName + ' ' + people[pid].lastName;
+      console.log(nm + ' (single-request pull):', accum[pid]);
+    });
     console.log('Props fetch diagnostics:\n' + diag.join('\n'));
 
     // Convert accumulated lines into fantasy-point projections
