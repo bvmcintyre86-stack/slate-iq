@@ -392,7 +392,7 @@
             <th data-key="team">Team</th>
             <th data-key="salary">Salary</th>
             <th data-key="fppg">FPPG</th>
-            <th>Mkt</th>
+            <th data-key="mkt">Mkt</th>
             <th data-key="value">Value</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="tag">Script</th>
@@ -1686,7 +1686,15 @@
     });
 
     rows.sort(function(a,b){
-      var av = a[sortKey], bv = b[sortKey];
+      var av, bv;
+      if (sortKey === 'mkt'){
+        var amp = marketProjections[normalizeName(a.name)];
+        var bmp = marketProjections[normalizeName(b.name)];
+        av = amp ? amp.fp : -Infinity;
+        bv = bmp ? bmp.fp : -Infinity;
+      } else {
+        av = a[sortKey]; bv = b[sortKey];
+      }
       if (av === null) av = -Infinity;
       if (bv === null) bv = -Infinity;
       if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
