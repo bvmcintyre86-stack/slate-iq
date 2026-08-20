@@ -511,7 +511,14 @@
     var lines = ['Market projection: ' + mp.fp.toFixed(1) + ' pts'];
     if (cov) lines.push('Coverage: ' + cov.matched + ' of ' + cov.total + ' relevant props posted for ' + position);
     lines.push('');
-    for (var sk in STAT_LABELS){
+    // Only list props relevant to this position (RB gets 5 pathways, WR/TE get
+    // 3, QB gets its own set) - no point showing "Pass Yds: not posted yet"
+    // on a WR. Falls back to the full list for positions without a defined
+    // set (DEF, K), since those don't have props tracked at all yet anyway.
+    var relevant = POSITION_RELEVANT_STATS[position] || Object.keys(STAT_LABELS);
+    var shown = {};
+    relevant.forEach(function(sk){
+      shown[sk] = true;
       var b = mp.breakdown && mp.breakdown[sk];
       if (b){
         var book = SPORTSBOOK_NAMES[b.sourceId] || ('src' + b.sourceId);
@@ -519,6 +526,23 @@
       } else {
         lines.push(STAT_LABELS[sk] + ': not posted yet');
       }
+    });
+    // Rare edge case: a stat outside the normal set for this position still
+    // matched (e.g. a novelty QB receiving prop). Show it separately so the
+    // total still reconciles with what's displayed, rather than silently
+    // hiding points that are actually counted in the projection.
+    var extras = [];
+    for (var sk2 in mp.breakdown){
+      if (!shown[sk2]) extras.push(sk2);
+    }
+    if (extras.length){
+      lines.push('');
+      lines.push('Other (novelty markets, still counted above):');
+      extras.forEach(function(sk3){
+        var b3 = mp.breakdown[sk3];
+        var book3 = SPORTSBOOK_NAMES[b3.sourceId] || ('src' + b3.sourceId);
+        lines.push(STAT_LABELS[sk3] + ': ' + b3.value.toFixed(1) + ' pts (' + book3 + ')');
+      });
     }
     return lines.join('\n');
   }
