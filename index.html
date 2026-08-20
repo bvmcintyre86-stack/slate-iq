@@ -431,12 +431,12 @@
   ];
   var MAX_LINEUPS = 20;
   var SG_SLOT_DEFS = [
-    {key:'MVP',   label:'MVP',  eligible:['QB','RB','WR','TE','DEF'], mvp:true},
-    {key:'FLEX1', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
-    {key:'FLEX2', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
-    {key:'FLEX3', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
-    {key:'FLEX4', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']},
-    {key:'FLEX5', label:'FLEX', eligible:['QB','RB','WR','TE','DEF']}
+    {key:'MVP',   label:'MVP',  eligible:['QB','RB','WR','TE','DEF','K'], mvp:true},
+    {key:'FLEX1', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
+    {key:'FLEX2', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
+    {key:'FLEX3', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
+    {key:'FLEX4', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
+    {key:'FLEX5', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']}
   ];
   var slateMode = 'main';
   var activeSLOT_DEFS = SLOT_DEFS;
@@ -713,7 +713,7 @@
   var filterPos = ''; var filterTeam = ''; var filterTag = ''; var filterSearch = ''; var filterMatchup = '';
   var topPlayers = {};
   var tpActivePos = 'ALL';
-  var TP_POSITIONS = ['ALL','QB','RB','WR','TE','DEF'];
+  var TP_POSITIONS = ['ALL','QB','RB','WR','TE','DEF','K'];
   var TIER_COLORS = {1:'t1',2:'t2',3:'t3',0:'t0'};
   var TIER_LABELS = {1:'Tier 1',2:'Tier 2',3:'Tier 3',0:'Untiered'};
   var _unabatedEvents = null;
@@ -1864,7 +1864,7 @@
       list.innerHTML = '<div class="tp-empty">No '+(tpActivePos==='ALL'?'':tpActivePos+' ')+'players starred yet.</div>';
       return;
     }
-    var posOrder = {QB:0,RB:1,WR:2,TE:3,DEF:4};
+    var posOrder = {QB:0,RB:1,WR:2,TE:3,DEF:4,K:5};
     if (tpActivePos === 'ALL'){
       var byTier = {1:[],2:[],3:[],0:[]};
       subset.forEach(function(p){(byTier[p.tier||0]).push(p);});
@@ -2194,7 +2194,7 @@
     rows.push('');
     rows.push('TOP PLAYERS');
     rows.push(['Position','Tier','Player','Team','Tag','Salary','Proj Pts'].map(q).join(sep));
-    var posOrd = {QB:0,RB:1,WR:2,TE:3,DEF:4};
+    var posOrd = {QB:0,RB:1,WR:2,TE:3,DEF:4,K:5};
     Object.values(topPlayers).sort(function(a,b){return (a.tier||0)-(b.tier||0)||(posOrd[a.position]||9)-(posOrd[b.position]||9)||a.name.localeCompare(b.name);}).forEach(function(p){
       var t = TAGS[p.tag]||TAGS.unmatched;
       rows.push([p.position,p.tier||'',p.name,p.team,t.label,p.salary||'',p.fppg||''].map(q).join(sep));
