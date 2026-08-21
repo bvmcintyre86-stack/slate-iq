@@ -917,6 +917,22 @@
         }
         console.log('  ' + btKey + altFlag + ' - books posted: [' + (bookList.join(', ') || 'none') + '] -> using: ' + bestDesc);
       });
+
+      // Final computed result - what actually made it into the projection,
+      // including any FanDuel milestone bonus - so you can see the raw data
+      // above and the end result in one place, without switching to the
+      // Mkt column tooltip separately.
+      var finalName = normalizeName(person.firstName + ' ' + person.lastName);
+      var mp = marketProjections[finalName];
+      if (mp){
+        console.log('  --- Final computed projection: ' + mp.fp.toFixed(1) + ' pts ---');
+        for (var fk in mp.breakdown){
+          var fb = mp.breakdown[fk];
+          console.log('    ' + (STAT_LABELS[fk] || fk) + ': ' + fb.value.toFixed(1) + ' pts' + (fb.isBonus ? ' [bonus]' : fb.isAlt ? ' [alt line]' : ''));
+        }
+      } else {
+        console.log('  --- Final computed projection: not matched (no approved-book line for any tracked stat yet) ---');
+      }
     });
   }
 
