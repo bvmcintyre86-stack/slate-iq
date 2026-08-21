@@ -511,10 +511,10 @@
   // directly comparable across positions until coverage is similarly complete -
   // this fraction makes that visible instead of hiding it.
   var POSITION_RELEVANT_STATS = {
-    QB:  ['passYards','passTD','rushYards','rushTD','passYardsBonus','rushYardsBonus'],
-    RB:  ['rushYards','rushTD','recYards','receptions','attd','rushYardsBonus','recYardsBonus'],
-    WR:  ['recYards','receptions','attd','recYardsBonus'],
-    TE:  ['recYards','receptions','attd','recYardsBonus'],
+    QB:  ['passYards','passTD','rushYards','rushTD'],
+    RB:  ['rushYards','rushTD','recYards','receptions','attd'],
+    WR:  ['recYards','receptions','attd'],
+    TE:  ['recYards','receptions','attd'],
   };
 
   function mktCoverage(mp, position){
@@ -559,20 +559,23 @@
       }
     });
     // Rare edge case: a stat outside the normal set for this position still
-    // matched (e.g. a novelty QB receiving prop). Show it separately so the
-    // total still reconciles with what's displayed, rather than silently
-    // hiding points that are actually counted in the projection.
+    // matched (e.g. a novelty QB receiving prop) - and this is also where
+    // FanDuel milestone bonuses (300+ pass, 100+ rush/rec) show up, since
+    // they're not part of the core per-position pathway list above.
     var extras = [];
     for (var sk2 in mp.breakdown){
       if (!shown[sk2]) extras.push(sk2);
     }
     if (extras.length){
       lines.push('');
-      lines.push('Other (novelty markets, still counted above):');
+      lines.push('Other (bonuses & extras, still counted above):');
       extras.forEach(function(sk3){
         var b3 = mp.breakdown[sk3];
         var book3 = SPORTSBOOK_NAMES[b3.sourceId] || ('src' + b3.sourceId);
-        lines.push(STAT_LABELS[sk3] + ': ' + b3.value.toFixed(1) + ' pts (' + book3 + ')');
+        var altCountNote3 = (b3.isAlt && b3.altCandidateCount > 1) ? (' (best of ' + b3.altCandidateCount + ' alt lines)') : '';
+        var altNote3 = b3.isAlt ? (b3.value === 0 ? ' [alt line' + altCountNote3 + ' - not counted, still too lopsided to trust]' : ' [from an alt line' + altCountNote3 + ' - approximate]') : '';
+        var bonusNote3 = b3.isBonus ? (b3.thresholdUsed === b3.realThreshold ? ' [exact ' + b3.realThreshold + '+ line]' : ' [via ' + b3.thresholdUsed + '+ line, closest available to ' + b3.realThreshold + '+]') : '';
+        lines.push(STAT_LABELS[sk3] + ': ' + b3.value.toFixed(1) + ' pts (' + book3 + ')' + altNote3 + bonusNote3);
       });
     }
     return lines.join('\n');
