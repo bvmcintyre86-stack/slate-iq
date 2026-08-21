@@ -330,6 +330,11 @@
         <button id="clearLineupBtn">Clear lineup</button>
         <button id="copyLineupBtn">Copy lineup</button>
       </div>
+      <div class="lineup-actions" style="border-left:1px solid var(--line);padding-left:10px;margin-left:4px;">
+        <label style="font-size:11px;color:var(--muted);white-space:nowrap;">Bulk build</label>
+        <input id="bulkCountInput" type="number" min="1" max="20" value="5" style="width:56px;">
+        <button id="bulkGenerateBtn">Generate lineups</button>
+      </div>
     </div>
     <div class="construction-badge" id="constructionBadge"></div>
     <div class="stack-settings" id="stackSettings">
@@ -1399,11 +1404,19 @@
     return (slateMode === 'sg' && slot.mvp) ? Math.round(p.salary * 1.5) : p.salary;
   }
 
+  // Exposure tracking, used only during a bulk multi-lineup build so the
+  // optimizer naturally diversifies picks across lineups instead of building
+  // N clones of the same "best" lineup. Empty (a no-op) outside of a bulk
+  // run - single-lineup Optimize is completely unaffected.
+  var exposureCount = {};
+  var EXPOSURE_PENALTY_PER_USE = 4;
+
   function playerScore(p){
     var tier = p.tier || 0;
     var tierBonus = tier===1 ? 100 : tier===2 ? 50 : tier===3 ? 20 : 0;
     var rank = p.rank || 0;
-    return effectiveFppg(p) + tierBonus - (rank * 0.1);
+    var exposurePenalty = (exposureCount[p.id] || 0) * EXPOSURE_PENALTY_PER_USE;
+    return effectiveFppg(p) + tierBonus - (rank * 0.1) - exposurePenalty;
   }
 
   // Blends FanDuel's own fppg with the market-derived projection (if loaded),
@@ -1651,6 +1664,58 @@
       msgParts.push('Could not reach the ' + money(salaryFloor) + ' salary floor - no higher-priced eligible replacements available.');
     }
     setMsg(msgParts.join(' '));
+    refreshLineupUI();
+  }
+
+  // Builds N complete lineups in one go by running the normal single-lineup
+  // optimizer N times in a row, resetting each lineup to empty first. An
+  // exposure penalty (see playerScore) makes each subsequent lineup steer
+  // away from players already used a lot in this same batch, so the result
+  // is a varied set of lineups rather than N identical copies of the "best"
+  // one. Respects MAX_LINEUPS (20) and replaces whatever's currently in the
+  // lineup tabs, so it asks for confirmation first since that's destructive.
+  function bulkGenerateLineups(n){
+    n = Math.max(1, Math.min(MAX_LINEUPS, Math.round(n) || 1));
+
+    if (!players.length){
+      setMsg('Upload a player pool first.');
+      return;
+    }
+
+    var proceed = confirm(
+      'This will build ' + n + ' fresh lineup' + (n>1?'s':'') +
+      ', replacing whatever is currently in Lineup 1 through ' + n + '. Continue?'
+    );
+    if (!proceed) return;
+
+    exposureCount = {}; // start this batch with a clean slate
+
+    var newLineups = [];
+    for (var i = 0; i < n; i++){
+      lineup = emptyLineup();
+      lineups[i] = lineup;
+      activeIdx = i;
+
+      optimizeRemaining();
+
+      // Tally exposure from whatever actually got filled, so the NEXT
+      // lineup in this batch sees the penalty and tends to diversify.
+      activeSLOT_DEFS.forEach(function(s){
+        var p = lineup[s.key];
+        if (p) exposureCount[p.id] = (exposureCount[p.id] || 0) + 1;
+      });
+
+      newLineups.push(lineup);
+    }
+
+    lineups = newLineups;
+    activeIdx = 0;
+    lineup = lineups[0];
+    exposureCount = {}; // clear so a later single-lineup Optimize isn't affected
+
+    setMsg('Generated ' + n + ' lineup' + (n>1?'s':'') + '.');
+    saveState();
+    renderLuTabs();
     refreshLineupUI();
   }
 
@@ -2326,6 +2391,10 @@
   });
 
   document.getElementById('optimizeBtn').addEventListener('click', optimizeRemaining);
+  document.getElementById('bulkGenerateBtn').addEventListener('click', function(){
+    var n = parseInt(document.getElementById('bulkCountInput').value, 10);
+    bulkGenerateLineups(n);
+  });
   document.getElementById('loadRostersBtn').addEventListener('click', loadRosters);
   document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
   document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
