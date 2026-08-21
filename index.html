@@ -478,6 +478,17 @@
     attd:         { id: 216, kind: 'binary',  mult: 6 }
   };
   var marketProjections = {}; // normalized "first last" -> {fp, breakdown, personId}
+
+  // FanDuel's built-in yardage milestone bonuses: +3 pts each for 300+
+  // passing yards, 100+ rushing yards, 100+ receiving yards. Computed from
+  // alt-line data (see fetchMarketProjections) - not tied to position, since
+  // the bonus itself isn't (e.g. a scrambling QB can also hit the 100+ rush
+  // bonus; a receiving back can hit the 100+ rec bonus).
+  var BONUS_CONFIG = {
+    passYardsBonus: { stat: 'passYards', threshold: 300, mult: 3 },
+    rushYardsBonus: { stat: 'rushYards', threshold: 100, mult: 3 },
+    recYardsBonus:  { stat: 'recYards',  threshold: 100, mult: 3 }
+  };
   var projSource = 'fppg';    // 'fppg' | 'market' | 'blend'
 
   function normalizeName(n){
@@ -488,7 +499,8 @@
   var STAT_LABELS = {
     passYards:'Pass Yds', passAttempts:'Pass Att', passComp:'Pass Comp', passTD:'Pass TD',
     rushYards:'Rush Yds', rushAttempts:'Rush Att', rushTD:'Rush TD',
-    recYards:'Rec Yds', receptions:'Rec', attd:'ATTD'
+    recYards:'Rec Yds', receptions:'Rec', attd:'ATTD',
+    passYardsBonus:'300+ Pass Bonus', rushYardsBonus:'100+ Rush Bonus', recYardsBonus:'100+ Rec Bonus'
   };
 
   // The scoring pathways that actually apply to each position - used only to
@@ -499,17 +511,22 @@
   // directly comparable across positions until coverage is similarly complete -
   // this fraction makes that visible instead of hiding it.
   var POSITION_RELEVANT_STATS = {
-    QB:  ['passYards','passTD','rushYards','rushTD'],
-    RB:  ['rushYards','rushTD','recYards','receptions','attd'],
-    WR:  ['recYards','receptions','attd'],
-    TE:  ['recYards','receptions','attd'],
+    QB:  ['passYards','passTD','rushYards','rushTD','passYardsBonus','rushYardsBonus'],
+    RB:  ['rushYards','rushTD','recYards','receptions','attd','rushYardsBonus','recYardsBonus'],
+    WR:  ['recYards','receptions','attd','recYardsBonus'],
+    TE:  ['recYards','receptions','attd','recYardsBonus'],
   };
 
   function mktCoverage(mp, position){
     var relevant = POSITION_RELEVANT_STATS[position];
     if (!relevant || !mp) return null;
     var matched = 0;
-    relevant.forEach(function(sk){ if (mp.breakdown && mp.breakdown[sk]) matched++; });
+    // A zero-contribution alt-only yardage match isn't real coverage - it's
+    // detected but deliberately not counted toward points (see fetchMarketProjections).
+    relevant.forEach(function(sk){
+      var b = mp.breakdown && mp.breakdown[sk];
+      if (b && !(b.isAlt && b.value === 0)) matched++;
+    });
     return { matched: matched, total: relevant.length };
   }
 
@@ -533,7 +550,10 @@
       var b = mp.breakdown && mp.breakdown[sk];
       if (b){
         var book = SPORTSBOOK_NAMES[b.sourceId] || ('src' + b.sourceId);
-        lines.push(STAT_LABELS[sk] + ': ' + b.value.toFixed(1) + ' pts (' + book + ')');
+        var altCountNote = (b.isAlt && b.altCandidateCount > 1) ? (' (best of ' + b.altCandidateCount + ' alt lines)') : '';
+        var altNote = b.isAlt ? (b.value === 0 ? ' [alt line' + altCountNote + ' - not counted, still too lopsided to trust]' : ' [from an alt line' + altCountNote + ' - approximate]') : '';
+        var bonusNote = b.isBonus ? (b.thresholdUsed === b.realThreshold ? ' [exact ' + b.realThreshold + '+ line]' : ' [via ' + b.thresholdUsed + '+ line, closest available to ' + b.realThreshold + '+]') : '';
+        lines.push(STAT_LABELS[sk] + ': ' + b.value.toFixed(1) + ' pts (' + book + ')' + altNote + bonusNote);
       } else {
         lines.push(STAT_LABELS[sk] + ': not posted yet');
       }
@@ -633,36 +653,86 @@
       if (pn === 'sam darnold' || pn === 'drake maye') debugTargets.push(ppid);
     }
 
-    var statsByKey = {}; // key -> {entriesSeen, sidesSeen, anyBookMatched, approvedBookMatched}
-    for (var kk in PROP_BET_TYPES) statsByKey[kk] = {entriesSeen:0, sidesSeen:0, anyBookMatched:0, approvedBookMatched:0};
+    var statsByKey = {}; // key -> {entriesSeen, sidesSeen, anyBookMatched, approvedBookMatched, altUsedAsFallback}
+    for (var kk in PROP_BET_TYPES) statsByKey[kk] = {entriesSeen:0, sidesSeen:0, anyBookMatched:0, approvedBookMatched:0, altUsedAsFallback:0};
+
+    // Holds every alt/subtype-line candidate seen, personId -> {key: [best, ...]}.
+    // Declared here (not just inside the block below) so it's still available
+    // later for the FanDuel yardage-bonus calculation, which needs the FULL
+    // set of alt thresholds, not just whichever one won the normal fallback.
+    var altAccum = {};
 
     if (!game || !game.pregame){
       diag.push('single unfiltered request: no data returned');
     } else {
       for (var eventKey in game.pregame){
         var entry = game.pregame[eventKey];
-        if (entry.betSubType) continue; // skip alt-line variants for this first pass
         var thisKey = BET_TYPE_ID_TO_KEY[entry.betTypeId]; // trust the embedded id, not the request
         if (!thisKey) continue; // a bet type we haven't mapped/don't care about
+        var isAlt = !!entry.betSubType;
         var s = statsByKey[thisKey];
-        s.entriesSeen++;
+        if (!isAlt) s.entriesSeen++;
         var sides = entry.sides || {};
         for (var sideKey in sides){
-          s.sidesSeen++;
+          if (!isAlt) s.sidesSeen++;
           var side = sides[sideKey];
           var personId = side.personId;
           if (!personId) continue;
-          if (side.marketSourceLines && Object.keys(side.marketSourceLines).length) s.anyBookMatched++;
+          if (!isAlt && side.marketSourceLines && Object.keys(side.marketSourceLines).length) s.anyBookMatched++;
           var best = pickBestLine(side.marketSourceLines);
           if (!best) continue;
+
+          if (isAlt){
+            // Alt/subtype lines (e.g. "Milestone-Alt") come as several separate
+            // entries at different thresholds (149.5, 174.5, 199.5, etc.), each
+            // with its own price. We keep ALL of them per player/stat now,
+            // rather than just whichever happened to be seen first - the full
+            // set lets us pick the threshold priced closest to even odds below,
+            // which is a much better expected-value proxy than any single
+            // arbitrary alt line.
+            if (!altAccum[personId]) altAccum[personId] = {};
+            if (!altAccum[personId][thisKey]) altAccum[personId][thisKey] = [];
+            altAccum[personId][thisKey].push(best);
+            continue;
+          }
+
           s.approvedBookMatched++;
           if (!accum[personId]) accum[personId] = {};
           accum[personId][thisKey] = best;
         }
       }
+
+      // Fallback pass: for any player/stat with NO standard-line match, use
+      // an alt line instead if we have any, flagged so downstream code (and
+      // the tooltip) can mark it as lower-confidence. Among however many alt
+      // thresholds we collected, pick whichever one's price is closest to a
+      // coinflip (50%) - a near-even-money line sits close to the market's
+      // real expectation, the same way a standard O/U line does, which is
+      // what makes it usable as an EV proxy at all (an extremely lopsided
+      // line, like -800, tells us almost nothing about the expected value).
+      for (var altPid in altAccum){
+        for (var altKey in altAccum[altPid]){
+          if (!accum[altPid]) accum[altPid] = {};
+          if (accum[altPid][altKey]) continue; // already have a standard-line match
+
+          var candidates = altAccum[altPid][altKey];
+          var bestCandidate = null, bestDist = Infinity;
+          candidates.forEach(function(c){
+            var prob = americanToProb(c.price);
+            if (prob === null) return;
+            var dist = Math.abs(prob - 0.5);
+            if (dist < bestDist){ bestDist = dist; bestCandidate = c; }
+          });
+          if (!bestCandidate) continue;
+
+          accum[altPid][altKey] = Object.assign({isAlt: true, altCandidateCount: candidates.length}, bestCandidate);
+          statsByKey[altKey].altUsedAsFallback++;
+        }
+      }
+
       for (var dk in statsByKey){
         var d = statsByKey[dk];
-        diag.push(dk + ': ' + d.entriesSeen + ' lines, ' + d.sidesSeen + ' sides, ' + d.anyBookMatched + ' with any book, ' + d.approvedBookMatched + ' with an approved book');
+        diag.push(dk + ': ' + d.entriesSeen + ' lines, ' + d.sidesSeen + ' sides, ' + d.anyBookMatched + ' with any book, ' + d.approvedBookMatched + ' with an approved book' + (d.altUsedAsFallback ? ', +' + d.altUsedAsFallback + ' more via alt-line fallback' : ''));
       }
     }
 
@@ -688,13 +758,64 @@
         if (!line || !cfg.mult) continue;
         var contribution;
         if (cfg.kind === 'yardage'){
-          contribution = (line.points || 0) * cfg.mult; // O/U line as expected-value proxy
+          if (line.isAlt){
+            // Now that we pick whichever alt threshold is priced CLOSEST to a
+            // coinflip (see the fallback pass above), its line genuinely is a
+            // reasonable expected-value proxy, the same logic that makes a
+            // standard O/U line usable at all. But if even the best available
+            // alt candidate is still heavily lopsided (nothing near 50/50 was
+            // posted), it's too weak a signal to trust - show it, don't count it.
+            var altProb = americanToProb(line.price);
+            var altIsUsable = altProb !== null && altProb > 0.35 && altProb < 0.65;
+            contribution = altIsUsable ? (line.points || 0) * cfg.mult : 0;
+          } else {
+            contribution = (line.points || 0) * cfg.mult; // O/U line as expected-value proxy
+          }
         } else {
+          // Binary (TD-type) stats: even from an alt line, the price is still
+          // a real probability of crossing SOME threshold - directionally
+          // useful even if the exact threshold differs from the standard
+          // "any/1+" line, so we do count these, just flagged as approximate.
           var prob = americanToProb(line.price);
           contribution = prob === null ? 0 : prob * cfg.mult;
         }
         fp += contribution;
-        breakdown[sk] = { value: contribution, sourceId: line.sourceId };
+        breakdown[sk] = { value: contribution, sourceId: line.sourceId, isAlt: !!line.isAlt, altCandidateCount: line.altCandidateCount };
+      }
+
+      // FanDuel milestone bonuses: +3 pts for 300+ passing yards, +3 for
+      // 100+ rushing yards, +3 for 100+ receiving yards. Sportsbooks often
+      // post an alt line at or near these exact thresholds (bettors like
+      // wagering on them specifically), so we search the full alt-candidate
+      // pool for whichever threshold is CLOSEST to the real bonus cutoff
+      // (not closest to 50/50 like the normal yardage fallback - here we
+      // want the specific number, 300 or 100, not just any fair line), then
+      // convert that line's price straight into a probability of hitting it.
+      for (var bk in BONUS_CONFIG){
+        var bonusCfg = BONUS_CONFIG[bk];
+        var candidates = (altAccum[pid] && altAccum[pid][bonusCfg.stat]) || [];
+        if (!candidates.length) continue;
+
+        var closest = null, closestDist = Infinity;
+        candidates.forEach(function(c){
+          if (c.points === null || c.points === undefined) return;
+          var dist = Math.abs(c.points - bonusCfg.threshold);
+          if (dist < closestDist){ closestDist = dist; closest = c; }
+        });
+        // Only trust it if some book actually posted a line within 15 yards
+        // of the real cutoff - otherwise we'd be estimating "300+" from a
+        // line that's really asking about 250+ or 350+, which isn't the
+        // same probability at all.
+        if (!closest || closestDist > 15) continue;
+
+        var bonusProb = americanToProb(closest.price);
+        if (bonusProb === null) continue;
+        var bonusContribution = bonusProb * bonusCfg.mult;
+        fp += bonusContribution;
+        breakdown[bk] = {
+          value: bonusContribution, sourceId: closest.sourceId, isBonus: true,
+          thresholdUsed: closest.points, realThreshold: bonusCfg.threshold
+        };
       }
       var name = normalizeName(person.firstName + ' ' + person.lastName);
       marketProjections[name] = { fp: fp, breakdown: breakdown, personId: pid };
@@ -768,7 +889,15 @@
 
       found.forEach(function(f){
         var btKey = BET_TYPE_ID_TO_KEY_GLOBAL[f.entry.betTypeId] || ('unmapped id ' + f.entry.betTypeId);
-        var altFlag = f.entry.betSubType ? '  [SKIPPED - alt/subtype line: ' + f.entry.betSubType + ']' : '';
+        var cfg = PROP_BET_TYPES[btKey];
+        var altFlag = '';
+        if (f.entry.betSubType){
+          if (cfg && cfg.kind === 'binary'){
+            altFlag = '  [alt/subtype line: ' + f.entry.betSubType + ' - used as fallback if no standard line, counted as approximate]';
+          } else {
+            altFlag = '  [alt/subtype line: ' + f.entry.betSubType + ' - used as fallback if no standard line AND close to even odds]';
+          }
+        }
         var lines = f.side.marketSourceLines || {};
         var bookList = Object.keys(lines).map(function(srcId){
           var book = SPORTSBOOK_NAMES[srcId] || ('src' + srcId);
@@ -778,6 +907,14 @@
         var best = pickBestLine(lines);
         var bestDesc = best ? (SPORTSBOOK_NAMES[best.sourceId] || ('src'+best.sourceId)) + ' @ ' + best.points + '/' + best.price
                              : 'none of our approved books (' + SPORTSBOOK_PRIORITY.map(function(id){return SPORTSBOOK_NAMES[id];}).join(', ') + ') have posted this yet';
+        // For alt lines specifically, note whether THIS one's price is close
+        // enough to even odds to actually be usable as an EV proxy, mirroring
+        // the same 35-65% band the real fallback logic uses.
+        if (f.entry.betSubType && best && cfg && cfg.kind === 'yardage'){
+          var thisProb = americanToProb(best.price);
+          var usable = thisProb !== null && thisProb > 0.35 && thisProb < 0.65;
+          bestDesc += usable ? '  [close to even odds - usable as EV proxy]' : '  [too lopsided - not usable as EV proxy]';
+        }
         console.log('  ' + btKey + altFlag + ' - books posted: [' + (bookList.join(', ') || 'none') + '] -> using: ' + bestDesc);
       });
     });
