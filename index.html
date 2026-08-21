@@ -586,6 +586,35 @@
 
   // Walks the fallback order (DK -> FD -> Fanatics -> BetMGM -> Caesars -> BetRivers)
   // and returns the first sportsbook that has actually posted a line for this player/stat.
+  // Returns EVERY line a book has posted for this market - a book can carry
+  // multiple alternateLines entries at different thresholds (174.5, 199.5,
+  // 224.5, etc.) under a single marketSourceLines[srcId] object, not just
+  // one. We used to only read alternateLines[0] and silently drop the rest -
+  // this returns the full list so downstream code (bonus calc, alt-line
+  // fallback) can actually search across all of them.
+  function pickAllLines(marketSourceLines){
+    var all = [];
+    if (!marketSourceLines) return all;
+    for (var i=0;i<SPORTSBOOK_PRIORITY.length;i++){
+      var srcId = String(SPORTSBOOK_PRIORITY[i]);
+      var line = marketSourceLines[srcId];
+      if (!line || line.statusId === 3) continue; // 3 = suspended/unavailable
+      if (line.alternateLines && line.alternateLines.length){
+        line.alternateLines.forEach(function(alt){
+          if (alt.price === undefined || alt.price === null) return;
+          all.push({ price: alt.price, points: (alt.points !== undefined ? alt.points : line.points), sourceId: srcId });
+        });
+      } else if (line.price !== undefined && line.price !== null){
+        all.push({ price: line.price, points: line.points, sourceId: srcId });
+      }
+    }
+    return all;
+  }
+
+  // Single "best" line for the normal (non-alt) case - first eligible
+  // sportsbook in priority order, its first/primary line. Alt-line handling
+  // in fetchMarketProjections uses pickAllLines() above instead, since it
+  // needs the full menu of thresholds, not just one.
   function pickBestLine(marketSourceLines){
     if (!marketSourceLines) return null;
     for (var i=0;i<SPORTSBOOK_PRIORITY.length;i++){
@@ -679,23 +708,25 @@
           var personId = side.personId;
           if (!personId) continue;
           if (!isAlt && side.marketSourceLines && Object.keys(side.marketSourceLines).length) s.anyBookMatched++;
-          var best = pickBestLine(side.marketSourceLines);
-          if (!best) continue;
 
           if (isAlt){
-            // Alt/subtype lines (e.g. "Milestone-Alt") come as several separate
-            // entries at different thresholds (149.5, 174.5, 199.5, etc.), each
-            // with its own price. We keep ALL of them per player/stat now,
-            // rather than just whichever happened to be seen first - the full
-            // set lets us pick the threshold priced closest to even odds below,
-            // which is a much better expected-value proxy than any single
-            // arbitrary alt line.
+            // Alt/subtype lines (e.g. "Milestone-Alt") can carry SEVERAL
+            // thresholds per book (149.5, 174.5, 199.5, 224.5, ...) all under
+            // one marketSourceLines[srcId] entry - pickAllLines() pulls every
+            // one of them, not just the first, so we keep the FULL menu per
+            // player/stat. That full set is what lets us later pick whichever
+            // threshold is priced closest to even odds (best general EV proxy)
+            // or closest to a real FanDuel bonus cutoff (300/100 yards).
+            var allAlts = pickAllLines(side.marketSourceLines);
+            if (!allAlts.length) continue;
             if (!altAccum[personId]) altAccum[personId] = {};
             if (!altAccum[personId][thisKey]) altAccum[personId][thisKey] = [];
-            altAccum[personId][thisKey].push(best);
+            altAccum[personId][thisKey] = altAccum[personId][thisKey].concat(allAlts);
             continue;
           }
 
+          var best = pickBestLine(side.marketSourceLines);
+          if (!best) continue;
           s.approvedBookMatched++;
           if (!accum[personId]) accum[personId] = {};
           accum[personId][thisKey] = best;
@@ -916,6 +947,22 @@
           bestDesc += usable ? '  [close to even odds - usable as EV proxy]' : '  [too lopsided - not usable as EV proxy]';
         }
         console.log('  ' + btKey + altFlag + ' - books posted: [' + (bookList.join(', ') || 'none') + '] -> using: ' + bestDesc);
+
+        // For alt/subtype entries, also show the FULL menu of thresholds
+        // found (a single book can post several - 149.5, 174.5, 199.5, etc.)
+        // now that pickAllLines() actually captures all of them instead of
+        // just the first, so you can see exactly what's available to choose
+        // from for the bonus calc and the general alt-line fallback.
+        if (f.entry.betSubType){
+          var allForThis = pickAllLines(lines);
+          if (allForThis.length > 1){
+            console.log('    Full alt menu (' + allForThis.length + ' lines): ' +
+              allForThis.map(function(a){
+                var bk = SPORTSBOOK_NAMES[a.sourceId] || ('src'+a.sourceId);
+                return bk + ' ' + a.points + '/' + a.price;
+              }).join(', '));
+          }
+        }
       });
 
       // Final computed result - what actually made it into the projection,
