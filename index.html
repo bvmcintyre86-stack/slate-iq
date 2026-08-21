@@ -302,6 +302,12 @@
         </select>
         <span id="propsStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
       </div>
+      <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);margin-top:4px;">
+        <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Audit a player</label>
+        <input id="debugPlayerInput" type="text" placeholder="e.g. Lamar Jackson" style="flex:1;min-width:160px;font-size:12px;">
+        <button id="debugPlayerBtn">Search</button>
+        <span style="font-size:11px;color:var(--muted);">Results print to the browser console (F12)</span>
+      </div>
     </div>
 
     <div class="legend" id="legend"></div>
@@ -707,6 +713,81 @@
     setPropsStatus(matched + ' of ' + Object.keys(accum).length + ' players matched (' + Object.keys(people).length + ' names loaded). Open the browser console (F12) for names + a per-stat breakdown.');
     renderTable();
     saveState();
+
+    // Cache the raw pull for debugPlayerProps() below - lets you audit ANY
+    // player's actual raw data after the fact, without re-fetching, to see
+    // exactly why something did or didn't make it into their projection.
+    lastRawPregame = game && game.pregame ? game.pregame : {};
+    lastRawPeople = people;
+  }
+
+  var lastRawPregame = {};
+  var lastRawPeople = {};
+
+  // Searches the last props pull for any player whose name contains the
+  // given text (case-insensitive), and prints a full audit of their raw
+  // data: every bet type Unabated has ANYTHING for (not just the 10 we
+  // track), which sportsbooks actually posted a line, and specifically
+  // whether pickBestLine's fallback order found one of our approved books
+  // or not - so you can see exactly why a stat is or isn't showing up.
+  function debugPlayerProps(query){
+    query = normalizeName(query);
+    if (!query){ console.log('debugPlayerProps: give it a name to search for.'); return; }
+
+    var matches = [];
+    for (var pid in lastRawPeople){
+      var nm = normalizeName(lastRawPeople[pid].firstName + ' ' + lastRawPeople[pid].lastName);
+      if (nm.indexOf(query) !== -1) matches.push(pid);
+    }
+
+    if (!matches.length){
+      console.log('No player matching "' + query + '" found in the last props pull. ' +
+        'Either the name doesn\'t match exactly (check spelling/suffix), or you need to ' +
+        'run "Load player props" at least once first.');
+      return;
+    }
+
+    matches.forEach(function(pid){
+      var person = lastRawPeople[pid];
+      console.log('=== ' + person.firstName + ' ' + person.lastName + ' (personId ' + pid + ') ===');
+
+      var found = [];
+      for (var eventKey in lastRawPregame){
+        var entry = lastRawPregame[eventKey];
+        var sides = entry.sides || {};
+        for (var sideKey in sides){
+          if (String(sides[sideKey].personId) !== String(pid)) continue;
+          found.push({entry: entry, side: sides[sideKey]});
+        }
+      }
+
+      if (!found.length){
+        console.log('  No entries at all for this player in the last pull (nothing posted by ANY book yet).');
+        return;
+      }
+
+      found.forEach(function(f){
+        var btKey = BET_TYPE_ID_TO_KEY_GLOBAL[f.entry.betTypeId] || ('unmapped id ' + f.entry.betTypeId);
+        var altFlag = f.entry.betSubType ? '  [SKIPPED - alt/subtype line: ' + f.entry.betSubType + ']' : '';
+        var lines = f.side.marketSourceLines || {};
+        var bookList = Object.keys(lines).map(function(srcId){
+          var book = SPORTSBOOK_NAMES[srcId] || ('src' + srcId);
+          var suspended = lines[srcId].statusId === 3 ? ' (suspended)' : '';
+          return book + suspended;
+        });
+        var best = pickBestLine(lines);
+        var bestDesc = best ? (SPORTSBOOK_NAMES[best.sourceId] || ('src'+best.sourceId)) + ' @ ' + best.points + '/' + best.price
+                             : 'none of our approved books (' + SPORTSBOOK_PRIORITY.map(function(id){return SPORTSBOOK_NAMES[id];}).join(', ') + ') have posted this yet';
+        console.log('  ' + btKey + altFlag + ' - books posted: [' + (bookList.join(', ') || 'none') + '] -> using: ' + bestDesc);
+      });
+    });
+  }
+
+  // Reverse lookup shared with debugPlayerProps - rebuilt fresh each time
+  // fetchMarketProjections runs, via the same PROP_BET_TYPES config.
+  var BET_TYPE_ID_TO_KEY_GLOBAL = {};
+  for (var _pbtKey in PROP_BET_TYPES){
+    BET_TYPE_ID_TO_KEY_GLOBAL[PROP_BET_TYPES[_pbtKey].id] = _pbtKey;
   }
 
   function setPropsStatus(msg){
@@ -2370,6 +2451,12 @@
     projSource = this.value;
     renderTable();
     saveState();
+  });
+  document.getElementById('debugPlayerBtn').addEventListener('click', function(){
+    debugPlayerProps(document.getElementById('debugPlayerInput').value);
+  });
+  document.getElementById('debugPlayerInput').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') debugPlayerProps(this.value);
   });
 
   document.getElementById('addGameBtn').addEventListener('click', addGame);
