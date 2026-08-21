@@ -478,6 +478,16 @@
     attd:         { id: 216, kind: 'binary',  mult: 6 }
   };
   var marketProjections = {}; // normalized "first last" -> {fp, breakdown, personId}
+  var marketProjectionsLoadedAt = null; // timestamp (ms) of the last successful "Load player props" run
+
+  // Human-readable "last loaded" message, shown on page load if props were
+  // restored from a previous session, and after any fresh load.
+  function propsFreshnessMsg(){
+    if (!marketProjectionsLoadedAt) return '';
+    var mins = Math.round((Date.now() - marketProjectionsLoadedAt) / 60000);
+    var when = mins < 1 ? 'just now' : mins < 60 ? (mins + ' min ago') : (Math.round(mins/60) + ' hr ago');
+    return Object.keys(marketProjections).length + ' players with market data (loaded ' + when + ' - click "Load player props" to refresh).';
+  }
 
   // FanDuel's built-in yardage milestone bonuses: +3 pts each for 300+
   // passing yards, 100+ rushing yards, 100+ receiving yards. Computed from
@@ -866,6 +876,7 @@
     console.log('Matched players with an approved-book line:\n' + (matchedNames.length ? matchedNames.join('\n') : '(none)'));
 
     setPropsStatus(matched + ' of ' + Object.keys(accum).length + ' players matched (' + Object.keys(people).length + ' names loaded). Open the browser console (F12) for names + a per-stat breakdown.');
+    marketProjectionsLoadedAt = Date.now();
     renderTable();
     saveState();
 
@@ -1350,6 +1361,8 @@
         cap: salaryCap,
         stackSettings: stackSettings,
         projSource: projSource,
+        marketProjections: marketProjections,
+        marketProjectionsLoadedAt: marketProjectionsLoadedAt,
         games: games,
         players: players,
         topPlayers: topPlayers,
@@ -1406,6 +1419,11 @@
         projSource = state.projSource;
         var projSel = document.getElementById('projSourceSel');
         if (projSel) projSel.value = projSource;
+      }
+      if (state.marketProjections){
+        marketProjections = state.marketProjections;
+        marketProjectionsLoadedAt = state.marketProjectionsLoadedAt || null;
+        setPropsStatus(propsFreshnessMsg());
       }
       games = (state.games || []).map(function(g){
         g.away = normalizeTeam(g.away); g.home = normalizeTeam(g.home); return g;
