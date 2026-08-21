@@ -527,6 +527,24 @@
     TE:  ['recYards','receptions','attd'],
   };
 
+  // The DISPLAYED total, everywhere the Mkt number shows up. This is the sum
+  // of each line's ALREADY-ROUNDED value, not the raw precise mp.fp - so if
+  // you manually add up the numbers shown in the tooltip, you get exactly
+  // this number back, instead of landing a tenth or two off due to each line
+  // rounding independently (e.g. five contributions like 2.04+2.04+2.04+2.04
+  // display as 2.0 each = 8.0, while the precise total is 8.16 -> 8.2 - a
+  // real, visible mismatch on players with several small contributions,
+  // which is common for QBs). The precise mp.fp is still what actually
+  // drives scoring/sorting/the optimizer - only the DISPLAY uses this.
+  function mktDisplayTotal(mp){
+    if (!mp || !mp.breakdown) return 0;
+    var sum = 0;
+    for (var k in mp.breakdown){
+      sum += Math.round(mp.breakdown[k].value * 10) / 10;
+    }
+    return Math.round(sum * 10) / 10;
+  }
+
   function mktCoverage(mp, position){
     var relevant = POSITION_RELEVANT_STATS[position];
     if (!relevant || !mp) return null;
@@ -546,7 +564,7 @@
   function mktTooltip(mp, position){
     if (!mp) return 'No market data loaded for this player yet.';
     var cov = mktCoverage(mp, position);
-    var lines = ['Market projection: ' + mp.fp.toFixed(1) + ' pts'];
+    var lines = ['Market projection: ' + mktDisplayTotal(mp).toFixed(1) + ' pts'];
     if (cov) lines.push('Coverage: ' + cov.matched + ' of ' + cov.total + ' relevant props posted for ' + position);
     lines.push('');
     // Only list props relevant to this position (RB gets 5 pathways, WR/TE get
@@ -986,7 +1004,7 @@
       var finalName = normalizeName(person.firstName + ' ' + person.lastName);
       var mp = marketProjections[finalName];
       if (mp){
-        console.log('  --- Final computed projection: ' + mp.fp.toFixed(1) + ' pts ---');
+        console.log('  --- Final computed projection: ' + mktDisplayTotal(mp).toFixed(1) + ' pts ---');
         for (var fk in mp.breakdown){
           var fb = mp.breakdown[fk];
           console.log('    ' + (STAT_LABELS[fk] || fk) + ': ' + fb.value.toFixed(1) + ' pts' + (fb.isBonus ? ' [bonus]' : fb.isAlt ? ' [alt line]' : ''));
@@ -2163,7 +2181,7 @@
         '<td class="mono">'+p.team+'</td>'+
         '<td class="num">'+money(p.salary)+'</td>'+
         '<td class="num">'+p.fppg.toFixed(1)+'</td>'+
-        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mp.fp.toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : '—')+'</td>'+
+        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : '—')+'</td>'+
         '<td class="num">'+p.value.toFixed(2)+'</td>'+
         '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
         '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
@@ -2226,7 +2244,7 @@
         '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&darr;</button>'
       : '';
     var mkt = marketProjections[normalizeName(p.name)];
-    var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mkt,p.position).replace(/"/g,'&quot;')+'">'+(mkt ? mkt.fp.toFixed(1)+(mktCoverage(mkt,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mkt,p.position).matched+'/'+mktCoverage(mkt,p.position).total+')</span>':'') : '—')+'</td>';
+    var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mkt,p.position).replace(/"/g,'&quot;')+'">'+(mkt ? mktDisplayTotal(mkt).toFixed(1)+(mktCoverage(mkt,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mkt,p.position).matched+'/'+mktCoverage(mkt,p.position).total+')</span>':'') : '—')+'</td>';
     return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
   }
 
