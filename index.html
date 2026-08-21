@@ -1668,12 +1668,16 @@
   }
 
   // Builds N complete lineups in one go by running the normal single-lineup
-  // optimizer N times in a row, resetting each lineup to empty first. An
-  // exposure penalty (see playerScore) makes each subsequent lineup steer
-  // away from players already used a lot in this same batch, so the result
-  // is a varied set of lineups rather than N identical copies of the "best"
-  // one. Respects MAX_LINEUPS (20) and replaces whatever's currently in the
-  // lineup tabs, so it asks for confirmation first since that's destructive.
+  // optimizer N times in a row. Whatever's already placed in the CURRENTLY
+  // ACTIVE lineup when you click Generate is treated as locked - it's used
+  // as the starting template for every one of the N lineups, and the
+  // optimizer only fills the slots that were empty. An exposure penalty (see
+  // playerScore) steers each subsequent lineup away from players already
+  // used a lot for the OPEN slots in this batch, so the filled-in portion
+  // varies across lineups instead of repeating the same picks every time -
+  // your locked players stay identical in all of them, as expected.
+  // Respects MAX_LINEUPS (20) and replaces lineup tabs 1 through N, so it
+  // confirms first since that's destructive to anything else in those tabs.
   function bulkGenerateLineups(n){
     n = Math.max(1, Math.min(MAX_LINEUPS, Math.round(n) || 1));
 
@@ -1682,27 +1686,39 @@
       return;
     }
 
+    var lockedCount = activeSLOT_DEFS.filter(function(s){ return lineup[s.key]; }).length;
+    var lockedNote = lockedCount
+      ? ' Your ' + lockedCount + ' currently-placed player' + (lockedCount>1?'s':'') + ' will be kept in every lineup, and the rest built around ' + (lockedCount>1?'them':'it') + '.'
+      : '';
     var proceed = confirm(
       'This will build ' + n + ' fresh lineup' + (n>1?'s':'') +
-      ', replacing whatever is currently in Lineup 1 through ' + n + '. Continue?'
+      ', replacing whatever is currently in Lineup 1 through ' + n + '.' + lockedNote + ' Continue?'
     );
     if (!proceed) return;
+
+    // Snapshot the current lineup as the shared template BEFORE the loop
+    // starts overwriting lineup/lineups[i] - every generated lineup starts
+    // from a fresh copy of this, not from whatever the loop leaves behind.
+    var template = {};
+    activeSLOT_DEFS.forEach(function(s){ template[s.key] = lineup[s.key] || null; });
 
     exposureCount = {}; // start this batch with a clean slate
 
     var newLineups = [];
     for (var i = 0; i < n; i++){
-      lineup = emptyLineup();
+      lineup = Object.assign({}, template); // fresh copy - locked slots intact, rest empty
       lineups[i] = lineup;
       activeIdx = i;
 
-      optimizeRemaining();
+      optimizeRemaining(); // only touches the still-empty slots
 
-      // Tally exposure from whatever actually got filled, so the NEXT
-      // lineup in this batch sees the penalty and tends to diversify.
+      // Tally exposure from the newly-filled slots only, so locked players
+      // (present in every lineup by definition) don't rack up a penalty
+      // that would be meaningless anyway since they're never re-chosen.
       activeSLOT_DEFS.forEach(function(s){
         var p = lineup[s.key];
-        if (p) exposureCount[p.id] = (exposureCount[p.id] || 0) + 1;
+        var wasLocked = !!template[s.key];
+        if (p && !wasLocked) exposureCount[p.id] = (exposureCount[p.id] || 0) + 1;
       });
 
       newLineups.push(lineup);
