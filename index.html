@@ -120,6 +120,7 @@
   .bar-group.bar-group-plain{background:none;border:none;padding:4px 0;}
   .bar-divider{display:none;}
   .bar-group-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;}
+  .bar-row-nowrap{display:flex;flex-wrap:nowrap;gap:16px;}
   .lc-scroll{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:20px;}
   .lc-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;}
   .lc-card.lc-best{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
@@ -369,25 +370,26 @@
       </div>
 
       <div class="bar-divider"></div>
-      <div class="bar-group">
-        <span class="bar-group-label">Bulk build</span>
-        <input id="bulkCountInput" type="number" min="1" max="20" value="5" style="width:56px;">
-        <button id="bulkGenerateBtn">Generate lineups</button>
-      </div>
-
-      <div class="bar-divider" id="stackSettingsDivider"></div>
-      <div class="bar-group" id="stackSettings">
-        <div class="field">
-          <label>Stack level</label>
-          <select id="stackLevelSel">
-            <option value="0">No forced stack</option>
-            <option value="1">QB + 1</option>
-            <option value="2">QB + 2</option>
-            <option value="3">QB + 3</option>
-          </select>
+      <div class="bar-row-nowrap">
+        <div class="bar-group" id="stackSettings">
+          <div class="field">
+            <label>Stack level</label>
+            <select id="stackLevelSel">
+              <option value="0">No forced stack</option>
+              <option value="1">QB + 1</option>
+              <option value="2">QB + 2</option>
+              <option value="3">QB + 3</option>
+            </select>
+          </div>
+          <label class="stack-chk"><input type="checkbox" id="bringBackChk"> Require bring-back</label>
+          <label class="stack-chk"><input type="checkbox" id="onslaughtOnlyChk"> Onslaught-tagged team only</label>
         </div>
-        <label class="stack-chk"><input type="checkbox" id="bringBackChk"> Require bring-back</label>
-        <label class="stack-chk"><input type="checkbox" id="onslaughtOnlyChk"> Onslaught-tagged team only</label>
+
+        <div class="bar-group">
+          <span class="bar-group-label">Bulk build</span>
+          <input id="bulkCountInput" type="number" min="1" max="20" value="5" style="width:56px;">
+          <button id="bulkGenerateBtn">Generate lineups</button>
+        </div>
       </div>
 
       <div class="bar-divider" id="mvpFilterDivider" style="display:none;"></div>
