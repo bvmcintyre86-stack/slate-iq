@@ -2142,17 +2142,47 @@
 
     exposureCount = {}; // start this batch with a clean slate
 
+    // Track exact lineup "signatures" (sorted player IDs) already produced
+    // in this batch. The exposure penalty above only makes repeats LESS
+    // likely - with a small player pool (Single Game especially, just 2
+    // teams) the optimizer can still land on an identical combination twice.
+    // This catches that directly and forces a retry rather than silently
+    // accepting a duplicate.
+    var seenSignatures = {};
+    function lineupSignature(lu){
+      return activeSLOT_DEFS.map(function(s){ return lu[s.key] ? lu[s.key].id : ''; }).sort().join(',');
+    }
+    var duplicatesForced = 0;
+
     var newLineups = [];
     for (var i = 0; i < n; i++){
-      lineup = Object.assign({}, template); // fresh copy - locked slots intact, rest empty
-      lineups[i] = lineup;
-      activeIdx = i;
+      var attempt = 0, sig;
+      do {
+        lineup = Object.assign({}, template); // fresh copy - locked slots intact, rest empty
+        lineups[i] = lineup;
+        activeIdx = i;
 
-      optimizeRemaining(); // only touches the still-empty slots
+        optimizeRemaining(); // only touches the still-empty slots
+        sig = lineupSignature(lineup);
+        attempt++;
 
-      // Tally exposure from the newly-filled slots only, so locked players
-      // (present in every lineup by definition) don't rack up a penalty
-      // that would be meaningless anyway since they're never re-chosen.
+        if (seenSignatures[sig] && attempt <= 15){
+          // Force this exact combination to become unattractive next attempt
+          // by heavily penalizing every non-locked player in it, then retry.
+          activeSLOT_DEFS.forEach(function(s){
+            var p = lineup[s.key];
+            var wasLocked = !!template[s.key];
+            if (p && !wasLocked) exposureCount[p.id] = (exposureCount[p.id] || 0) + 25;
+          });
+        }
+      } while (seenSignatures[sig] && attempt <= 15);
+
+      if (seenSignatures[sig]) duplicatesForced++; // pool too small - had to accept a repeat
+      seenSignatures[sig] = true;
+
+      // Tally NORMAL exposure from the newly-filled slots, so the next
+      // lineup in the batch (not just retries of this one) still steers
+      // toward variety overall, not just away from this exact duplicate.
       activeSLOT_DEFS.forEach(function(s){
         var p = lineup[s.key];
         var wasLocked = !!template[s.key];
@@ -2167,7 +2197,12 @@
     lineup = lineups[0];
     exposureCount = {}; // clear so a later single-lineup Optimize isn't affected
 
-    setMsg('Generated ' + n + ' lineup' + (n>1?'s':'') + '.');
+    var msg = 'Generated ' + n + ' lineup' + (n>1?'s':'') + '.';
+    if (duplicatesForced){
+      msg += ' Note: the player pool was too small to build ' + n + ' fully unique lineups - ' +
+        duplicatesForced + ' repeat' + (duplicatesForced>1?'s were':' was') + ' unavoidable given your current locks/settings.';
+    }
+    setMsg(msg);
     saveState();
     renderLuTabs();
     refreshLineupUI();
