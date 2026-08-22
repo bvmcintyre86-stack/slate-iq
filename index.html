@@ -130,6 +130,10 @@
   .lc-proj-val{text-align:right;color:var(--chalk);font-variant-numeric:tabular-nums;}
   .lc-empty{color:var(--muted);font-style:italic;}
   .lc-diff{background:rgba(212,175,55,.12);}
+  .lc-card{cursor:pointer;}
+  .lc-active{border-color:var(--gold);}
+  .lc-rm{margin-left:6px;opacity:.5;cursor:pointer;}
+  .lc-rm:hover{opacity:1;color:#c00;}
   .lineup-stat{display:flex;flex-direction:column;gap:2px;}
   .lineup-stat .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
   .lineup-stat .val{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;}
@@ -355,27 +359,23 @@
         <input id="bulkCountInput" type="number" min="1" max="20" value="5" style="width:56px;">
         <button id="bulkGenerateBtn">Generate lineups</button>
       </div>
-      <div class="lineup-actions" style="border-left:1px solid var(--line);padding-left:10px;margin-left:4px;">
-        <button id="compareLineupsBtn">Compare lineups</button>
+      <div class="stack-settings" id="stackSettings" style="border-left:1px solid var(--line);padding-left:14px;margin-left:4px;margin-top:0;margin-bottom:0;background:none;border-top:none;border-right:none;border-bottom:none;border-radius:0;">
+        <div class="field">
+          <label>Stack level</label>
+          <select id="stackLevelSel">
+            <option value="0">No forced stack</option>
+            <option value="1">QB + 1</option>
+            <option value="2">QB + 2</option>
+            <option value="3">QB + 3</option>
+          </select>
+        </div>
+        <label class="stack-chk"><input type="checkbox" id="bringBackChk"> Require bring-back</label>
+        <label class="stack-chk"><input type="checkbox" id="onslaughtOnlyChk"> Onslaught-tagged team only</label>
       </div>
     </div>
-    <div id="lineupCompareView" style="display:none;"></div>
     <div class="construction-badge" id="constructionBadge"></div>
-    <div class="stack-settings" id="stackSettings">
-      <div class="field">
-        <label>Stack level</label>
-        <select id="stackLevelSel">
-          <option value="0">No forced stack</option>
-          <option value="1">QB + 1</option>
-          <option value="2">QB + 2</option>
-          <option value="3">QB + 3</option>
-        </select>
-      </div>
-      <label class="stack-chk"><input type="checkbox" id="bringBackChk"> Require bring-back</label>
-      <label class="stack-chk"><input type="checkbox" id="onslaughtOnlyChk"> Onslaught-tagged team only</label>
-    </div>
     <div class="lineup-msg" id="lineupMsg"></div>
-    <div class="slots-grid" id="slotsGrid"></div>
+    <div id="lineupCompareView"></div>
   </section>
 
   <section class="tp-section">
@@ -1697,7 +1697,6 @@
 
   function refreshLineupUI(){
     renderLuTabs();
-    renderLineupSlots();
     renderLineupBar();
     renderConstructionBadge();
     renderTable();
@@ -1713,7 +1712,7 @@
   // refreshLineupUI() on every normal lineup update without extra wiring.
   function renderLineupCompare(){
     var view = document.getElementById('lineupCompareView');
-    if (!view || view.style.display === 'none') return;
+    if (!view) return;
 
     if (!lineups.length){
       view.innerHTML = '<div class="lc-empty" style="padding:10px;">No lineups yet.</div>';
@@ -1728,6 +1727,7 @@
     var baseline = lineups[0];
 
     var cardsHtml = lineups.map(function(lu, idx){
+      var isActive = idx === activeIdx;
       var filledSlots = slotDefs.filter(function(s){ return lu[s.key]; });
       var totalSalary = filledSlots.reduce(function(sum,s){ return sum + lu[s.key].salary; }, 0);
       var totalProj = filledSlots.reduce(function(sum,s){ return sum + effectiveFppg(lu[s.key]); }, 0);
@@ -1740,13 +1740,16 @@
         var basePlayer = baseline ? baseline[s.key] : null;
         var differs = idx > 0 && (!basePlayer || basePlayer.id !== p.id);
         var oppText = p.oppTeam ? ('vs '+p.oppTeam) : '';
+        // Only the lineup you're actively editing gets a remove control -
+        // past-generated lineups in the batch are meant to stay as-built.
+        var rmBtn = isActive ? '<span class="lc-rm" data-lc-rm="'+s.key+'" title="Remove">&times;</span>' : '';
         return '<div class="lc-row'+(differs?' lc-diff':'')+'"><div class="lc-pos">'+s.label+'</div>'+
           '<div><div class="lc-name" title="'+p.name+'">'+p.name+'</div><div class="lc-sub">'+p.team+(oppText?(' '+oppText):'')+' &middot; '+money(p.salary)+'</div></div>'+
-          '<div class="lc-proj-val">'+effectiveFppg(p).toFixed(1)+'</div></div>';
+          '<div class="lc-proj-val">'+effectiveFppg(p).toFixed(1)+rmBtn+'</div></div>';
       }).join('');
 
-      return '<div class="lc-card">'+
-        '<div class="lc-card-hdr"><span class="lc-idx">Lineup '+(idx+1)+'</span>'+
+      return '<div class="lc-card'+(isActive?' lc-active':'')+'" data-lc-card="'+idx+'">'+
+        '<div class="lc-card-hdr"><span class="lc-idx">Lineup '+(idx+1)+(isActive?' (editing)':'')+'</span>'+
         '<span class="lc-salary">'+money(totalSalary)+'</span>'+
         '<span class="lc-proj">'+totalProj.toFixed(1)+'</span></div>'+
         rowsHtml+
@@ -1754,6 +1757,21 @@
     }).join('');
 
     view.innerHTML = '<div class="lc-scroll">'+cardsHtml+'</div>';
+
+    // Clicking a card switches to editing that lineup (mirrors the LU tabs);
+    // clicking a remove "x" removes just that slot from the active lineup.
+    view.querySelectorAll('[data-lc-card]').forEach(function(card){
+      card.addEventListener('click', function(e){
+        if (e.target.hasAttribute('data-lc-rm')) return;
+        switchLineup(parseInt(card.getAttribute('data-lc-card')));
+      });
+    });
+    view.querySelectorAll('[data-lc-rm]').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        removeFromLineup(btn.getAttribute('data-lc-rm'));
+      });
+    });
   }
 
   function renderLineupBar(){
@@ -1771,6 +1789,7 @@
 
   function renderLineupSlots(){
     var grid = document.getElementById('slotsGrid');
+    if (!grid) return; // slot grid removed in favor of the always-on Compare Lineups view
     grid.innerHTML = activeSLOT_DEFS.map(function(s){
       var p = lineup[s.key];
       if (!p){
@@ -2829,13 +2848,6 @@
     var n = parseInt(document.getElementById('bulkCountInput').value, 10);
     bulkGenerateLineups(n);
   });
-  document.getElementById('compareLineupsBtn').addEventListener('click', function(){
-    var view = document.getElementById('lineupCompareView');
-    var showing = view.style.display !== 'none';
-    view.style.display = showing ? 'none' : 'block';
-    this.textContent = showing ? 'Compare lineups' : 'Hide comparison';
-    if (!showing) renderLineupCompare();
-  });
   document.getElementById('loadRostersBtn').addEventListener('click', loadRosters);
   document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
   document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
@@ -2860,9 +2872,9 @@
   renderLuTabs();
   renderTopPlayers();
   if (players.length) { populateFilterOptions(); tagPlayers(); } else { renderTable(); }
-  renderLineupSlots();
   renderLineupBar();
   renderConstructionBadge();
+  renderLineupCompare();
   var stackElInit = document.getElementById('stackSettings');
   if (stackElInit) stackElInit.style.display = slateMode==='sg' ? 'none' : 'flex';
 
