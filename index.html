@@ -1648,7 +1648,7 @@
     if (!tabs) return;
     tabs.innerHTML = lineups.map(function(lu, i){
       var filled = activeSLOT_DEFS.filter(function(s){return lu[s.key];}).length;
-      var label  = 'LU '+(i+1)+(filled?' ('+filled+'/9)':'');
+      var label  = 'LU '+(i+1)+(filled?' ('+filled+'/'+activeSLOT_DEFS.length+')':'');
       return '<button class="lu-tab'+(i===activeIdx?' active':'')+'" data-lu-idx="'+i+'">'+
         label+(lineups.length>1?'<span class="lu-tab-rm" data-lu-rm="'+i+'">x</span>':'')+
       '</button>';
