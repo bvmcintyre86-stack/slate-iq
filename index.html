@@ -115,9 +115,12 @@
   .dropzone strong{color:var(--chalk);}
   .pool-status{font-size:13px;color:var(--muted);margin-top:8px;}
 
-  .lineup-bar{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px;}
-  .lc-scroll{display:flex;gap:12px;overflow-x:auto;padding-bottom:10px;margin-bottom:14px;}
-  .lc-card{flex:0 0 260px;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .lineup-bar{display:flex;align-items:center;gap:22px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:14px;row-gap:16px;}
+  .bar-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .bar-divider{width:1px;align-self:stretch;background:var(--line);margin:0 2px;}
+  .bar-group-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;}
+  .lc-scroll{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:14px;}
+  .lc-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;}
   .lc-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);font-size:12px;}
   .lc-card-hdr .lc-idx{font-weight:700;color:var(--chalk);}
   .lc-card-hdr .lc-salary{color:var(--muted);}
@@ -208,9 +211,9 @@
   /* lu-tabs */
   .lu-tabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
   .lu-tab{padding:4px 14px;border-radius:20px;border:1px solid var(--muted);background:transparent;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);}
-  .lu-tab.active{background:var(--primary,#1a73e8);color:#fff;border-color:var(--primary,#1a73e8);}
+  .lu-tab.active{background:var(--gold);color:#231a05;border-color:var(--gold);}
   .lu-tab-add{padding:4px 10px;border-radius:20px;border:1px dashed var(--muted);background:transparent;cursor:pointer;font-size:12px;color:var(--muted);}
-  .lu-tab-add:hover{border-color:var(--primary,#1a73e8);color:var(--primary,#1a73e8);}
+  .lu-tab-add:hover{border-color:var(--gold);color:var(--gold);}
   .lu-tab-rm{margin-left:4px;font-size:13px;opacity:.5;cursor:pointer;vertical-align:middle;}
   .lu-tab-rm:hover{opacity:1;color:#c00;}
   /* tp-add-lu */
@@ -345,21 +348,29 @@
     <div class="lu-tabs" id="luTabs"></div>
 
     <div class="lineup-bar">
-      <div class="lineup-stat"><span class="label">Salary used</span><span class="val" id="salaryUsedVal">$0</span></div>
-      <div class="lineup-stat"><span class="label">Remaining</span><span class="val" id="salaryLeftVal">$60,000</span></div>
-      <div class="field"><label>Cap</label><input id="capInput" type="number" step="100" value="60000" style="width:90px;"></div>
-      <div class="lineup-stat"><span class="label">Projected pts</span><span class="val" id="projTotalVal">0.0</span></div>
-      <div class="lineup-actions">
+      <div class="bar-group">
+        <div class="lineup-stat"><span class="label">Salary used</span><span class="val" id="salaryUsedVal">$0</span></div>
+        <div class="lineup-stat"><span class="label">Remaining</span><span class="val" id="salaryLeftVal">$60,000</span></div>
+        <div class="field"><label>Cap</label><input id="capInput" type="number" step="100" value="60000" style="width:90px;"></div>
+        <div class="lineup-stat"><span class="label">Projected pts</span><span class="val" id="projTotalVal">0.0</span></div>
+      </div>
+
+      <div class="bar-divider"></div>
+      <div class="bar-group">
         <button id="optimizeBtn" class="primary">Optimize remaining</button>
         <button id="clearLineupBtn">Clear lineup</button>
         <button id="copyLineupBtn">Copy lineup</button>
       </div>
-      <div class="lineup-actions" style="border-left:1px solid var(--line);padding-left:10px;margin-left:4px;">
-        <label style="font-size:11px;color:var(--muted);white-space:nowrap;">Bulk build</label>
+
+      <div class="bar-divider"></div>
+      <div class="bar-group">
+        <span class="bar-group-label">Bulk build</span>
         <input id="bulkCountInput" type="number" min="1" max="20" value="5" style="width:56px;">
         <button id="bulkGenerateBtn">Generate lineups</button>
       </div>
-      <div class="stack-settings" id="stackSettings" style="border-left:1px solid var(--line);padding-left:14px;margin-left:4px;margin-top:0;margin-bottom:0;background:none;border-top:none;border-right:none;border-bottom:none;border-radius:0;">
+
+      <div class="bar-divider" id="stackSettingsDivider"></div>
+      <div class="bar-group" id="stackSettings">
         <div class="field">
           <label>Stack level</label>
           <select id="stackLevelSel">
@@ -372,7 +383,9 @@
         <label class="stack-chk"><input type="checkbox" id="bringBackChk"> Require bring-back</label>
         <label class="stack-chk"><input type="checkbox" id="onslaughtOnlyChk"> Onslaught-tagged team only</label>
       </div>
-      <div class="field" id="mvpFilterWrap" style="display:none;border-left:1px solid var(--line);padding-left:14px;margin-left:4px;">
+
+      <div class="bar-divider" id="mvpFilterDivider" style="display:none;"></div>
+      <div class="field bar-group" id="mvpFilterWrap" style="display:none;">
         <label>MVP must be</label>
         <select id="mvpFilterSel">
           <option value="any">Any position</option>
@@ -2847,8 +2860,12 @@
       : 'Build up to 20 lineups. Switch between them with the tabs.';
     var stackEl = document.getElementById('stackSettings');
     if (stackEl) stackEl.style.display = mode==='sg' ? 'none' : 'flex';
+    var stackDivider = document.getElementById('stackSettingsDivider');
+    if (stackDivider) stackDivider.style.display = mode==='sg' ? 'none' : 'block';
     var mvpFilterWrap = document.getElementById('mvpFilterWrap');
     if (mvpFilterWrap) mvpFilterWrap.style.display = mode==='sg' ? 'flex' : 'none';
+    var mvpFilterDivider = document.getElementById('mvpFilterDivider');
+    if (mvpFilterDivider) mvpFilterDivider.style.display = mode==='sg' ? 'block' : 'none';
     renderGames();
     if (players.length){ populateFilterOptions(); tagPlayers(); }
     else { renderTable(); document.getElementById('poolStatus').textContent = players.length ? players.length+' players loaded.' : 'No players loaded.'; }
@@ -2968,8 +2985,12 @@
   renderLineupCompare();
   var stackElInit = document.getElementById('stackSettings');
   if (stackElInit) stackElInit.style.display = slateMode==='sg' ? 'none' : 'flex';
+  var stackDividerInit = document.getElementById('stackSettingsDivider');
+  if (stackDividerInit) stackDividerInit.style.display = slateMode==='sg' ? 'none' : 'block';
   var mvpFilterWrapInit = document.getElementById('mvpFilterWrap');
   if (mvpFilterWrapInit) mvpFilterWrapInit.style.display = slateMode==='sg' ? 'flex' : 'none';
+  var mvpFilterDividerInit = document.getElementById('mvpFilterDivider');
+  if (mvpFilterDividerInit) mvpFilterDividerInit.style.display = slateMode==='sg' ? 'block' : 'none';
   applyMvpPositionFilter();
   var mvpFilterSelInit = document.getElementById('mvpFilterSel');
   if (mvpFilterSelInit) mvpFilterSelInit.value = mvpPositionFilter;
