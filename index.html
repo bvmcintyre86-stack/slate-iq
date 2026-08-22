@@ -115,12 +115,16 @@
   .dropzone strong{color:var(--chalk);}
   .pool-status{font-size:13px;color:var(--muted);margin-top:8px;}
 
-  .lineup-bar{display:flex;align-items:center;gap:22px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:14px;row-gap:16px;}
-  .bar-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-  .bar-divider{width:1px;align-self:stretch;background:var(--line);margin:0 2px;}
+  .lineup-bar{display:flex;align-items:stretch;gap:12px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;}
+  .bar-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 14px;}
+  .bar-group.bar-group-plain{background:none;border:none;padding:4px 0;}
+  .bar-divider{display:none;}
   .bar-group-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;}
   .lc-scroll{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:14px;}
   .lc-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .lc-card.lc-best{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
+  .lc-best .lc-card-hdr{background:linear-gradient(90deg, var(--amber-bg), var(--panel-2));}
+  .lc-best-badge{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--gold);font-weight:700;margin-left:6px;}
   .lc-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);font-size:12px;}
   .lc-card-hdr .lc-idx{font-weight:700;color:var(--chalk);}
   .lc-card-hdr .lc-salary{color:var(--muted);}
@@ -131,7 +135,7 @@
   .lc-name{color:var(--chalk);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .lc-sub{font-size:10px;color:var(--muted);}
   .lc-proj-val{text-align:right;color:var(--chalk);font-variant-numeric:tabular-nums;}
-  .lc-empty{color:var(--muted);font-style:italic;}
+  .lc-empty{color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:3px 8px;text-align:center;font-size:11px;}
   .lc-diff{background:rgba(212,175,55,.12);}
   .lc-card{cursor:pointer;}
   .lc-active{border-color:var(--gold);}
@@ -139,7 +143,7 @@
   .lc-rm:hover{opacity:1;color:#c00;}
   .lineup-stat{display:flex;flex-direction:column;gap:2px;}
   .lineup-stat .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
-  .lineup-stat .val{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;}
+  .lineup-stat .val{font-family:'Oswald',sans-serif;font-size:24px;font-weight:600;letter-spacing:0.01em;}
   .lineup-stat .val.over{color:var(--brick);}
   .lineup-actions{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;}
   .lineup-msg{font-size:12px;color:var(--amber);min-height:16px;margin-bottom:8px;}
@@ -348,7 +352,7 @@
     <div class="lu-tabs" id="luTabs"></div>
 
     <div class="lineup-bar">
-      <div class="bar-group">
+      <div class="bar-group bar-group-plain">
         <div class="lineup-stat"><span class="label">Salary used</span><span class="val" id="salaryUsedVal">$0</span></div>
         <div class="lineup-stat"><span class="label">Remaining</span><span class="val" id="salaryLeftVal">$60,000</span></div>
         <div class="field"><label>Cap</label><input id="capInput" type="number" step="100" value="60000" style="width:90px;"></div>
@@ -356,7 +360,7 @@
       </div>
 
       <div class="bar-divider"></div>
-      <div class="bar-group">
+      <div class="bar-group bar-group-plain">
         <button id="optimizeBtn" class="primary">Optimize remaining</button>
         <button id="clearLineupBtn">Clear lineup</button>
         <button id="copyLineupBtn">Copy lineup</button>
@@ -1765,19 +1769,33 @@
     // rather than re-reading every row every time.
     var baseline = lineups[0];
 
-    var cardsHtml = lineups.map(function(lu, idx){
-      var isActive = idx === activeIdx;
+    // Precompute every lineup's totals first, so we can find whichever
+    // complete lineup projects highest and flag it - the single most useful
+    // thing to see at a glance when scanning a batch of 20.
+    var computed = lineups.map(function(lu){
       var filledSlots = slotDefs.filter(function(s){ return lu[s.key]; });
       var totalSalary = filledSlots.reduce(function(sum,s){ return sum + slotSalary(s, lu[s.key]); }, 0);
       var totalProj = filledSlots.reduce(function(sum,s){
         var base = effectiveFppg(lu[s.key]);
         return sum + (slateMode==='sg' && s.mvp ? base*1.5 : base);
       }, 0);
+      return { complete: filledSlots.length === slotDefs.length, totalSalary: totalSalary, totalProj: totalProj };
+    });
+    var bestIdx = -1, bestProj = -Infinity;
+    computed.forEach(function(c, idx){
+      if (c.complete && c.totalProj > bestProj){ bestProj = c.totalProj; bestIdx = idx; }
+    });
+
+    var cardsHtml = lineups.map(function(lu, idx){
+      var isActive = idx === activeIdx;
+      var isBest = idx === bestIdx && lineups.length > 1;
+      var totalSalary = computed[idx].totalSalary;
+      var totalProj = computed[idx].totalProj;
 
       var rowsHtml = slotDefs.map(function(s){
         var p = lu[s.key];
         if (!p){
-          return '<div class="lc-row"><div class="lc-pos">'+s.label+'</div><div class="lc-empty">empty</div><div></div></div>';
+          return '<div class="lc-row"><div class="lc-pos">'+s.label+'</div><div class="lc-empty">+ empty</div><div></div></div>';
         }
         var basePlayer = baseline ? baseline[s.key] : null;
         var differs = idx > 0 && (!basePlayer || basePlayer.id !== p.id);
@@ -1793,8 +1811,8 @@
           '<div class="lc-proj-val">'+rowProj.toFixed(1)+rmBtn+'</div></div>';
       }).join('');
 
-      return '<div class="lc-card'+(isActive?' lc-active':'')+'" data-lc-card="'+idx+'">'+
-        '<div class="lc-card-hdr"><span class="lc-idx">Lineup '+(idx+1)+(isActive?' (editing)':'')+'</span>'+
+      return '<div class="lc-card'+(isActive?' lc-active':'')+(isBest?' lc-best':'')+'" data-lc-card="'+idx+'">'+
+        '<div class="lc-card-hdr"><span class="lc-idx">Lineup '+(idx+1)+(isActive?' (editing)':'')+(isBest?'<span class="lc-best-badge">&#9733; Best</span>':'')+'</span>'+
         '<span class="lc-salary">'+money(totalSalary)+'</span>'+
         '<span class="lc-proj">'+totalProj.toFixed(1)+'</span></div>'+
         rowsHtml+
