@@ -2430,7 +2430,10 @@
     var tabs = document.getElementById('tpTabs');
     var list = document.getElementById('tpList');
     if (!tabs || !list) return;
-    tabs.innerHTML = TP_POSITIONS.map(function(pos){
+    // Kicker isn't a real Main Slate roster slot (SLOT_DEFS has no K) - only
+    // show that tab in Single Game, where K is a legitimate MVP/FLEX option.
+    var tpPositions = slateMode === 'sg' ? TP_POSITIONS : TP_POSITIONS.filter(function(pos){ return pos !== 'K'; });
+    tabs.innerHTML = tpPositions.map(function(pos){
       var count = pos==='ALL' ? Object.keys(topPlayers).length
         : Object.values(topPlayers).filter(function(p){return p.position===pos;}).length;
       return '<button class="tp-tab'+(tpActivePos===pos?' active':'')+'" data-tp-pos="'+pos+'">'+pos+(count?' ('+count+')':'')+'</button>';
@@ -2819,6 +2822,10 @@
     // Switch
     slateMode = mode;
     activeSLOT_DEFS = mode === 'sg' ? SG_SLOT_DEFS : SLOT_DEFS;
+    // The K tab in Top Players only exists in Single Game - if it was active
+    // when switching to Main Slate, fall back to ALL rather than getting
+    // stuck on a tab with no visible button to click back to.
+    if (mode === 'main' && tpActivePos === 'K') tpActivePos = 'ALL';
     document.getElementById('mainSlateBtn').classList.toggle('active', mode==='main');
     document.getElementById('singleGameBtn').classList.toggle('active', mode==='sg');
     // Restore or init for new mode
