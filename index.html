@@ -1822,7 +1822,16 @@
               return s1.eligible.indexOf(p.position)!==-1 && !picks[p.id];
             });
             if (!opts1.length) continue;
-            var cheap1 = opts1.reduce(function(m,p){return p.salary<m.salary?p:m;}, opts1[0]);
+            var cheap1 = opts1.reduce(function(m,p){
+              // Prefer whichever candidate has been used LEAST so far in this
+              // batch (matters for bulk-generating N lineups) - falls back to
+              // cheapest as the tie-breaker, same as before. Outside a bulk
+              // run exposureCount is always empty, so this behaves identically
+              // to the old pure-cheapest logic for a normal single Optimize.
+              var pExp = exposureCount[p.id] || 0, mExp = exposureCount[m.id] || 0;
+              if (pExp !== mExp) return pExp < mExp ? p : m;
+              return p.salary < m.salary ? p : m;
+            }, opts1[0]);
             picks[cheap1.id] = true;
             lineup[s1.key] = cheap1;
             slotTeamConstraint[s1.key] = qb.team;
@@ -1851,7 +1860,11 @@
             var opts2 = bbPool.filter(function(p){ return s2.eligible.indexOf(p.position)!==-1 && !picks[p.id]; });
             if (opts2.length){
               bbSlot = s2;
-              bbPlayer = opts2.reduce(function(m,p){return p.salary<m.salary?p:m;}, opts2[0]);
+              bbPlayer = opts2.reduce(function(m,p){
+                var pExp = exposureCount[p.id] || 0, mExp = exposureCount[m.id] || 0;
+                if (pExp !== mExp) return pExp < mExp ? p : m;
+                return p.salary < m.salary ? p : m;
+              }, opts2[0]);
               break;
             }
           }
