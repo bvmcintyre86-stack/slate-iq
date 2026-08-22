@@ -372,6 +372,15 @@
         <label class="stack-chk"><input type="checkbox" id="bringBackChk"> Require bring-back</label>
         <label class="stack-chk"><input type="checkbox" id="onslaughtOnlyChk"> Onslaught-tagged team only</label>
       </div>
+      <div class="field" id="mvpFilterWrap" style="display:none;border-left:1px solid var(--line);padding-left:14px;margin-left:4px;">
+        <label>MVP must be</label>
+        <select id="mvpFilterSel">
+          <option value="any">Any position</option>
+          <option value="qb">QB only</option>
+          <option value="rb">RB only</option>
+          <option value="qbrb">QB or RB</option>
+        </select>
+      </div>
     </div>
     <div class="construction-badge" id="constructionBadge"></div>
     <div class="lineup-msg" id="lineupMsg"></div>
@@ -469,6 +478,15 @@
   ];
   var slateMode = 'main';
   var activeSLOT_DEFS = SLOT_DEFS;
+  var mvpPositionFilter = 'any'; // Single Game only: 'any' | 'qb' | 'rb' | 'qbrb'
+
+  // Mutates SG_SLOT_DEFS[0] (the MVP slot) in place so every place that
+  // already reads s.eligible - the optimizer, hasEmptySlotFor, etc. - picks
+  // this up automatically with no other changes needed.
+  function applyMvpPositionFilter(){
+    var map = { any: ['QB','RB','WR','TE','DEF','K'], qb: ['QB'], rb: ['RB'], qbrb: ['QB','RB'] };
+    SG_SLOT_DEFS[0].eligible = map[mvpPositionFilter] || map.any;
+  }
   // Separate state per mode
   var modeState = {
     main: { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} },
@@ -1396,6 +1414,7 @@
         },
         cap: salaryCap,
         stackSettings: stackSettings,
+        mvpPositionFilter: mvpPositionFilter,
         projSource: projSource,
         marketProjections: marketProjections,
         marketProjectionsLoadedAt: marketProjectionsLoadedAt,
@@ -1450,6 +1469,12 @@
         document.getElementById('stackLevelSel').value = stackSettings.level;
         document.getElementById('bringBackChk').checked = stackSettings.bringBack;
         document.getElementById('onslaughtOnlyChk').checked = stackSettings.onslaughtOnly;
+      }
+      if (state.mvpPositionFilter){
+        mvpPositionFilter = state.mvpPositionFilter;
+        // Note: applyMvpPositionFilter() + syncing the <select> happens at
+        // init time below, after loadState() runs - not here, since this
+        // runs before the DOM elements it would touch are guaranteed ready.
       }
       if (state.projSource){
         projSource = state.projSource;
@@ -2815,6 +2840,8 @@
       : 'Build up to 20 lineups. Switch between them with the tabs.';
     var stackEl = document.getElementById('stackSettings');
     if (stackEl) stackEl.style.display = mode==='sg' ? 'none' : 'flex';
+    var mvpFilterWrap = document.getElementById('mvpFilterWrap');
+    if (mvpFilterWrap) mvpFilterWrap.style.display = mode==='sg' ? 'flex' : 'none';
     renderGames();
     if (players.length){ populateFilterOptions(); tagPlayers(); }
     else { renderTable(); document.getElementById('poolStatus').textContent = players.length ? players.length+' players loaded.' : 'No players loaded.'; }
@@ -2827,6 +2854,21 @@
   document.getElementById('stackLevelSel').addEventListener('change', function(){
     stackSettings.level = parseInt(this.value,10) || 0;
     saveState();
+  });
+  document.getElementById('mvpFilterSel').addEventListener('change', function(){
+    mvpPositionFilter = this.value;
+    applyMvpPositionFilter();
+    // If the currently-placed MVP no longer qualifies under the new filter,
+    // clear just that slot rather than leaving an invalid lineup silently.
+    var mvpSlot = activeSLOT_DEFS[0];
+    if (lineup.MVP && mvpSlot.eligible.indexOf(lineup.MVP.position) === -1){
+      var clearedName = lineup.MVP.name;
+      lineup.MVP = null;
+      lineups[activeIdx] = lineup;
+      setMsg(clearedName + ' no longer qualifies for MVP under this filter and was removed.');
+    }
+    saveState();
+    refreshLineupUI();
   });
   document.getElementById('bringBackChk').addEventListener('change', function(){
     stackSettings.bringBack = this.checked;
@@ -2919,6 +2961,11 @@
   renderLineupCompare();
   var stackElInit = document.getElementById('stackSettings');
   if (stackElInit) stackElInit.style.display = slateMode==='sg' ? 'none' : 'flex';
+  var mvpFilterWrapInit = document.getElementById('mvpFilterWrap');
+  if (mvpFilterWrapInit) mvpFilterWrapInit.style.display = slateMode==='sg' ? 'flex' : 'none';
+  applyMvpPositionFilter();
+  var mvpFilterSelInit = document.getElementById('mvpFilterSel');
+  if (mvpFilterSelInit) mvpFilterSelInit.value = mvpPositionFilter;
 
 })();
 </script>
