@@ -1866,7 +1866,7 @@
     var tierBonus = tier===1 ? 100 : tier===2 ? 50 : tier===3 ? 20 : 0;
     var rank = p.rank || 0;
     var exposurePenalty = (exposureCount[p.id] || 0) * EXPOSURE_PENALTY_PER_USE;
-    return effectiveFppg(p) + tierBonus - (rank * 0.1) - exposurePenalty;
+    return effectiveFppg(p) + tierBonus - (rank * 1.5) - exposurePenalty;
   }
 
   // Blends FanDuel's own fppg with the market-derived projection (if loaded),
