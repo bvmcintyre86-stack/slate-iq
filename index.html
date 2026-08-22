@@ -1748,10 +1748,10 @@
         // past-generated lineups in the batch are meant to stay as-built.
         var rmBtn = isActive ? '<span class="lc-rm" data-lc-rm="'+s.key+'" title="Remove">&times;</span>' : '';
         var isMvp = s.mvp && slateMode==='sg';
-        var mvpNote = isMvp ? ' (MVP, ×1.5 = '+money(slotSalary(s,p))+')' : '';
+        var rowSalary = isMvp ? slotSalary(s,p) : p.salary;
         var rowProj = isMvp ? effectiveFppg(p)*1.5 : effectiveFppg(p);
         return '<div class="lc-row'+(differs?' lc-diff':'')+'"><div class="lc-pos">'+s.label+'</div>'+
-          '<div><div class="lc-name" title="'+p.name+'">'+p.name+'</div><div class="lc-sub">'+p.team+(oppText?(' '+oppText):'')+' &middot; '+money(p.salary)+mvpNote+'</div></div>'+
+          '<div><div class="lc-name" title="'+p.name+'">'+p.name+'</div><div class="lc-sub">'+p.team+(oppText?(' '+oppText):'')+' &middot; '+money(rowSalary)+'</div></div>'+
           '<div class="lc-proj-val">'+rowProj.toFixed(1)+rmBtn+'</div></div>';
       }).join('');
 
