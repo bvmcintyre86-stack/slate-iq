@@ -1653,7 +1653,8 @@
         label+(lineups.length>1?'<span class="lu-tab-rm" data-lu-rm="'+i+'">x</span>':'')+
       '</button>';
     }).join('')+
-    (lineups.length < MAX_LINEUPS ? '<button class="lu-tab-add" id="luAddBtn">+ Add lineup</button>' : '');
+    (lineups.length < MAX_LINEUPS ? '<button class="lu-tab-add" id="luAddBtn">+ Add lineup</button>' : '') +
+    (lineups.length > 1 ? '<button class="lu-tab-add" id="luDeleteAllBtn" style="margin-left:6px;color:#c00;">Delete all</button>' : '');
     tabs.querySelectorAll('.lu-tab').forEach(function(btn){
       btn.addEventListener('click', function(e){
         if (e.target.hasAttribute('data-lu-rm')) return;
@@ -1675,6 +1676,15 @@
     if (addBtn) addBtn.addEventListener('click', function(){
       lineups.push(emptyLineup());
       switchLineup(lineups.length-1);
+    });
+    var deleteAllBtn = document.getElementById('luDeleteAllBtn');
+    if (deleteAllBtn) deleteAllBtn.addEventListener('click', function(){
+      if (!confirm('Delete all ' + lineups.length + ' lineups? This can\'t be undone.')) return;
+      lineups = [emptyLineup()];
+      activeIdx = 0;
+      lineup = lineups[0];
+      setMsg('');
+      saveState(); renderLuTabs(); refreshLineupUI();
     });
   }
 
