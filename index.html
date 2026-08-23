@@ -321,23 +321,6 @@
         <input id="unabatedWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://unabated-proxy.bvmcintyre86.workers.dev">
         <span id="unabatedStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
       </div>
-      <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);margin-top:4px;">
-        <button id="loadPropsBtn">Load player props</button>
-        <span style="color:var(--line);padding:0 4px;">|</span>
-        <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Projection source</label>
-        <select id="projSourceSel" style="font-size:12px;">
-          <option value="fppg">FanDuel fppg</option>
-          <option value="market">Market (props)</option>
-          <option value="blend">Blend (50/50)</option>
-        </select>
-        <span id="propsStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
-      </div>
-      <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);margin-top:4px;">
-        <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Audit a player</label>
-        <input id="debugPlayerInput" type="text" placeholder="e.g. Lamar Jackson" style="flex:1;min-width:160px;font-size:12px;">
-        <button id="debugPlayerBtn">Search</button>
-        <span style="font-size:11px;color:var(--muted);">Results print to the browser console (F12)</span>
-      </div>
     </div>
 
     <div class="legend" id="legend"></div>
@@ -425,9 +408,23 @@
       <div class="pool-status" id="poolStatus">No file loaded yet.</div>
     </div>
     <input type="file" id="csvFile" accept=".csv" style="display:none;">
-    <div style="margin-top:8px;">
-      <button id="loadRostersBtn">Load 2026 NFL rosters</button>
-      <span class="sub" style="margin-left:8px;">Use before FanDuel posts the slate — loads full player pool from nfl_rosters_2026.js</span>
+
+    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:12px;margin-top:8px;border-top:1px solid var(--line);">
+      <button id="loadPropsBtn">Load player props</button>
+      <span style="color:var(--line);padding:0 4px;">|</span>
+      <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Projection source</label>
+      <select id="projSourceSel" style="font-size:12px;">
+        <option value="fppg">FanDuel fppg</option>
+        <option value="market">Market (props)</option>
+        <option value="blend">Blend (50/50)</option>
+      </select>
+      <span id="propsStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+    </div>
+    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
+      <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Audit a player</label>
+      <input id="debugPlayerInput" type="text" placeholder="e.g. Lamar Jackson" style="flex:1;min-width:160px;font-size:12px;">
+      <button id="debugPlayerBtn">Search</button>
+      <span style="font-size:11px;color:var(--muted);">Results print to the browser console (F12)</span>
     </div>
 
     <div class="filters">
@@ -2987,7 +2984,8 @@
     var n = parseInt(document.getElementById('bulkCountInput').value, 10);
     bulkGenerateLineups(n);
   });
-  document.getElementById('loadRostersBtn').addEventListener('click', loadRosters);
+  // loadRostersBtn removed from the UI per request - loadRosters() itself is
+  // left defined but unused, in case it's wanted again later.
   document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
   document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
   document.getElementById('refreshLinesBtn').addEventListener('click', refreshLines);
