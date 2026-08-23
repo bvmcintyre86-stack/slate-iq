@@ -115,12 +115,11 @@
   .dropzone strong{color:var(--chalk);}
   .pool-status{font-size:13px;color:var(--muted);margin-top:8px;}
 
-  .lineup-bar{display:flex;align-items:stretch;gap:16px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px 24px;margin-bottom:20px;}
-  .bar-group{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px 16px;flex:0 0 auto;width:fit-content;}
-  .bar-group.bar-group-plain{background:none;border:none;padding:4px 0;}
-  .bar-divider{display:none;}
+  .lineup-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-bottom:16px;}
+  .lineup-bar button{padding:8px 12px;}
+  .bar-divider{width:1px;align-self:stretch;background:var(--line);}
   .bar-group-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;}
-  .bar-row-nowrap{display:flex;flex-wrap:nowrap;gap:16px;}
+  .field-inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .lc-scroll{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:20px;}
   .lc-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;}
   .lc-card.lc-best{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
@@ -355,52 +354,47 @@
     <div class="lu-tabs" id="luTabs"></div>
 
     <div class="lineup-bar">
-      <div class="bar-group bar-group-plain">
-        <div class="lineup-stat"><span class="label">Salary used</span><span class="val" id="salaryUsedVal">$0</span></div>
-        <div class="lineup-stat"><span class="label">Remaining</span><span class="val" id="salaryLeftVal">$60,000</span></div>
-        <div class="lineup-stat"><label class="label" for="capInput">Cap</label><input id="capInput" class="val val-input" type="number" step="100" value="60000"></div>
-        <div class="lineup-stat"><span class="label">Projected pts</span><span class="val" id="projTotalVal">0.0</span></div>
-      </div>
+      <div class="lineup-stat"><span class="label">Salary used</span><span class="val" id="salaryUsedVal">$0</span></div>
+      <div class="lineup-stat"><span class="label">Remaining</span><span class="val" id="salaryLeftVal">$60,000</span></div>
+      <div class="lineup-stat"><span class="label">Projected pts</span><span class="val" id="projTotalVal">0.0</span></div>
+      <input id="capInput" type="number" step="100" value="60000" style="display:none;">
 
       <div class="bar-divider"></div>
-      <div class="bar-group bar-group-plain">
-        <button id="optimizeBtn" class="primary">Optimize remaining</button>
-        <button id="clearLineupBtn">Clear lineup</button>
-        <button id="copyLineupBtn">Copy lineup</button>
+
+      <div class="field-inline" id="stackSettings">
+        <div class="field">
+          <label>Stack level</label>
+          <select id="stackLevelSel" style="width:20ch;">
+            <option value="0">No forced stack</option>
+            <option value="1">QB + 1</option>
+            <option value="2">QB + 2</option>
+            <option value="3">QB + 3</option>
+          </select>
+        </div>
+        <label class="stack-chk"><input type="checkbox" id="bringBackChk"> Bring-back</label>
       </div>
 
-      <div class="bar-divider"></div>
-      <div class="bar-row-nowrap">
-        <div class="bar-group" id="stackSettings">
-          <div class="field">
-            <label>Stack level</label>
-            <select id="stackLevelSel">
-              <option value="0">No forced stack</option>
-              <option value="1">QB + 1</option>
-              <option value="2">QB + 2</option>
-              <option value="3">QB + 3</option>
-            </select>
-          </div>
-          <label class="stack-chk"><input type="checkbox" id="bringBackChk"> Require bring-back</label>
-          <label class="stack-chk"><input type="checkbox" id="onslaughtOnlyChk"> Onslaught-tagged team only</label>
-        </div>
-
-        <div class="bar-group">
-          <span class="bar-group-label">Bulk build</span>
-          <input id="bulkCountInput" type="number" min="1" max="20" value="5" style="width:56px;">
-          <button id="bulkGenerateBtn">Generate lineups</button>
-        </div>
-      </div>
-
-      <div class="bar-divider" id="mvpFilterDivider" style="display:none;"></div>
-      <div class="field bar-group" id="mvpFilterWrap" style="display:none;">
+      <div class="field field-inline" id="mvpFilterWrap" style="display:none;">
         <label>MVP must be</label>
-        <select id="mvpFilterSel">
+        <select id="mvpFilterSel" style="width:17ch;">
           <option value="any">Any position</option>
           <option value="qb">QB only</option>
           <option value="rb">RB only</option>
           <option value="qbrb">QB or RB</option>
         </select>
+      </div>
+
+      <div class="bar-divider"></div>
+
+      <button id="optimizeBtn" class="primary">Optimize remaining</button>
+      <button id="clearLineupBtn">Clear lineup</button>
+
+      <div class="bar-divider"></div>
+
+      <div class="field-inline" style="flex-wrap:nowrap;">
+        <span class="bar-group-label">Bulk build</span>
+        <input id="bulkCountInput" type="number" min="1" max="20" value="5" style="width:46px;">
+        <button id="bulkGenerateBtn">Generate lineups</button>
       </div>
     </div>
     <div class="construction-badge" id="constructionBadge"></div>
@@ -1489,7 +1483,8 @@
         stackSettings = Object.assign({level:0,bringBack:false,onslaughtOnly:false}, state.stackSettings);
         document.getElementById('stackLevelSel').value = stackSettings.level;
         document.getElementById('bringBackChk').checked = stackSettings.bringBack;
-        document.getElementById('onslaughtOnlyChk').checked = stackSettings.onslaughtOnly;
+        // onslaughtOnlyChk removed from the UI per request - stackSettings.onslaughtOnly
+        // stays in state (default false) so nothing downstream breaks if it's ever re-added.
       }
       if (state.mvpPositionFilter){
         mvpPositionFilter = state.mvpPositionFilter;
@@ -2920,10 +2915,7 @@
     stackSettings.bringBack = this.checked;
     saveState();
   });
-  document.getElementById('onslaughtOnlyChk').addEventListener('change', function(){
-    stackSettings.onslaughtOnly = this.checked;
-    saveState();
-  });
+  // onslaughtOnlyChk listener removed along with the checkbox itself.
   document.getElementById('loadPropsBtn').addEventListener('click', function(){
     fetchMarketProjections();
   });
@@ -2988,7 +2980,8 @@
     }
   });
   document.getElementById('clearLineupBtn').addEventListener('click', clearLineup);
-  document.getElementById('copyLineupBtn').addEventListener('click', copyLineup);
+  // copyLineupBtn removed from the UI per request - copyLineup() itself is
+  // left defined but unused, in case it's wanted again later.
   document.getElementById('capInput').addEventListener('change', function(){
     salaryCap = parseFloat(this.value) || 60000;
     renderLineupBar();
