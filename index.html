@@ -1802,24 +1802,18 @@
       if (c.complete && c.totalProj > bestProj){ bestProj = c.totalProj; bestIdx = idx; }
     });
 
-    // Exposure tracker filter: if any players are selected there, only show
-    // lineups containing at least one of them - but keep bestIdx/computed
-    // based on the FULL batch so the "best" badge doesn't shift around
-    // depending on what's currently filtered.
+    // Exposure tracker filter: if players are selected there, only show
+    // lineups containing ALL of them together (not just any one) - but keep
+    // bestIdx/computed based on the FULL batch so the "best" badge doesn't
+    // shift around depending on what's currently filtered.
     var filterIds = Object.keys(exposureFilterIds);
-    var visibleIndices = lineups.map(function(_, idx){ return idx; });
-    if (filterIds.length){
-      visibleIndices = visibleIndices.filter(function(idx){
-        var lu = lineups[idx];
-        return slotDefs.some(function(s){ return lu[s.key] && exposureFilterIds[lu[s.key].id]; });
-      });
-    }
+    var visibleIndices = getExposureFilteredIndices();
 
     var filterBannerHtml = '';
     if (filterIds.length){
       var names = filterIds.map(function(id){ return exposureFilterPlayers[id] ? exposureFilterPlayers[id].name : id; });
       filterBannerHtml = '<div class="sub" style="margin-bottom:10px;">Showing ' + visibleIndices.length + ' of ' + lineups.length +
-        ' lineups containing: <strong>' + names.join(', ') + '</strong></div>';
+        ' lineups containing all of: <strong>' + names.join(', ') + '</strong></div>';
     }
 
     var cardsHtml = visibleIndices.map(function(idx){
@@ -1888,13 +1882,28 @@
   var exposureFilterIds = {}; // player id -> true, for filtering Compare Lineups cards
   var exposureFilterPlayers = {}; // player id -> player object, for the "showing X, Y" label
 
+  // Indices of lineups that contain ALL currently-selected exposure filter
+  // players (not just any one of them) - shared by both the tracker's own
+  // stats and the Compare Lineups card list, so they always agree on which
+  // lineups are "in scope". Always excludes fully-empty lineups.
+  function getExposureFilteredIndices(){
+    var filterIds = Object.keys(exposureFilterIds);
+    return lineups.map(function(_, idx){ return idx; }).filter(function(idx){
+      var lu = lineups[idx];
+      if (!activeSLOT_DEFS.some(function(s){ return lu[s.key]; })) return false;
+      if (!filterIds.length) return true;
+      return filterIds.every(function(fid){
+        return activeSLOT_DEFS.some(function(s){ return lu[s.key] && String(lu[s.key].id) === fid; });
+      });
+    });
+  }
+
   function renderExposureTracker(){
     var view = document.getElementById('exposureTrackerView');
     if (!view) return;
 
-    var totalLineups = lineups.filter(function(lu){
-      return activeSLOT_DEFS.some(function(s){ return lu[s.key]; });
-    }).length;
+    var scopedIndices = getExposureFilteredIndices();
+    var totalLineups = scopedIndices.length;
 
     if (!totalLineups){
       view.innerHTML = '';
@@ -1917,7 +1926,8 @@
     }
 
     var counts = {}; // player id -> {player, count}
-    lineups.forEach(function(lu){
+    scopedIndices.forEach(function(idx){
+      var lu = lineups[idx];
       activeSLOT_DEFS.forEach(function(s){
         var p = lu[s.key];
         if (!p) return;
@@ -1967,8 +1977,8 @@
 
     var filterCount = Object.keys(exposureFilterIds).length;
     var filterNote = filterCount
-      ? '<div class="sub" style="margin-bottom:8px;">Click a player to add/remove from the Compare Lineups filter below. <button id="exposureClearFilterBtn" style="margin-left:6px;">Clear filter (' + filterCount + ')</button></div>'
-      : '<div class="sub" style="margin-bottom:8px;">Click a player to filter Compare Lineups down to just the lineups that include them.</div>';
+      ? '<div class="sub" style="margin-bottom:8px;">Showing only lineups with ALL selected players - stats above are scoped to those lineups too. <button id="exposureClearFilterBtn" style="margin-left:6px;">Clear filter (' + filterCount + ')</button></div>'
+      : '<div class="sub" style="margin-bottom:8px;">Click a player to drill into just the lineups that include them - select more than one to see lineups with ALL of them together.</div>';
 
     view.innerHTML = headerHtml + filterNote +
       '<table style="width:100%;">' +
