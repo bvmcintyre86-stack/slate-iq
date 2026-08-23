@@ -66,6 +66,9 @@
   .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;}
   .section-head h2{font-size:18px;text-transform:uppercase;letter-spacing:0.05em;}
   .section-head .sub{color:var(--muted);font-size:13px;}
+  .section-toggle{display:inline-block;cursor:pointer;font-size:12px;color:var(--muted);margin-right:6px;transition:transform 0.15s;}
+  section.collapsed > *:not(.section-head){display:none;}
+  section.collapsed .section-toggle{transform:rotate(-90deg);}
 
   .add-game-row{
     display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;
@@ -279,9 +282,9 @@
     </div>
   </div>
 
-  <section>
+  <section id="gameEnvSection">
     <div class="section-head">
-      <h2>Game environment</h2>
+      <h2><span class="section-toggle" data-toggle-section="gameEnvSection">&#9660;</span> Game environment</h2>
       <div class="sub">Load from Unabated or manually add games below — totals and script tags update automatically.</div>
     </div>
 
@@ -342,10 +345,10 @@
     <div class="games-grid" id="gamesGrid"></div>
   </section>
 
-  <section>
+  <section id="lineupsSection">
     <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div>
-        <h2>Your lineups</h2>
+        <h2><span class="section-toggle" data-toggle-section="lineupsSection">&#9660;</span> Your lineups</h2>
         <div class="sub" id="luSub">Build up to 20 lineups. Switch between them with the tabs.</div>
       </div>
       <button id="exportCsvBtn" style="flex-shrink:0;">⬇ Export week to CSV</button>
@@ -402,18 +405,18 @@
     <div id="lineupCompareView"></div>
   </section>
 
-  <section class="tp-section">
+  <section class="tp-section" id="topPlayersSection">
     <div class="section-head">
-      <h2>Top Players</h2>
+      <h2><span class="section-toggle" data-toggle-section="topPlayersSection">&#9660;</span> Top Players</h2>
       <div class="sub">Tag key plays by position before building lineups. Click a player in the pool to add them here.</div>
     </div>
     <div class="tp-tabs" id="tpTabs"></div>
     <div class="tp-list" id="tpList"></div>
   </section>
 
-  <section>
+  <section id="playerPoolSection">
     <div class="section-head">
-      <h2>Player pool</h2>
+      <h2><span class="section-toggle" data-toggle-section="playerPoolSection">&#9660;</span> Player pool</h2>
       <div class="sub">Upload the FanDuel player export for this slate.</div>
     </div>
 
@@ -492,6 +495,14 @@
     {key:'FLEX5', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']}
   ];
   var slateMode = 'main';
+  var collapsedSections = {}; // sectionId -> true/false, persisted like everything else
+
+  function toggleSection(id){
+    collapsedSections[id] = !collapsedSections[id];
+    var el = document.getElementById(id);
+    if (el) el.classList.toggle('collapsed', !!collapsedSections[id]);
+    saveState();
+  }
   var activeSLOT_DEFS = SLOT_DEFS;
   var mvpPositionFilter = 'any'; // Single Game only: 'any' | 'qb' | 'rb' | 'qbrb'
 
@@ -1430,6 +1441,7 @@
         cap: salaryCap,
         stackSettings: stackSettings,
         mvpPositionFilter: mvpPositionFilter,
+        collapsedSections: collapsedSections,
         projSource: projSource,
         marketProjections: marketProjections,
         marketProjectionsLoadedAt: marketProjectionsLoadedAt,
@@ -1491,6 +1503,11 @@
         // Note: applyMvpPositionFilter() + syncing the <select> happens at
         // init time below, after loadState() runs - not here, since this
         // runs before the DOM elements it would touch are guaranteed ready.
+      }
+      if (state.collapsedSections){
+        collapsedSections = state.collapsedSections;
+        // Applying the .collapsed class to each section happens at init
+        // time below too, once those <section> elements definitely exist.
       }
       if (state.projSource){
         projSource = state.projSource;
@@ -3009,6 +3026,21 @@
   applyMvpPositionFilter();
   var mvpFilterSelInit = document.getElementById('mvpFilterSel');
   if (mvpFilterSelInit) mvpFilterSelInit.value = mvpPositionFilter;
+
+  // Restore any collapsed sections from the previous session, and wire up
+  // every collapse/expand arrow (works the same regardless of which section
+  // it's in - the id comes from data-toggle-section, not a per-section handler).
+  Object.keys(collapsedSections).forEach(function(id){
+    if (!collapsedSections[id]) return;
+    var el = document.getElementById(id);
+    if (el) el.classList.add('collapsed');
+  });
+  document.querySelectorAll('[data-toggle-section]').forEach(function(el){
+    el.addEventListener('click', function(e){
+      e.stopPropagation();
+      toggleSection(el.getAttribute('data-toggle-section'));
+    });
+  });
 
 })();
 </script>
