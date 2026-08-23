@@ -1802,7 +1802,28 @@
       if (c.complete && c.totalProj > bestProj){ bestProj = c.totalProj; bestIdx = idx; }
     });
 
-    var cardsHtml = lineups.map(function(lu, idx){
+    // Exposure tracker filter: if any players are selected there, only show
+    // lineups containing at least one of them - but keep bestIdx/computed
+    // based on the FULL batch so the "best" badge doesn't shift around
+    // depending on what's currently filtered.
+    var filterIds = Object.keys(exposureFilterIds);
+    var visibleIndices = lineups.map(function(_, idx){ return idx; });
+    if (filterIds.length){
+      visibleIndices = visibleIndices.filter(function(idx){
+        var lu = lineups[idx];
+        return slotDefs.some(function(s){ return lu[s.key] && exposureFilterIds[lu[s.key].id]; });
+      });
+    }
+
+    var filterBannerHtml = '';
+    if (filterIds.length){
+      var names = filterIds.map(function(id){ return exposureFilterPlayers[id] ? exposureFilterPlayers[id].name : id; });
+      filterBannerHtml = '<div class="sub" style="margin-bottom:10px;">Showing ' + visibleIndices.length + ' of ' + lineups.length +
+        ' lineups containing: <strong>' + names.join(', ') + '</strong></div>';
+    }
+
+    var cardsHtml = visibleIndices.map(function(idx){
+      var lu = lineups[idx];
       var isActive = idx === activeIdx;
       var isBest = idx === bestIdx && lineups.length > 1;
       var totalSalary = computed[idx].totalSalary;
@@ -1837,7 +1858,9 @@
         '</div>';
     }).join('');
 
-    view.innerHTML = '<div class="lc-scroll">'+cardsHtml+'</div>';
+    var emptyFilterMsg = (filterIds.length && !visibleIndices.length)
+      ? '<div class="lc-empty" style="padding:10px;">No lineups contain the selected player(s).</div>' : '';
+    view.innerHTML = filterBannerHtml + '<div class="lc-scroll">' + cardsHtml + '</div>' + emptyFilterMsg;
 
     // Clicking a card switches to editing that lineup (mirrors the LU tabs);
     // clicking a remove "x" removes just that slot from the active lineup.
@@ -1862,6 +1885,9 @@
   // the thing that actually matters once you're bulk-generating a large
   // number of lineups at once (spotting overexposure to chalk, or a player
   // you like barely showing up at all).
+  var exposureFilterIds = {}; // player id -> true, for filtering Compare Lineups cards
+  var exposureFilterPlayers = {}; // player id -> player object, for the "showing X, Y" label
+
   function renderExposureTracker(){
     var view = document.getElementById('exposureTrackerView');
     if (!view) return;
@@ -1872,6 +1898,21 @@
 
     if (!totalLineups){
       view.innerHTML = '';
+      return;
+    }
+
+    var isCollapsed = !!collapsedSections.exposureTracker;
+    var toggleArrow = isCollapsed ? '&#9654;' : '&#9660;';
+
+    var headerHtml =
+      '<div class="section-head" style="margin-top:20px;margin-bottom:' + (isCollapsed ? '0' : '10px') + ';">' +
+        '<h2 style="font-size:15px;"><span class="section-toggle" data-toggle-section="exposureTracker">' + toggleArrow + '</span> Exposure tracker</h2>' +
+        '<div class="sub">Across ' + totalLineups + ' lineup' + (totalLineups>1?'s':'') + '</div>' +
+      '</div>';
+
+    if (isCollapsed){
+      view.innerHTML = headerHtml;
+      wireExposureToggle(view);
       return;
     }
 
@@ -1907,8 +1948,9 @@
 
     var rowsHtml = rows.map(function(r){
       var barWidth = Math.min(100, r.pct);
-      return '<tr>' +
-        '<td style="text-align:left;">' + r.player.name + '</td>' +
+      var selected = !!exposureFilterIds[r.player.id];
+      return '<tr data-exposure-row="' + r.player.id + '" style="cursor:pointer;' + (selected ? 'background:var(--panel-2);' : '') + '" title="Click to filter Compare Lineups to just this player">' +
+        '<td style="text-align:left;">' + (selected ? '&#9733; ' : '') + r.player.name + '</td>' +
         '<td class="pos-pill">' + r.player.position + '</td>' +
         '<td class="mono">' + r.player.team + '</td>' +
         '<td class="num">' + r.count + ' / ' + totalLineups + '</td>' +
@@ -1923,11 +1965,12 @@
       '</tr>';
     }).join('');
 
-    view.innerHTML =
-      '<div class="section-head" style="margin-top:20px;margin-bottom:10px;">' +
-        '<h2 style="font-size:15px;">Exposure tracker</h2>' +
-        '<div class="sub">Across ' + totalLineups + ' lineup' + (totalLineups>1?'s':'') + '</div>' +
-      '</div>' +
+    var filterCount = Object.keys(exposureFilterIds).length;
+    var filterNote = filterCount
+      ? '<div class="sub" style="margin-bottom:8px;">Click a player to add/remove from the Compare Lineups filter below. <button id="exposureClearFilterBtn" style="margin-left:6px;">Clear filter (' + filterCount + ')</button></div>'
+      : '<div class="sub" style="margin-bottom:8px;">Click a player to filter Compare Lineups down to just the lineups that include them.</div>';
+
+    view.innerHTML = headerHtml + filterNote +
       '<table style="width:100%;">' +
         '<thead><tr>' +
           headerCell('name', 'Player') + headerCell('position', 'Pos') + headerCell('team', 'Team') +
@@ -1936,6 +1979,8 @@
         '<tbody>' + rowsHtml + '</tbody>' +
       '</table>';
 
+    wireExposureToggle(view);
+
     view.querySelectorAll('[data-exposure-sort]').forEach(function(th){
       th.addEventListener('click', function(){
         var key = th.getAttribute('data-exposure-sort');
@@ -1943,6 +1988,40 @@
         else { exposureSortKey = key; exposureSortDir = key === 'count' ? 'desc' : 'asc'; }
         renderExposureTracker();
       });
+    });
+
+    view.querySelectorAll('[data-exposure-row]').forEach(function(tr){
+      tr.addEventListener('click', function(){
+        var id = tr.getAttribute('data-exposure-row');
+        if (exposureFilterIds[id]){
+          delete exposureFilterIds[id];
+          delete exposureFilterPlayers[id];
+        } else {
+          exposureFilterIds[id] = true;
+          exposureFilterPlayers[id] = counts[id].player;
+        }
+        renderExposureTracker();
+        renderLineupCompare();
+      });
+    });
+
+    var clearBtn = document.getElementById('exposureClearFilterBtn');
+    if (clearBtn) clearBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      exposureFilterIds = {};
+      exposureFilterPlayers = {};
+      renderExposureTracker();
+      renderLineupCompare();
+    });
+  }
+
+  function wireExposureToggle(view){
+    var toggle = view.querySelector('[data-toggle-section="exposureTracker"]');
+    if (toggle) toggle.addEventListener('click', function(e){
+      e.stopPropagation();
+      collapsedSections.exposureTracker = !collapsedSections.exposureTracker;
+      saveState();
+      renderExposureTracker();
     });
   }
 
