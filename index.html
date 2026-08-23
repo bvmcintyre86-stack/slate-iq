@@ -332,7 +332,7 @@
     <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div>
         <h2><span class="section-toggle" data-toggle-section="lineupsSection">&#9660;</span> Your lineups</h2>
-        <div class="sub" id="luSub">Build up to 20 lineups. Switch between them with the tabs.</div>
+        <div class="sub" id="luSub">Build up to 100 lineups. Switch between them with the tabs.</div>
       </div>
       <button id="exportCsvBtn" style="flex-shrink:0;">⬇ Export week to CSV</button>
     </div>
@@ -379,13 +379,14 @@
 
       <div class="field-inline" style="flex-wrap:nowrap;">
         <span class="bar-group-label">Bulk build</span>
-        <input id="bulkCountInput" type="number" min="1" max="20" value="5" style="width:46px;">
+        <input id="bulkCountInput" type="number" min="1" max="100" value="5" style="width:46px;">
         <button id="bulkGenerateBtn">Generate lineups</button>
       </div>
     </div>
     <div class="construction-badge" id="constructionBadge"></div>
     <div class="lineup-msg" id="lineupMsg"></div>
     <div id="lineupCompareView"></div>
+    <div id="exposureTrackerView"></div>
   </section>
 
   <section class="tp-section" id="topPlayersSection">
@@ -482,7 +483,7 @@
     {key:'FLEX', label:'FLEX', eligible:['RB']},
     {key:'DEF', label:'DEF', eligible:['DEF']}
   ];
-  var MAX_LINEUPS = 20;
+  var MAX_LINEUPS = 100;
   var SG_SLOT_DEFS = [
     {key:'MVP',   label:'MVP',  eligible:['QB','RB','WR','TE','DEF','K'], mvp:true},
     {key:'FLEX1', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
@@ -1319,7 +1320,7 @@
     players.forEach(function(p){
       var match = findGameForTeam(p.team);
       if (!match){
-        p.tag = 'unmatched'; p.teamImplied = null; p.oppTeam = null;
+        p.tag = 'unmatched'; p.teamImplied = null; p.oppTeam = null; p.isHome = null;
         return;
       }
       var s = gameSides(match.game);
@@ -1328,6 +1329,7 @@
       p.tag = mine.tag;
       p.teamImplied = mine.implied;
       p.oppTeam = opp.team;
+      p.isHome = match.side === 'home';
     });
     populateFilterOptions();
     renderTable();
@@ -1758,6 +1760,7 @@
     renderTable();
     renderTopPlayers();
     renderLineupCompare();
+    renderExposureTracker();
     saveState();
   }
 
@@ -1812,7 +1815,9 @@
         }
         var basePlayer = baseline ? baseline[s.key] : null;
         var differs = idx > 0 && (!basePlayer || basePlayer.id !== p.id);
-        var oppText = p.oppTeam ? ('vs '+p.oppTeam) : '';
+        // Away @ Home for the away team, Home vs Away for the home team -
+        // matches the same away/home convention used by the game cards.
+        var oppText = p.oppTeam ? ((p.isHome ? 'vs ' : '@ ') + p.oppTeam) : '';
         // Only the lineup you're actively editing gets a remove control -
         // past-generated lineups in the batch are meant to stay as-built.
         var rmBtn = isActive ? '<span class="lc-rm" data-lc-rm="'+s.key+'" title="Remove">&times;</span>' : '';
@@ -1846,6 +1851,97 @@
       btn.addEventListener('click', function(e){
         e.stopPropagation();
         removeFromLineup(btn.getAttribute('data-lc-rm'));
+      });
+    });
+  }
+
+  var exposureSortKey = 'count';
+  var exposureSortDir = 'desc';
+
+  // Shows what % of your current batch of lineups each player appears in -
+  // the thing that actually matters once you're bulk-generating a large
+  // number of lineups at once (spotting overexposure to chalk, or a player
+  // you like barely showing up at all).
+  function renderExposureTracker(){
+    var view = document.getElementById('exposureTrackerView');
+    if (!view) return;
+
+    var totalLineups = lineups.filter(function(lu){
+      return activeSLOT_DEFS.some(function(s){ return lu[s.key]; });
+    }).length;
+
+    if (!totalLineups){
+      view.innerHTML = '';
+      return;
+    }
+
+    var counts = {}; // player id -> {player, count}
+    lineups.forEach(function(lu){
+      activeSLOT_DEFS.forEach(function(s){
+        var p = lu[s.key];
+        if (!p) return;
+        if (!counts[p.id]) counts[p.id] = { player: p, count: 0 };
+        counts[p.id].count++;
+      });
+    });
+
+    var rows = Object.values(counts).map(function(c){
+      return { player: c.player, count: c.count, pct: (c.count / totalLineups) * 100 };
+    });
+
+    rows.sort(function(a, b){
+      var av, bv;
+      if (exposureSortKey === 'name'){ av = a.player.name.toLowerCase(); bv = b.player.name.toLowerCase(); }
+      else if (exposureSortKey === 'position'){ av = a.player.position; bv = b.player.position; }
+      else if (exposureSortKey === 'team'){ av = a.player.team; bv = b.player.team; }
+      else { av = a.count; bv = b.count; }
+      if (av < bv) return exposureSortDir === 'asc' ? -1 : 1;
+      if (av > bv) return exposureSortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    var headerCell = function(key, label){
+      var arrow = exposureSortKey === key ? (exposureSortDir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
+      return '<th data-exposure-sort="' + key + '" style="cursor:pointer;">' + label + arrow + '</th>';
+    };
+
+    var rowsHtml = rows.map(function(r){
+      var barWidth = Math.min(100, r.pct);
+      return '<tr>' +
+        '<td style="text-align:left;">' + r.player.name + '</td>' +
+        '<td class="pos-pill">' + r.player.position + '</td>' +
+        '<td class="mono">' + r.player.team + '</td>' +
+        '<td class="num">' + r.count + ' / ' + totalLineups + '</td>' +
+        '<td class="num" style="min-width:120px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">' +
+            '<div style="flex:1;max-width:80px;height:8px;background:var(--ink);border-radius:4px;overflow:hidden;">' +
+              '<div style="width:' + barWidth + '%;height:100%;background:var(--gold);"></div>' +
+            '</div>' +
+            '<span style="width:42px;text-align:right;">' + r.pct.toFixed(0) + '%</span>' +
+          '</div>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    view.innerHTML =
+      '<div class="section-head" style="margin-top:20px;margin-bottom:10px;">' +
+        '<h2 style="font-size:15px;">Exposure tracker</h2>' +
+        '<div class="sub">Across ' + totalLineups + ' lineup' + (totalLineups>1?'s':'') + '</div>' +
+      '</div>' +
+      '<table style="width:100%;">' +
+        '<thead><tr>' +
+          headerCell('name', 'Player') + headerCell('position', 'Pos') + headerCell('team', 'Team') +
+          headerCell('count', 'Lineups') + '<th>Exposure</th>' +
+        '</tr></thead>' +
+        '<tbody>' + rowsHtml + '</tbody>' +
+      '</table>';
+
+    view.querySelectorAll('[data-exposure-sort]').forEach(function(th){
+      th.addEventListener('click', function(){
+        var key = th.getAttribute('data-exposure-sort');
+        if (exposureSortKey === key){ exposureSortDir = exposureSortDir === 'asc' ? 'desc' : 'asc'; }
+        else { exposureSortKey = key; exposureSortDir = key === 'count' ? 'desc' : 'asc'; }
+        renderExposureTracker();
       });
     });
   }
@@ -2183,7 +2279,7 @@
   // used a lot for the OPEN slots in this batch, so the filled-in portion
   // varies across lineups instead of repeating the same picks every time -
   // your locked players stay identical in all of them, as expected.
-  // Respects MAX_LINEUPS (20) and replaces lineup tabs 1 through N, so it
+  // Respects MAX_LINEUPS (100) and replaces lineup tabs 1 through N, so it
   // confirms first since that's destructive to anything else in those tabs.
   function bulkGenerateLineups(n){
     n = Math.max(1, Math.min(MAX_LINEUPS, Math.round(n) || 1));
@@ -2888,7 +2984,7 @@
     var luSub = document.getElementById('luSub');
     if (luSub) luSub.textContent = mode==='sg'
       ? 'Single Game: 1 MVP (1.5x pts) + 5 FLEX. Roster from one game only.'
-      : 'Build up to 20 lineups. Switch between them with the tabs.';
+      : 'Build up to 100 lineups. Switch between them with the tabs.';
     var stackEl = document.getElementById('stackSettings');
     if (stackEl) stackEl.style.display = mode==='sg' ? 'none' : 'flex';
     var stackDivider = document.getElementById('stackSettingsDivider');
@@ -3013,6 +3109,7 @@
   renderLineupBar();
   renderConstructionBadge();
   renderLineupCompare();
+  renderExposureTracker();
   var stackElInit = document.getElementById('stackSettings');
   if (stackElInit) stackElInit.style.display = slateMode==='sg' ? 'none' : 'flex';
   var stackDividerInit = document.getElementById('stackSettingsDivider');
