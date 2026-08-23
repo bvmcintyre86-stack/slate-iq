@@ -1331,6 +1331,26 @@
       p.oppTeam = opp.team;
       p.isHome = match.side === 'home';
     });
+
+    // Players sitting in a saved lineup slot or Top Players are INDEPENDENT
+    // copies once they've round-tripped through localStorage (JSON
+    // serialization breaks object identity) - so a field added to the
+    // tagging logic after a lineup was last saved (like isHome) can be
+    // permanently missing on those old copies even though the live players
+    // array above has it. Re-sync every embedded copy against the fresh,
+    // just-tagged version by id so this can't go stale again.
+    var byId = {};
+    players.forEach(function(p){ byId[p.id] = p; });
+    lineups.forEach(function(lu){
+      for (var key in lu){
+        var embedded = lu[key];
+        if (embedded && byId[embedded.id]) Object.assign(embedded, byId[embedded.id]);
+      }
+    });
+    Object.keys(topPlayers).forEach(function(id){
+      if (byId[id]) Object.assign(topPlayers[id], byId[id]);
+    });
+
     populateFilterOptions();
     renderTable();
   }
