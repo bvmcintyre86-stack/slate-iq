@@ -562,7 +562,13 @@
   var projSource = 'fppg';    // 'fppg' | 'market' | 'blend'
 
   function normalizeName(n){
-    return (n || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g,' ').trim();
+    var s = (n || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g,' ').trim();
+    // Strip a trailing generational suffix (Jr, Sr, II, III, IV, V) so
+    // "Michael Pittman Jr" and "Michael Pittman" normalize to the same
+    // string regardless of which source (FanDuel vs Unabated) includes it -
+    // otherwise these never match and that player's props silently never load.
+    s = s.replace(/\s+(jr|sr|ii|iii|iv|v)$/, '');
+    return s;
   }
 
   var SPORTSBOOK_NAMES = {1:'DK', 2:'FD', 86:'Fanatics', 4:'BetMGM', 20:'Caesars', 17:'BetRivers'};
