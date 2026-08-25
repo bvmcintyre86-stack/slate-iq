@@ -1992,6 +1992,11 @@
       return 0;
     });
 
+    var headerCell = function(key, label){
+      var arrow = exposureSortKey === key ? (exposureSortDir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
+      return '<th data-exposure-sort="' + key + '" style="cursor:pointer;">' + label + arrow + '</th>';
+    };
+
     var showMvpCol = !!mvpSlotDef;
 
     var rowsHtml = rows.map(function(r){
