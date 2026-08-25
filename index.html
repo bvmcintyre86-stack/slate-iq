@@ -527,7 +527,7 @@
   var stackSettings = { level: 0, bringBack: false, onslaughtOnly: false };
 
   // ── Market-based projections (Unabated player props) ─────────────────────
-  var SPORTSBOOK_PRIORITY = [1, 2, 86, 4, 20, 17]; // DK, FanDuel, Fanatics, BetMGM, Caesars, BetRivers
+  var SPORTSBOOK_PRIORITY = [1, 2, 86, 4, 20, 36]; // DK, FanDuel, Fanatics, BetMGM, Caesars, theScore Bet
   var PROP_BET_TYPES = {
     passYards:    { id: 14,  kind: 'yardage', mult: 0.04 },
     passAttempts: { id: 61,  kind: 'yardage', mult: 0 },     // informational only, no direct point value
@@ -574,7 +574,7 @@
     return s;
   }
 
-  var SPORTSBOOK_NAMES = {1:'DK', 2:'FD', 86:'Fanatics', 4:'BetMGM', 20:'Caesars', 17:'BetRivers'};
+  var SPORTSBOOK_NAMES = {1:'DK', 2:'FD', 86:'Fanatics', 4:'BetMGM', 20:'Caesars', 36:'theScore Bet'};
   var STAT_LABELS = {
     passYards:'Pass Yds', passAttempts:'Pass Att', passComp:'Pass Comp', passTD:'Pass TD',
     rushYards:'Rush Yds', rushAttempts:'Rush Att', rushTD:'Rush TD',
@@ -992,7 +992,9 @@
   var ALL_KNOWN_SOURCES = {
     1:'DraftKings', 2:'FanDuel', 4:'BetMGM', 17:'BetRivers', 20:'Caesars', 86:'Fanatics',
     78:'Bet365', 72:'PrizePicks', 73:'Underdog Fantasy', 84:'DraftKings Pick6', 90:'Sleeper',
-    89:'Novig', 66:'Prophet Exchange', 52:'Matchbook', 67:'Sporttrade',
+    89:'Novig', 66:'Prophet Exchange', 52:'Matchbook', 67:'Sporttrade', 25:'Parx', 27:'Sugarhouse',
+    36:'theScore Bet', // formerly ESPN Bet - ESPN Bet shut down Dec 1, 2025 and was replaced by
+                        // this same underlying PENN Entertainment book under the theScore brand
     105:'Kalshi', 107:'Polymarket', 111:'Polymarket', 49:'Unabated (consensus, not a real book)'
   };
 
