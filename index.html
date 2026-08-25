@@ -1837,9 +1837,12 @@
 
     var filterBannerHtml = '';
     if (filterIds.length){
-      var names = filterIds.map(function(id){ return exposureFilterPlayers[id] ? exposureFilterPlayers[id].name : id; });
+      var names = filterIds.map(function(id){
+        var nm = exposureFilterPlayers[id] ? exposureFilterPlayers[id].name : id;
+        return exposureFilterIds[id] === 'mvp' ? (nm + ' (as MVP)') : nm;
+      });
       filterBannerHtml = '<div class="sub" style="margin-bottom:10px;">Showing ' + visibleIndices.length + ' of ' + lineups.length +
-        ' lineups containing all of: <strong>' + names.join(', ') + '</strong></div>';
+        ' lineups matching: <strong>' + names.join(', ') + '</strong></div>';
     }
 
     var cardsHtml = visibleIndices.map(function(idx){
@@ -1905,20 +1908,26 @@
   // the thing that actually matters once you're bulk-generating a large
   // number of lineups at once (spotting overexposure to chalk, or a player
   // you like barely showing up at all).
-  var exposureFilterIds = {}; // player id -> true, for filtering Compare Lineups cards
+  var exposureFilterIds = {}; // player id -> 'any' | 'mvp', for filtering Compare Lineups cards
   var exposureFilterPlayers = {}; // player id -> player object, for the "showing X, Y" label
 
-  // Indices of lineups that contain ALL currently-selected exposure filter
-  // players (not just any one of them) - shared by both the tracker's own
-  // stats and the Compare Lineups card list, so they always agree on which
-  // lineups are "in scope". Always excludes fully-empty lineups.
+  // Indices of lineups that satisfy ALL currently-selected exposure filters
+  // (not just any one) - shared by both the tracker's own stats and the
+  // Compare Lineups card list, so they always agree on which lineups are
+  // "in scope". A filter of 'mvp' requires that exact player in the MVP
+  // slot specifically (Single Game only); 'any' requires them anywhere.
+  // Always excludes fully-empty lineups.
   function getExposureFilteredIndices(){
     var filterIds = Object.keys(exposureFilterIds);
+    var mvpSlotDef = slateMode === 'sg' ? activeSLOT_DEFS.find(function(s){ return s.mvp; }) : null;
     return lineups.map(function(_, idx){ return idx; }).filter(function(idx){
       var lu = lineups[idx];
       if (!activeSLOT_DEFS.some(function(s){ return lu[s.key]; })) return false;
       if (!filterIds.length) return true;
       return filterIds.every(function(fid){
+        if (exposureFilterIds[fid] === 'mvp' && mvpSlotDef){
+          return lu[mvpSlotDef.key] && String(lu[mvpSlotDef.key].id) === fid;
+        }
         return activeSLOT_DEFS.some(function(s){ return lu[s.key] && String(lu[s.key].id) === fid; });
       });
     });
@@ -1951,19 +1960,25 @@
       return;
     }
 
-    var counts = {}; // player id -> {player, count}
+    var mvpSlotDef = slateMode === 'sg' ? activeSLOT_DEFS.find(function(s){ return s.mvp; }) : null;
+
+    var counts = {}; // player id -> {player, count, mvpCount}
     scopedIndices.forEach(function(idx){
       var lu = lineups[idx];
       activeSLOT_DEFS.forEach(function(s){
         var p = lu[s.key];
         if (!p) return;
-        if (!counts[p.id]) counts[p.id] = { player: p, count: 0 };
+        if (!counts[p.id]) counts[p.id] = { player: p, count: 0, mvpCount: 0 };
         counts[p.id].count++;
+        if (mvpSlotDef && s.key === mvpSlotDef.key) counts[p.id].mvpCount++;
       });
     });
 
     var rows = Object.values(counts).map(function(c){
-      return { player: c.player, count: c.count, pct: (c.count / totalLineups) * 100 };
+      return {
+        player: c.player, count: c.count, pct: (c.count / totalLineups) * 100,
+        mvpCount: c.mvpCount, mvpPct: mvpSlotDef ? (c.mvpCount / totalLineups) * 100 : 0
+      };
     });
 
     rows.sort(function(a, b){
@@ -1977,16 +1992,33 @@
       return 0;
     });
 
-    var headerCell = function(key, label){
-      var arrow = exposureSortKey === key ? (exposureSortDir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
-      return '<th data-exposure-sort="' + key + '" style="cursor:pointer;">' + label + arrow + '</th>';
-    };
+    var showMvpCol = !!mvpSlotDef;
 
     var rowsHtml = rows.map(function(r){
       var barWidth = Math.min(100, r.pct);
-      var selected = !!exposureFilterIds[r.player.id];
-      return '<tr data-exposure-row="' + r.player.id + '" style="cursor:pointer;' + (selected ? 'background:var(--panel-2);' : '') + '" title="Click to filter Compare Lineups to just this player">' +
-        '<td style="text-align:left;">' + (selected ? '&#9733; ' : '') + r.player.name + '</td>' +
+      var filterMode = exposureFilterIds[r.player.id]; // undefined | 'any' | 'mvp'
+      var nameSelected = filterMode === 'any';
+      var mvpSelected = filterMode === 'mvp';
+
+      var mvpCellHtml = '';
+      if (showMvpCol){
+        var mvpBarWidth = Math.min(100, r.mvpPct);
+        mvpCellHtml =
+          '<td class="num" data-exposure-mvp-row="' + r.player.id + '" style="cursor:pointer;min-width:110px;' + (mvpSelected?'background:var(--panel-2);':'') + '" title="Click to filter to lineups where this player is specifically the MVP">' +
+            (mvpSelected ? '&#9733; ' : '') +
+            '<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">' +
+              '<div style="flex:1;max-width:50px;height:8px;background:var(--ink);border-radius:4px;overflow:hidden;">' +
+                '<div style="width:' + mvpBarWidth + '%;height:100%;background:var(--gold);"></div>' +
+              '</div>' +
+              '<span style="white-space:nowrap;">' + r.mvpCount + ' / ' + totalLineups + '</span>' +
+            '</div>' +
+          '</td>';
+      }
+
+      return '<tr>' +
+        '<td data-exposure-row="' + r.player.id + '" style="cursor:pointer;text-align:left;' + (nameSelected?'background:var(--panel-2);':'') + '" title="Click to filter Compare Lineups to lineups with this player (any slot)">' +
+          (nameSelected ? '&#9733; ' : '') + r.player.name +
+        '</td>' +
         '<td class="pos-pill">' + r.player.position + '</td>' +
         '<td class="mono">' + r.player.team + '</td>' +
         '<td class="num">' + r.count + ' / ' + totalLineups + '</td>' +
@@ -1998,19 +2030,21 @@
             '<span style="width:42px;text-align:right;">' + r.pct.toFixed(0) + '%</span>' +
           '</div>' +
         '</td>' +
+        mvpCellHtml +
       '</tr>';
     }).join('');
 
     var filterCount = Object.keys(exposureFilterIds).length;
     var filterNote = filterCount
-      ? '<div class="sub" style="margin-bottom:8px;">Showing only lineups with ALL selected players - stats above are scoped to those lineups too. <button id="exposureClearFilterBtn" style="margin-left:6px;">Clear filter (' + filterCount + ')</button></div>'
-      : '<div class="sub" style="margin-bottom:8px;">Click a player to drill into just the lineups that include them - select more than one to see lineups with ALL of them together.</div>';
+      ? '<div class="sub" style="margin-bottom:8px;">Showing only lineups matching ALL selected filters - stats above are scoped to those lineups too. <button id="exposureClearFilterBtn" style="margin-left:6px;">Clear filter (' + filterCount + ')</button></div>'
+      : '<div class="sub" style="margin-bottom:8px;">Click a player to drill into lineups that include them' + (showMvpCol ? ', or click their "As MVP" cell to filter to lineups where they\'re specifically the MVP' : '') + ' - select more than one to combine filters.</div>';
 
     view.innerHTML = headerHtml + filterNote +
       '<table style="width:100%;">' +
         '<thead><tr>' +
           headerCell('name', 'Player') + headerCell('position', 'Pos') + headerCell('team', 'Team') +
           headerCell('count', 'Lineups') + '<th>Exposure</th>' +
+          (showMvpCol ? '<th>As MVP</th>' : '') +
         '</tr></thead>' +
         '<tbody>' + rowsHtml + '</tbody>' +
       '</table>';
@@ -2026,14 +2060,29 @@
       });
     });
 
-    view.querySelectorAll('[data-exposure-row]').forEach(function(tr){
-      tr.addEventListener('click', function(){
-        var id = tr.getAttribute('data-exposure-row');
-        if (exposureFilterIds[id]){
+    view.querySelectorAll('[data-exposure-row]').forEach(function(td){
+      td.addEventListener('click', function(){
+        var id = td.getAttribute('data-exposure-row');
+        if (exposureFilterIds[id] === 'any'){
           delete exposureFilterIds[id];
           delete exposureFilterPlayers[id];
         } else {
-          exposureFilterIds[id] = true;
+          exposureFilterIds[id] = 'any';
+          exposureFilterPlayers[id] = counts[id].player;
+        }
+        renderExposureTracker();
+        renderLineupCompare();
+      });
+    });
+
+    view.querySelectorAll('[data-exposure-mvp-row]').forEach(function(td){
+      td.addEventListener('click', function(){
+        var id = td.getAttribute('data-exposure-mvp-row');
+        if (exposureFilterIds[id] === 'mvp'){
+          delete exposureFilterIds[id];
+          delete exposureFilterPlayers[id];
+        } else {
+          exposureFilterIds[id] = 'mvp';
           exposureFilterPlayers[id] = counts[id].player;
         }
         renderExposureTracker();
