@@ -427,6 +427,10 @@
       <button id="debugPlayerBtn">Search</button>
       <span style="font-size:11px;color:var(--muted);">Results print to the browser console (F12)</span>
     </div>
+    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
+      <button id="debugBookAvailabilityBtn">Check book availability</button>
+      <span style="font-size:11px;color:var(--muted);">Shows every sportsbook actually posting data right now, from your last props load - results print to the console (F12)</span>
+    </div>
 
     <div class="filters">
       <input type="text" id="searchBox" placeholder="Search player or team">
@@ -979,6 +983,61 @@
 
   var lastRawPregame = {};
   var lastRawPeople = {};
+
+  // All sportsbook/source IDs we've identified across this slate so far,
+  // not just the 6 in SPORTSBOOK_PRIORITY - covers pick'em apps, exchanges,
+  // and prediction markets too, purely for this availability check (these
+  // are never used for actual projections, only DK/FD/Fanatics/BetMGM/
+  // Caesars/BetRivers are).
+  var ALL_KNOWN_SOURCES = {
+    1:'DraftKings', 2:'FanDuel', 4:'BetMGM', 17:'BetRivers', 20:'Caesars', 86:'Fanatics',
+    78:'Bet365', 72:'PrizePicks', 73:'Underdog Fantasy', 84:'DraftKings Pick6', 90:'Sleeper',
+    89:'Novig', 66:'Prophet Exchange', 52:'Matchbook', 67:'Sporttrade',
+    105:'Kalshi', 107:'Polymarket', 111:'Polymarket', 49:'Unabated (consensus, not a real book)'
+  };
+
+  // Tallies how many prop-line entries came from EVERY sportsbook/source
+  // seen in the last props pull - not just your 6 approved ones - so you
+  // can see at a glance which books are actually posting data right now
+  // versus completely absent, the way we found FanDuel to be.
+  function debugBookAvailability(){
+    if (!Object.keys(lastRawPregame).length){
+      console.log('debugBookAvailability: no props data loaded yet - run "Load player props" first.');
+      return;
+    }
+    var counts = {}; // sourceId -> count
+    var totalEntries = 0;
+    for (var k in lastRawPregame){
+      var sides = lastRawPregame[k].sides || {};
+      for (var sk in sides){
+        totalEntries++;
+        var lines = sides[sk].marketSourceLines || {};
+        for (var srcId in lines){
+          counts[srcId] = (counts[srcId] || 0) + 1;
+        }
+      }
+    }
+
+    var rows = Object.keys(counts).map(function(srcId){
+      return {
+        'Source ID': srcId,
+        'Book': ALL_KNOWN_SOURCES[srcId] || ('unknown src' + srcId),
+        'Lines found': counts[srcId],
+        '% of entries': ((counts[srcId] / totalEntries) * 100).toFixed(1) + '%'
+      };
+    }).sort(function(a, b){ return b['Lines found'] - a['Lines found']; });
+
+    console.log('Book availability across ' + totalEntries + ' total prop entries in your last load:');
+    if (console.table) console.table(rows);
+    else rows.forEach(function(r){ console.log(r); });
+
+    var approvedSeen = SPORTSBOOK_PRIORITY.filter(function(id){ return counts[id]; });
+    var approvedMissing = SPORTSBOOK_PRIORITY.filter(function(id){ return !counts[id]; });
+    console.log('Of your 6 approved books: ' +
+      (approvedSeen.length ? approvedSeen.map(function(id){return SPORTSBOOK_NAMES[id];}).join(', ') : 'none') +
+      ' have data. ' +
+      (approvedMissing.length ? 'Completely absent: ' + approvedMissing.map(function(id){return SPORTSBOOK_NAMES[id];}).join(', ') + '.' : ''));
+  }
 
   // Searches the last props pull for any player whose name contains the
   // given text (case-insensitive), and prints a full audit of their raw
@@ -3242,6 +3301,7 @@
   document.getElementById('debugPlayerInput').addEventListener('keydown', function(e){
     if (e.key === 'Enter') debugPlayerProps(this.value);
   });
+  document.getElementById('debugBookAvailabilityBtn').addEventListener('click', debugBookAvailability);
 
   document.getElementById('addGameBtn').addEventListener('click', addGame);
   document.getElementById('thBlowout').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
