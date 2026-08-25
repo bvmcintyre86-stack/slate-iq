@@ -1835,6 +1835,16 @@
     var filterIds = Object.keys(exposureFilterIds);
     var visibleIndices = getExposureFilteredIndices();
 
+    // Order the cards by projected points, highest to lowest - complete
+    // lineups first (a partial build's total isn't really comparable),
+    // then sorted within that group. Doesn't touch lineup tabs or the
+    // underlying lineups array, purely the order cards are displayed in.
+    visibleIndices.sort(function(a, b){
+      var ca = computed[a], cb = computed[b];
+      if (ca.complete !== cb.complete) return ca.complete ? -1 : 1;
+      return cb.totalProj - ca.totalProj;
+    });
+
     var filterBannerHtml = '';
     if (filterIds.length){
       var names = filterIds.map(function(id){
@@ -2170,12 +2180,30 @@
   var exposureCount = {};
   var EXPOSURE_PENALTY_PER_USE = 4;
 
+  // Game-script bonus/penalty, based on the same Onslaught/Shootout/Rush/
+  // Trail/Grind/Fade tags already shown as "Script" throughout the app.
+  // Sized to matter as a real factor without overriding a Top Players tier
+  // outright - e.g. a Tier 3 fade (+20-15=+5) can still edge out an
+  // untiered onslaught pick (+0+15=+15)... actually stays below it, which
+  // is the intent: script alone shouldn't beat a manually-curated tier tag,
+  // but should meaningfully separate otherwise-similar options.
+  var SCRIPT_BONUS = {
+    onslaught: 15,
+    shootout: 10,
+    rush: 5,
+    trail: 3,
+    grind: -5,
+    fade: -15,
+    unmatched: 0
+  };
+
   function playerScore(p){
     var tier = p.tier || 0;
     var tierBonus = tier===1 ? 100 : tier===2 ? 50 : tier===3 ? 20 : 0;
     var rank = p.rank || 0;
     var exposurePenalty = (exposureCount[p.id] || 0) * EXPOSURE_PENALTY_PER_USE;
-    return effectiveFppg(p) + tierBonus - (rank * 1.5) - exposurePenalty;
+    var scriptBonus = SCRIPT_BONUS[p.tag] || 0;
+    return effectiveFppg(p) + tierBonus - (rank * 1.5) - exposurePenalty + scriptBonus;
   }
 
   // Blends FanDuel's own fppg with the market-derived projection (if loaded),
