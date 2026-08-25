@@ -447,7 +447,6 @@
             <th data-key="salary">Salary</th>
             <th data-key="fppg">FPPG</th>
             <th data-key="mkt">Mkt</th>
-            <th data-key="value">Value</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="tag">Script</th>
             <th>Lineup</th>
@@ -469,7 +468,7 @@
 
   var games = [];
   var players = [];
-  var sortKey = 'value';
+  var sortKey = 'fppg';
   var sortDir = 'desc';
 
   var SLOT_DEFS = [
@@ -1092,7 +1091,7 @@
     var el = document.getElementById('propsStatus');
     if (el) el.textContent = msg;
   }
-  var sortKey = 'value';
+  var sortKey = 'fppg';
   var sortDir = 'desc';
   var filterPos = ''; var filterTeam = ''; var filterTag = ''; var filterSearch = ''; var filterMatchup = '';
   var topPlayers = {};
@@ -2697,7 +2696,6 @@
         '<td class="num">'+money(p.salary)+'</td>'+
         '<td class="num">'+p.fppg.toFixed(1)+'</td>'+
         '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : '—')+'</td>'+
-        '<td class="num">'+p.value.toFixed(2)+'</td>'+
         '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
         '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
         '<td>'+action+'</td>'+
