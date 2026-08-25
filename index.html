@@ -968,6 +968,13 @@
     // exactly why something did or didn't make it into their projection.
     lastRawPregame = game && game.pregame ? game.pregame : {};
     lastRawPeople = people;
+    // Also expose on window - these live inside this file's private closure
+    // otherwise, which makes them invisible to anything typed directly into
+    // the browser console (only this app's own internal functions, like the
+    // Audit search, can see closure variables). This lets you write your own
+    // one-off console queries against the same data without extra plumbing.
+    window.lastRawPregame = lastRawPregame;
+    window.lastRawPeople = lastRawPeople;
   }
 
   var lastRawPregame = {};
