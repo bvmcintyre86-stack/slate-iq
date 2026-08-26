@@ -2306,14 +2306,29 @@
     var slotTeamConstraint = {};
     var slotStackRole = {};
     var stackNote = null;
+    var autoQbNote = null;
 
     // Phase 0: reserve stack / bring-back slots per the Stack Settings panel.
-    // Only applies to Main Slate, and only once a QB is already in the lineup
-    // (we build stacks around your QB choice, not the other way around).
+    // Only applies to Main Slate. If no QB is locked in yet, pick the best
+    // available one ourselves (respecting exposure diversity during a bulk
+    // build, same as every other pick) rather than requiring you to lock a
+    // QB manually before stacking can even run.
     var wantsStack = slateMode === 'main' && (stackSettings.level > 0 || stackSettings.bringBack);
     if (wantsStack && !lineup.QB){
-      stackNote = 'Add a QB to your lineup first to apply stack settings.';
-    } else if (wantsStack && lineup.QB){
+      var qbCandidates = pool.filter(function(p){ return p.position === 'QB' && !picks[p.id]; });
+      if (!qbCandidates.length){
+        qbCandidates = fullPool.filter(function(p){ return p.position === 'QB' && !picks[p.id]; });
+      }
+      if (qbCandidates.length){
+        var bestQb = qbCandidates.reduce(function(m,p){ return playerScore(p) > playerScore(m) ? p : m; }, qbCandidates[0]);
+        lineup.QB = bestQb;
+        picks[bestQb.id] = true;
+        autoQbNote = 'No QB was locked in, so ' + bestQb.name + ' (' + bestQb.team + ') was auto-selected to build the stack around.';
+      } else {
+        autoQbNote = 'No eligible QB available in the pool to build a stack around.';
+      }
+    }
+    if (wantsStack && lineup.QB){
       var qb = lineup.QB;
       if (stackSettings.onslaughtOnly && qb.tag !== 'onslaught'){
         stackNote = qb.team + ' isn\'t tagged Onslaught, so the stack wasn\'t forced this run.';
@@ -2525,6 +2540,7 @@
     }
 
     var msgParts = [];
+    if (autoQbNote) msgParts.push(autoQbNote);
     if (stackNote) msgParts.push(stackNote);
     if (unfilled.length) msgParts.push('Could not fill: ' + unfilled.join(', '));
     if (salaryUsed() < salaryFloor){
