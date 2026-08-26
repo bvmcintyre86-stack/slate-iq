@@ -382,6 +382,11 @@
         <input id="bulkCountInput" type="number" min="1" max="100" value="5" style="width:46px;">
         <button id="bulkGenerateBtn">Generate lineups</button>
       </div>
+
+      <div class="bar-divider"></div>
+      <label class="stack-chk" title="When on, Optimize and Generate lineups only ever pick from Top Players - a slot with no eligible Top Players option is left unfilled rather than reaching into the rest of the pool.">
+        <input type="checkbox" id="restrictToTopPlayersChk"> Only use Top Players
+      </label>
     </div>
     <div class="construction-badge" id="constructionBadge"></div>
     <div class="lineup-msg" id="lineupMsg"></div>
@@ -506,6 +511,7 @@
   }
   var activeSLOT_DEFS = SLOT_DEFS;
   var mvpPositionFilter = 'any'; // Single Game only: 'any' | 'qb' | 'rb' | 'qbrb'
+  var restrictToTopPlayers = false; // when true, optimizer/bulk-generate never falls back beyond Top Players
 
   // Mutates SG_SLOT_DEFS[0] (the MVP slot) in place so every place that
   // already reads s.eligible - the optimizer, hasEmptySlotFor, etc. - picks
@@ -1533,6 +1539,7 @@
         cap: salaryCap,
         stackSettings: stackSettings,
         mvpPositionFilter: mvpPositionFilter,
+        restrictToTopPlayers: restrictToTopPlayers,
         collapsedSections: collapsedSections,
         projSource: projSource,
         marketProjections: marketProjections,
@@ -1595,6 +1602,11 @@
         // Note: applyMvpPositionFilter() + syncing the <select> happens at
         // init time below, after loadState() runs - not here, since this
         // runs before the DOM elements it would touch are guaranteed ready.
+      }
+      if (typeof state.restrictToTopPlayers === 'boolean'){
+        restrictToTopPlayers = state.restrictToTopPlayers;
+        var restrictChk = document.getElementById('restrictToTopPlayersChk');
+        if (restrictChk) restrictChk.checked = restrictToTopPlayers;
       }
       if (state.collapsedSections){
         collapsedSections = state.collapsedSections;
@@ -2304,10 +2316,20 @@
     var candidatePool = tpList.length > 0 ? tpList : players;
     if (!emptySlots.length){ setMsg('Lineup is already full. Clear a slot to optimize around it.'); return; }
 
+    if (restrictToTopPlayers && !tpList.length){
+      setMsg('Only use Top Players is on, but no Top Players are tagged yet - tag some first, or turn the restriction off.');
+      return;
+    }
+
     var usedIds = {};
     activeSLOT_DEFS.forEach(function(s){ if (lineup[s.key]) usedIds[lineup[s.key].id] = true; });
     var pool = candidatePool.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
-    var fullPool = players.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
+    // Normally this is a genuine fallback to the entire player pool whenever
+    // a slot has no eligible Top Players candidate, so a lineup can always
+    // be completed. With the restriction on, that fallback becomes a no-op
+    // (fullPool === pool) - a slot with no eligible Top Players option is
+    // left unfilled instead of reaching outside Top Players at all.
+    var fullPool = restrictToTopPlayers ? pool : players.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
 
     var picks = {};
     var slotTeamConstraint = {};
@@ -2621,7 +2643,7 @@
     var stoppedEarly = false;
     var stoppedReason = '';
     for (var i = 0; i < n; i++){
-      var attempt = 0, sig, overCap;
+      var attempt = 0, sig, overCap, incomplete;
       do {
         lineup = Object.assign({}, template); // fresh copy - locked slots intact, rest empty
         lineups[i] = lineup;
@@ -2630,26 +2652,32 @@
         optimizeRemaining(); // only touches the still-empty slots
         sig = lineupSignature(lineup);
         overCap = salaryUsed() > salaryCap;
+        var incomplete = restrictToTopPlayers && activeSLOT_DEFS.some(function(s){ return !lineup[s.key]; });
         attempt++;
 
-        // A lineup that's a duplicate OR over the salary cap doesn't count -
-        // Phase 1 inside optimizeRemaining() only WARNS on an over-cap result,
-        // it doesn't undo anything, so this is the actual point where an
-        // invalid lineup would otherwise slip into the batch unnoticed.
-        if ((seenSignatures[sig] || overCap) && attempt <= 15){
+        // A lineup that's a duplicate, over the salary cap, OR left with an
+        // unfilled slot because Top Players didn't have enough depth doesn't
+        // count. Phase 1 inside optimizeRemaining() only WARNS on these, it
+        // doesn't undo anything, so this is the actual point where an
+        // invalid/incomplete lineup would otherwise slip into the batch
+        // unnoticed.
+        if ((seenSignatures[sig] || overCap || incomplete) && attempt <= 15){
           activeSLOT_DEFS.forEach(function(s){
             var p = lineup[s.key];
             var wasLocked = !!template[s.key];
             if (p && !wasLocked) exposureCount[p.id] = (exposureCount[p.id] || 0) + 25;
           });
         }
-      } while ((seenSignatures[sig] || overCap) && attempt <= 15);
+      } while ((seenSignatures[sig] || overCap || incomplete) && attempt <= 15);
 
-      if (seenSignatures[sig] || overCap){
-        // Couldn't find a genuinely unique, cap-legal lineup after 15 retries.
-        // Stop here rather than pad the batch out with an invalid one.
+      if (seenSignatures[sig] || overCap || incomplete){
+        // Couldn't find a genuinely unique, cap-legal, fully-complete lineup
+        // after 15 retries. Stop here rather than pad the batch out with an
+        // invalid or incomplete one.
         stoppedEarly = true;
-        stoppedReason = overCap ? 'stayed over the salary cap' : 'kept duplicating an existing lineup';
+        stoppedReason = overCap ? 'stayed over the salary cap'
+          : incomplete ? 'couldn\'t fill every slot from Top Players alone'
+          : 'kept duplicating an existing lineup';
         break;
       }
       seenSignatures[sig] = true;
@@ -3330,6 +3358,10 @@
     }
     saveState();
     refreshLineupUI();
+  });
+  document.getElementById('restrictToTopPlayersChk').addEventListener('change', function(){
+    restrictToTopPlayers = this.checked;
+    saveState();
   });
   document.getElementById('bringBackChk').addEventListener('change', function(){
     stackSettings.bringBack = this.checked;
