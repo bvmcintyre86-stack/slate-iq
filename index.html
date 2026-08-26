@@ -1554,24 +1554,24 @@
           activeSLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
           return obj;
         }),
-        mainLineups: (modeState.main.lineups||lineups).map(function(lu){
+        mainLineups: (slateMode==='main' ? lineups : (modeState.main.lineups||[])).map(function(lu){
           var obj={};
           SLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
           return obj;
         }),
-        mainActiveIdx: slateMode==='main'?activeIdx:modeState.main.activeIdx,
+        mainActiveIdx: slateMode==='main'?activeIdx:(modeState.main.activeIdx||0),
         mainGames: slateMode==='main'?games:(modeState.main.games||[]),
         sgGames: slateMode==='sg'?games:(modeState.sg.games||[]),
         mainPlayers: slateMode==='main'?players:(modeState.main.players||[]),
         mainTopPlayers: slateMode==='main'?topPlayers:(modeState.main.topPlayers||{}),
         sgPlayers: slateMode==='sg'?players:(modeState.sg.players||[]),
         sgTopPlayers: slateMode==='sg'?topPlayers:(modeState.sg.topPlayers||{}),
-        sgLineups: (modeState.sg.lineups||[]).map(function(lu){
+        sgLineups: (slateMode==='sg' ? lineups : (modeState.sg.lineups||[])).map(function(lu){
           var obj={};
           SG_SLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
           return obj;
         }),
-        sgActiveIdx: slateMode==='sg'?activeIdx:modeState.sg.activeIdx
+        sgActiveIdx: slateMode==='sg'?activeIdx:(modeState.sg.activeIdx||0)
       };
       localStorage.setItem('slateBoardState', JSON.stringify(state));
     }catch(e){ /* storage unavailable, skip silently */ }
