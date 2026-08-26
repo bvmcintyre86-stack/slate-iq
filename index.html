@@ -2320,7 +2320,19 @@
         qbCandidates = fullPool.filter(function(p){ return p.position === 'QB' && !picks[p.id]; });
       }
       if (qbCandidates.length){
-        var bestQb = qbCandidates.reduce(function(m,p){ return playerScore(p) > playerScore(m) ? p : m; }, qbCandidates[0]);
+        // Make sure whichever QB we pick still leaves enough room to fill
+        // every OTHER required slot at its cheapest possible price -
+        // otherwise picking purely by score could blow the cap before the
+        // rest of the lineup is even built.
+        var otherSlotsMinCost = emptySlots.filter(function(s){ return s.key !== 'QB'; }).reduce(function(sum, s){
+          var cheapestForSlot = fullPool.filter(function(p){ return s.eligible.indexOf(p.position) !== -1; })
+            .reduce(function(m, p){ return (!m || p.salary < m.salary) ? p : m; }, null);
+          return sum + (cheapestForSlot ? cheapestForSlot.salary : 0);
+        }, 0);
+        var affordableQbs = qbCandidates.filter(function(p){ return p.salary + otherSlotsMinCost <= salaryCap; });
+        var qbPool = affordableQbs.length ? affordableQbs : qbCandidates;
+
+        var bestQb = qbPool.reduce(function(m,p){ return playerScore(p) > playerScore(m) ? p : m; }, qbPool[0]);
         lineup.QB = bestQb;
         picks[bestQb.id] = true;
         autoQbNote = 'No QB was locked in, so ' + bestQb.name + ' (' + bestQb.team + ') was auto-selected to build the stack around.';
@@ -2600,8 +2612,9 @@
 
     var newLineups = [];
     var stoppedEarly = false;
+    var stoppedReason = '';
     for (var i = 0; i < n; i++){
-      var attempt = 0, sig;
+      var attempt = 0, sig, overCap;
       do {
         lineup = Object.assign({}, template); // fresh copy - locked slots intact, rest empty
         lineups[i] = lineup;
@@ -2609,24 +2622,27 @@
 
         optimizeRemaining(); // only touches the still-empty slots
         sig = lineupSignature(lineup);
+        overCap = salaryUsed() > salaryCap;
         attempt++;
 
-        if (seenSignatures[sig] && attempt <= 15){
-          // Force this exact combination to become unattractive next attempt
-          // by heavily penalizing every non-locked player in it, then retry.
+        // A lineup that's a duplicate OR over the salary cap doesn't count -
+        // Phase 1 inside optimizeRemaining() only WARNS on an over-cap result,
+        // it doesn't undo anything, so this is the actual point where an
+        // invalid lineup would otherwise slip into the batch unnoticed.
+        if ((seenSignatures[sig] || overCap) && attempt <= 15){
           activeSLOT_DEFS.forEach(function(s){
             var p = lineup[s.key];
             var wasLocked = !!template[s.key];
             if (p && !wasLocked) exposureCount[p.id] = (exposureCount[p.id] || 0) + 25;
           });
         }
-      } while (seenSignatures[sig] && attempt <= 15);
+      } while ((seenSignatures[sig] || overCap) && attempt <= 15);
 
-      if (seenSignatures[sig]){
-        // Couldn't find a genuinely unique lineup after 15 retries - the pool
-        // is too small to support any more, given current locks/settings.
-        // Stop here rather than pad the batch out with a duplicate.
+      if (seenSignatures[sig] || overCap){
+        // Couldn't find a genuinely unique, cap-legal lineup after 15 retries.
+        // Stop here rather than pad the batch out with an invalid one.
         stoppedEarly = true;
+        stoppedReason = overCap ? 'stayed over the salary cap' : 'kept duplicating an existing lineup';
         break;
       }
       seenSignatures[sig] = true;
@@ -2651,7 +2667,7 @@
     var msg;
     if (stoppedEarly){
       msg = 'Generated ' + newLineups.length + ' of the ' + n + ' requested lineup' + (n>1?'s':'') +
-        ' - the player pool couldn\'t support any more fully unique builds given your current locks/settings.';
+        ' - the next attempt ' + stoppedReason + ' even after retrying, given your current locks/settings.';
     } else {
       msg = 'Generated ' + newLineups.length + ' lineup' + (newLineups.length>1?'s':'') + '.';
     }
