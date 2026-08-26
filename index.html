@@ -3297,6 +3297,13 @@
     modeState[slateMode].games      = games;
     modeState[slateMode].players    = players;
     modeState[slateMode].topPlayers = topPlayers;
+    // Exposure tracker filter selections are tied to a specific mode's
+    // player pool/lineups - player IDs aren't guaranteed unique across
+    // Main Slate vs Single Game, so a filter selected in one mode could
+    // silently (and incorrectly) match an unrelated player in the other.
+    // Always clear on switch rather than let it carry over.
+    exposureFilterIds = {};
+    exposureFilterPlayers = {};
     // Switch
     slateMode = mode;
     activeSLOT_DEFS = mode === 'sg' ? SG_SLOT_DEFS : SLOT_DEFS;
