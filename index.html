@@ -1616,17 +1616,24 @@
       });
       players = state.players || [];
       topPlayers = state.topPlayers || {};
-      // Restore main slate lineups
+      // Restore main slate lineups - look players up in the MAIN SLATE pool
+      // specifically (state.mainPlayers), not whichever pool happened to be
+      // active when this was saved (state.players reflects only the LAST
+      // active mode - if Single Game was active at save time, that's a much
+      // smaller, single-game-scoped list, and any Main Slate player not also
+      // in it would silently fail to be found and come back null here).
+      var mainPlayersForLookup = state.mainPlayers || state.players || [];
+      var sgPlayersForLookup = state.sgPlayers || state.players || [];
       if (state.mainLineups && state.mainLineups.length){
         modeState.main.lineups = state.mainLineups.map(function(lu){
-          var obj={}; SLOT_DEFS.forEach(function(s){l=lu[s.key];obj[s.key]=l?(players.find(function(p){return p.id===l;})||null):null;}); return obj;
+          var obj={}; SLOT_DEFS.forEach(function(s){l=lu[s.key];obj[s.key]=l?(mainPlayersForLookup.find(function(p){return p.id===l;})||null):null;}); return obj;
         });
         modeState.main.activeIdx = state.mainActiveIdx || 0;
       }
-      // Restore SG lineups
+      // Restore SG lineups - same fix, using the SG-specific pool.
       if (state.sgLineups && state.sgLineups.length){
         modeState.sg.lineups = state.sgLineups.map(function(lu){
-          var obj={}; SG_SLOT_DEFS.forEach(function(s){l=lu[s.key];obj[s.key]=l?(players.find(function(p){return p.id===l;})||null):null;}); return obj;
+          var obj={}; SG_SLOT_DEFS.forEach(function(s){l=lu[s.key];obj[s.key]=l?(sgPlayersForLookup.find(function(p){return p.id===l;})||null):null;}); return obj;
         });
         modeState.sg.activeIdx = state.sgActiveIdx || 0;
       }
