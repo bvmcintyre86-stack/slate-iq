@@ -2597,9 +2597,9 @@
     function lineupSignature(lu){
       return activeSLOT_DEFS.map(function(s){ return lu[s.key] ? lu[s.key].id : ''; }).sort().join(',');
     }
-    var duplicatesForced = 0;
 
     var newLineups = [];
+    var stoppedEarly = false;
     for (var i = 0; i < n; i++){
       var attempt = 0, sig;
       do {
@@ -2622,7 +2622,13 @@
         }
       } while (seenSignatures[sig] && attempt <= 15);
 
-      if (seenSignatures[sig]) duplicatesForced++; // pool too small - had to accept a repeat
+      if (seenSignatures[sig]){
+        // Couldn't find a genuinely unique lineup after 15 retries - the pool
+        // is too small to support any more, given current locks/settings.
+        // Stop here rather than pad the batch out with a duplicate.
+        stoppedEarly = true;
+        break;
+      }
       seenSignatures[sig] = true;
 
       // Tally NORMAL exposure from the newly-filled slots, so the next
@@ -2637,15 +2643,17 @@
       newLineups.push(lineup);
     }
 
-    lineups = newLineups;
+    lineups = newLineups.length ? newLineups : [emptyLineup()];
     activeIdx = 0;
     lineup = lineups[0];
     exposureCount = {}; // clear so a later single-lineup Optimize isn't affected
 
-    var msg = 'Generated ' + n + ' lineup' + (n>1?'s':'') + '.';
-    if (duplicatesForced){
-      msg += ' Note: the player pool was too small to build ' + n + ' fully unique lineups - ' +
-        duplicatesForced + ' repeat' + (duplicatesForced>1?'s were':' was') + ' unavoidable given your current locks/settings.';
+    var msg;
+    if (stoppedEarly){
+      msg = 'Generated ' + newLineups.length + ' of the ' + n + ' requested lineup' + (n>1?'s':'') +
+        ' - the player pool couldn\'t support any more fully unique builds given your current locks/settings.';
+    } else {
+      msg = 'Generated ' + newLineups.length + ' lineup' + (newLineups.length>1?'s':'') + '.';
     }
     setMsg(msg);
     saveState();
