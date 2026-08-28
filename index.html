@@ -541,7 +541,7 @@
     passTD:       { id: 65,  kind: 'binary',  mult: 4 },
     rushYards:    { id: 12,  kind: 'yardage', mult: 0.1 },
     rushAttempts: { id: 11,  kind: 'yardage', mult: 0 },
-    rushTD:       { id: 102, kind: 'binary',  mult: 6 },
+    rushTD:       { id: 102, kind: 'binary',  mult: 0 }, // overlaps with ATTD (which already covers rushing TDs) - kept fetched for reference/debugging, but not counted toward points to avoid double-counting the same touchdown equity twice
     recYards:     { id: 16,  kind: 'yardage', mult: 0.1 },
     receptions:   { id: 15,  kind: 'yardage', mult: 0.5 },   // FanDuel standard (0.5 PPR)
     attd:         { id: 216, kind: 'binary',  mult: 6 }
