@@ -1999,6 +1999,7 @@
 
   var exposureSortKey = 'count';
   var exposureSortDir = 'desc';
+  var exposurePositionFilter = 'ALL'; // pure display filter on the tracker's own rows
 
   // Shows what % of your current batch of lineups each player appears in -
   // the thing that actually matters once you're bulk-generating a large
@@ -2056,6 +2057,13 @@
       return;
     }
 
+    var posOptions = slateMode === 'sg' ? ['ALL','QB','RB','WR','TE','DEF','K'] : ['ALL','QB','RB','WR','TE','DEF'];
+    var posFilterHtml = '<select id="exposurePosFilter" style="font-size:12px;margin-bottom:8px;">' +
+      posOptions.map(function(pos){
+        return '<option value="' + pos + '"' + (exposurePositionFilter===pos?' selected':'') + '>' + (pos==='ALL'?'All positions':pos) + '</option>';
+      }).join('') +
+      '</select>';
+
     var mvpSlotDef = slateMode === 'sg' ? activeSLOT_DEFS.find(function(s){ return s.mvp; }) : null;
 
     var counts = {}; // player id -> {player, count, mvpCount}
@@ -2076,6 +2084,10 @@
         mvpCount: c.mvpCount, mvpPct: mvpSlotDef ? (c.mvpCount / totalLineups) * 100 : 0
       };
     });
+
+    if (exposurePositionFilter !== 'ALL'){
+      rows = rows.filter(function(r){ return r.player.position === exposurePositionFilter; });
+    }
 
     rows.sort(function(a, b){
       var av, bv;
@@ -2140,7 +2152,7 @@
       ? '<div class="sub" style="margin-bottom:8px;">Showing only lineups matching ALL selected filters - stats above are scoped to those lineups too. <button id="exposureClearFilterBtn" style="margin-left:6px;">Clear filter (' + filterCount + ')</button></div>'
       : '<div class="sub" style="margin-bottom:8px;">Click a player to drill into lineups that include them' + (showMvpCol ? ', or click their "As MVP" cell to filter to lineups where they\'re specifically the MVP' : '') + ' - select more than one to combine filters.</div>';
 
-    view.innerHTML = headerHtml + filterNote +
+    view.innerHTML = headerHtml + posFilterHtml + filterNote +
       '<table style="width:100%;">' +
         '<thead><tr>' +
           headerCell('name', 'Player') + headerCell('position', 'Pos') + headerCell('team', 'Team') +
@@ -2151,6 +2163,12 @@
       '</table>';
 
     wireExposureToggle(view);
+
+    var posFilterSel = document.getElementById('exposurePosFilter');
+    if (posFilterSel) posFilterSel.addEventListener('change', function(){
+      exposurePositionFilter = this.value;
+      renderExposureTracker();
+    });
 
     view.querySelectorAll('[data-exposure-sort]').forEach(function(th){
       th.addEventListener('click', function(){
