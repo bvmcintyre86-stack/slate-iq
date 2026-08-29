@@ -456,6 +456,7 @@
             <th data-key="salary">Salary</th>
             <th data-key="fppg">FPPG</th>
             <th data-key="mkt">Mkt</th>
+            <th data-key="mkt3x" title="Points needed to hit the classic '3x salary' DFS value target, minus their actual Mkt projection. Smaller or negative = closer to or past that target.">3x &Delta;</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="tag">Script</th>
             <th>Lineup</th>
@@ -618,6 +619,19 @@
       sum += Math.round(mp.breakdown[k].value * 10) / 10;
     }
     return Math.round(sum * 10) / 10;
+  }
+
+  // Classic DFS "value" target, framed as a gap instead of a ratio: a good
+  // play is roughly 3 projected points per $1,000 of salary. This is
+  // (salary/1000 * 3) minus the player's actual Mkt projection - a small or
+  // negative number means they're projected to hit or beat that 3x bar
+  // (the more interesting plays), a large positive number means they're
+  // projected well short of it. Returns null when there's no Mkt data yet,
+  // since there's nothing to compare against.
+  function mkt3xDelta(p){
+    var mp = marketProjections[normalizeName(p.name)];
+    if (!mp || !p.salary) return null;
+    return Math.round(((p.salary / 1000) * 3 - mktDisplayTotal(mp)) * 10) / 10;
   }
 
   function mktCoverage(mp, position){
@@ -2817,6 +2831,14 @@
         var bmp = marketProjections[normalizeName(b.name)];
         av = amp ? amp.fp : -Infinity;
         bv = bmp ? bmp.fp : -Infinity;
+      } else if (sortKey === 'mkt3x'){
+        // Smaller/negative = better here, so missing data (null) should sort
+        // as the WORST case, not the best - opposite of the usual -Infinity
+        // convention below, which would otherwise put "no data" plays at the
+        // top of a best-value-first sort.
+        av = mkt3xDelta(a); bv = mkt3xDelta(b);
+        if (av === null) av = Infinity;
+        if (bv === null) bv = Infinity;
       } else {
         av = a[sortKey]; bv = b[sortKey];
       }
@@ -2857,6 +2879,12 @@
         '<td class="num">'+money(p.salary)+'</td>'+
         '<td class="num">'+p.fppg.toFixed(1)+'</td>'+
         '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : '—')+'</td>'+
+        (function(){
+          var delta = mkt3xDelta(p);
+          if (delta === null) return '<td class="num" style="color:var(--muted);">—</td>';
+          var color = delta <= 0 ? 'var(--gold)' : (delta <= 2 ? 'var(--teal)' : 'var(--muted)');
+          return '<td class="num" style="color:'+color+';font-weight:'+(delta<=0?'700':'400')+';">'+(delta > 0 ? '+' : '')+delta.toFixed(1)+'</td>';
+        })()+
         '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
         '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
         '<td>'+action+'</td>'+
