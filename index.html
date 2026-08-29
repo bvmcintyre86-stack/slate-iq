@@ -332,12 +332,10 @@
     <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div>
         <h2><span class="section-toggle" data-toggle-section="lineupsSection">&#9660;</span> Your lineups</h2>
-        <div class="sub" id="luSub">Build up to 100 lineups. Switch between them with the tabs.</div>
+        <div class="sub" id="luSub">Build up to 100 lineups. Click a card below to edit it.</div>
       </div>
       <button id="exportCsvBtn" style="flex-shrink:0;">⬇ Export week to CSV</button>
     </div>
-
-    <div class="lu-tabs" id="luTabs"></div>
 
     <div class="lineup-bar">
       <div class="lineup-stat"><span class="label">Salary used</span><span class="val" id="salaryUsedVal">$0</span></div>
@@ -377,10 +375,13 @@
 
       <div class="bar-divider"></div>
 
-      <div class="field-inline" style="flex-wrap:nowrap;">
-        <span class="bar-group-label">Bulk build</span>
-        <input id="bulkCountInput" type="number" min="1" max="100" value="5" style="width:46px;">
-        <button id="bulkGenerateBtn">Generate lineups</button>
+      <div class="field-inline" style="flex-wrap:wrap;flex-direction:column;align-items:flex-start;gap:8px;">
+        <div class="field-inline" style="flex-wrap:nowrap;">
+          <span class="bar-group-label">Bulk build</span>
+          <input id="bulkCountInput" type="number" min="1" max="100" value="5" style="width:46px;">
+          <button id="bulkGenerateBtn">Generate lineups</button>
+        </div>
+        <button id="luDeleteAllBtn" style="color:#c00;">Delete all lineups</button>
       </div>
 
       <div class="bar-divider"></div>
@@ -390,8 +391,8 @@
     </div>
     <div class="construction-badge" id="constructionBadge"></div>
     <div class="lineup-msg" id="lineupMsg"></div>
-    <div id="lineupCompareView"></div>
     <div id="exposureTrackerView"></div>
+    <div id="lineupCompareView"></div>
   </section>
 
   <section class="tp-section" id="topPlayersSection">
@@ -1829,49 +1830,13 @@
     refreshLineupUI();
   }
 
+  // The LU N tab pills were removed - Compare Lineups cards already let you
+  // click any card to switch to editing it, making this row redundant.
+  // Kept as a no-op (rather than removing every call site) since #luTabs
+  // no longer exists in the page and this just quietly does nothing.
   function renderLuTabs(){
     var tabs = document.getElementById('luTabs');
     if (!tabs) return;
-    tabs.innerHTML = lineups.map(function(lu, i){
-      var filled = activeSLOT_DEFS.filter(function(s){return lu[s.key];}).length;
-      var label  = 'LU '+(i+1)+(filled?' ('+filled+'/'+activeSLOT_DEFS.length+')':'');
-      return '<button class="lu-tab'+(i===activeIdx?' active':'')+'" data-lu-idx="'+i+'">'+
-        label+(lineups.length>1?'<span class="lu-tab-rm" data-lu-rm="'+i+'">x</span>':'')+
-      '</button>';
-    }).join('')+
-    (lineups.length < MAX_LINEUPS ? '<button class="lu-tab-add" id="luAddBtn">+ Add lineup</button>' : '') +
-    (lineups.length > 1 ? '<button class="lu-tab-add" id="luDeleteAllBtn" style="margin-left:6px;color:#c00;">Delete all</button>' : '');
-    tabs.querySelectorAll('.lu-tab').forEach(function(btn){
-      btn.addEventListener('click', function(e){
-        if (e.target.hasAttribute('data-lu-rm')) return;
-        switchLineup(parseInt(btn.getAttribute('data-lu-idx')));
-      });
-    });
-    tabs.querySelectorAll('[data-lu-rm]').forEach(function(btn){
-      btn.addEventListener('click', function(e){
-        e.stopPropagation();
-        var idx = parseInt(btn.getAttribute('data-lu-rm'));
-        if (!confirm('Remove Lineup '+(idx+1)+'?')) return;
-        lineups.splice(idx, 1);
-        activeIdx = Math.min(activeIdx, lineups.length-1);
-        lineup = lineups[activeIdx];
-        saveState(); renderLuTabs(); refreshLineupUI();
-      });
-    });
-    var addBtn = document.getElementById('luAddBtn');
-    if (addBtn) addBtn.addEventListener('click', function(){
-      lineups.push(emptyLineup());
-      switchLineup(lineups.length-1);
-    });
-    var deleteAllBtn = document.getElementById('luDeleteAllBtn');
-    if (deleteAllBtn) deleteAllBtn.addEventListener('click', function(){
-      if (!confirm('Delete all ' + lineups.length + ' lineups? This can\'t be undone.')) return;
-      lineups = [emptyLineup()];
-      activeIdx = 0;
-      lineup = lineups[0];
-      setMsg('');
-      saveState(); renderLuTabs(); refreshLineupUI();
-    });
   }
 
   function switchLineup(idx){
@@ -3378,7 +3343,7 @@
     var luSub = document.getElementById('luSub');
     if (luSub) luSub.textContent = mode==='sg'
       ? 'Single Game: 1 MVP (1.5x pts) + 5 FLEX. Roster from one game only.'
-      : 'Build up to 100 lineups. Switch between them with the tabs.';
+      : 'Build up to 100 lineups. Click a card below to edit it.';
     var stackEl = document.getElementById('stackSettings');
     if (stackEl) stackEl.style.display = mode==='sg' ? 'none' : 'flex';
     var stackDivider = document.getElementById('stackSettingsDivider');
@@ -3479,6 +3444,14 @@
   document.getElementById('bulkGenerateBtn').addEventListener('click', function(){
     var n = parseInt(document.getElementById('bulkCountInput').value, 10);
     bulkGenerateLineups(n);
+  });
+  document.getElementById('luDeleteAllBtn').addEventListener('click', function(){
+    if (!confirm('Delete all ' + lineups.length + ' lineups? This can\'t be undone.')) return;
+    lineups = [emptyLineup()];
+    activeIdx = 0;
+    lineup = lineups[0];
+    setMsg('');
+    saveState(); refreshLineupUI();
   });
   // loadRostersBtn removed from the UI per request - loadRosters() itself is
   // left defined but unused, in case it's wanted again later.
