@@ -443,6 +443,7 @@
       <select id="teamFilter"><option value="">All teams</option></select>
       <select id="matchupFilter"><option value="">All matchups</option></select>
       <select id="tagFilter"><option value="">All script tags</option></select>
+      <label class="stack-chk"><input type="checkbox" id="mktOnlyFilter"> Has Mkt projection</label>
       <span class="row-count" id="rowCount"></span>
     </div>
 
@@ -1182,6 +1183,7 @@
   var sortKey = 'fppg';
   var sortDir = 'desc';
   var filterPos = ''; var filterTeam = ''; var filterTag = ''; var filterSearch = ''; var filterMatchup = '';
+  var filterMktOnly = false;
   var topPlayers = {};
   var tpActivePos = 'ALL';
   var TP_POSITIONS = ['ALL','QB','RB','WR','TE','DEF','K'];
@@ -2820,6 +2822,7 @@
       if (posF  && p.position !== posF)  return false;
       if (teamF && p.team     !== teamF) return false;
       if (tagF  && p.tag      !== tagF)  return false;
+      if (filterMktOnly && !marketProjections[normalizeName(p.name)]) return false;
       if (search && p.name.toLowerCase().indexOf(search) === -1 && p.team.toLowerCase().indexOf(search) === -1) return false;
       return true;
     });
@@ -3459,6 +3462,7 @@
   document.getElementById('teamFilter').addEventListener('change', function(){ filterTeam=this.value; renderTable(); });
   document.getElementById('tagFilter').addEventListener('change', function(){ filterTag=this.value; renderTable(); });
   document.getElementById('matchupFilter').addEventListener('change', function(){ filterMatchup=this.value; renderTable(); });
+  document.getElementById('mktOnlyFilter').addEventListener('change', function(){ filterMktOnly=this.checked; renderTable(); });
 
   document.querySelectorAll('#poolTable th[data-key]').forEach(function(th){
     th.addEventListener('click', function(){
