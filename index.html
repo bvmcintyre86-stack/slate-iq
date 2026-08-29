@@ -332,7 +332,7 @@
     <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div>
         <h2><span class="section-toggle" data-toggle-section="lineupsSection">&#9660;</span> Your lineups</h2>
-        <div class="sub" id="luSub">Build up to 100 lineups. Click a card below to edit it.</div>
+        <div class="sub" id="luSub">Build up to 200 lineups. Click a card below to edit it.</div>
       </div>
       <button id="exportCsvBtn" style="flex-shrink:0;">⬇ Export week to CSV</button>
     </div>
@@ -370,18 +370,20 @@
 
       <div class="bar-divider"></div>
 
-      <button id="optimizeBtn" class="primary">Optimize remaining</button>
-      <button id="clearLineupBtn">Clear lineup</button>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button id="optimizeBtn" class="primary">Optimize remaining</button>
+        <button id="clearLineupBtn">Clear lineup</button>
+      </div>
 
       <div class="bar-divider"></div>
 
-      <div class="field-inline" style="flex-wrap:wrap;flex-direction:column;align-items:flex-start;gap:8px;">
-        <div class="field-inline" style="flex-wrap:nowrap;">
-          <span class="bar-group-label">Bulk build</span>
-          <input id="bulkCountInput" type="number" min="1" max="100" value="5" style="width:46px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="bar-group-label">Bulk build</span>
+        <input id="bulkCountInput" type="number" min="1" max="200" value="5" style="width:46px;">
+        <div style="display:flex;flex-direction:column;gap:8px;">
           <button id="bulkGenerateBtn">Generate lineups</button>
+          <button id="luDeleteAllBtn" style="color:#c00;">Delete all lineups</button>
         </div>
-        <button id="luDeleteAllBtn" style="color:#c00;">Delete all lineups</button>
       </div>
 
       <div class="bar-divider"></div>
@@ -494,7 +496,7 @@
     {key:'FLEX', label:'FLEX', eligible:['RB']},
     {key:'DEF', label:'DEF', eligible:['DEF']}
   ];
-  var MAX_LINEUPS = 100;
+  var MAX_LINEUPS = 200;
   var SG_SLOT_DEFS = [
     {key:'MVP',   label:'MVP',  eligible:['QB','RB','WR','TE','DEF','K'], mvp:true},
     {key:'FLEX1', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
@@ -2027,7 +2029,7 @@
     var toggleArrow = isCollapsed ? '&#9654;' : '&#9660;';
 
     var headerHtml =
-      '<div class="section-head" style="margin-top:20px;margin-bottom:' + (isCollapsed ? '0' : '10px') + ';">' +
+      '<div class="section-head" style="margin-top:20px;margin-bottom:' + (isCollapsed ? '20px' : '10px') + ';">' +
         '<h2 style="font-size:15px;"><span class="section-toggle" data-toggle-section="exposureTracker">' + toggleArrow + '</span> Exposure tracker</h2>' +
         '<div class="sub">Across ' + totalLineups + ' lineup' + (totalLineups>1?'s':'') + '</div>' +
       '</div>';
@@ -3343,7 +3345,7 @@
     var luSub = document.getElementById('luSub');
     if (luSub) luSub.textContent = mode==='sg'
       ? 'Single Game: 1 MVP (1.5x pts) + 5 FLEX. Roster from one game only.'
-      : 'Build up to 100 lineups. Click a card below to edit it.';
+      : 'Build up to 200 lineups. Click a card below to edit it.';
     var stackEl = document.getElementById('stackSettings');
     if (stackEl) stackEl.style.display = mode==='sg' ? 'none' : 'flex';
     var stackDivider = document.getElementById('stackSettingsDivider');
