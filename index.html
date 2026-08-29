@@ -2136,7 +2136,7 @@
       : '<div class="sub" style="margin-bottom:8px;">Click a player to drill into lineups that include them' + (showMvpCol ? ', or click their "As MVP" cell to filter to lineups where they\'re specifically the MVP' : '') + ' - select more than one to combine filters.</div>';
 
     view.innerHTML = headerHtml + posFilterHtml + filterNote +
-      '<table style="width:100%;">' +
+      '<table style="width:100%;margin-bottom:20px;">' +
         '<thead><tr>' +
           headerCell('name', 'Player') + headerCell('position', 'Pos') + headerCell('team', 'Team') +
           headerCell('count', 'Lineups') + '<th>Exposure</th>' +
