@@ -1247,18 +1247,19 @@
   function classify(isFavorite, spread, total){
     var blowout = spread >= parseFloat(document.getElementById('thBlowout').value || 6.5);
     var highTotal = total >= parseFloat(document.getElementById('thHighTotal').value || 46.5);
-    var mediumTotal = total >= parseFloat(document.getElementById('thMediumTotal').value || 44);
-    // A separate, lower bar than the full Blowout line - a spread can be big
-    // enough to meaningfully split how "live" each side really is without
-    // being a full blowout. Below THIS threshold, both sides share the same
-    // game-level tag (a 1.5-point spread splitting a decent total isn't
-    // meaningfully different for either side). At or above it, the underdog
-    // gets downgraded to Grind even if the combined game total reads as
-    // Shootout/Live, since a real chunk of that total isn't actually theirs.
+    var mediumTotalThreshold = parseFloat(document.getElementById('thMediumTotal').value || 44);
+    var mediumTotal = total >= mediumTotalThreshold;
     var moderateSpread = spread >= parseFloat(document.getElementById('thModerateSpread').value || 3.5);
     if (blowout && highTotal) return isFavorite ? 'onslaught' : 'trail';
     if (blowout && !highTotal) return isFavorite ? 'rush' : 'fade';
-    if (!blowout && moderateSpread && !isFavorite) return 'grind';
+    // A moderate spread ALONE isn't enough to downgrade the underdog - a big
+    // total can absorb a moderate spread and still leave both sides with a
+    // real number (e.g. 51.5 total, 3.5 spread still leaves the dog at 24).
+    // Only downgrade when the spread has ALSO actually pulled this team's
+    // own implied total below a real floor - both conditions have to be true.
+    var ownImplied = implied(total, spread, isFavorite);
+    var ownFloor = mediumTotalThreshold / 2;
+    if (!blowout && moderateSpread && !isFavorite && ownImplied < ownFloor) return 'grind';
     if (!blowout && highTotal) return 'shootout';
     if (!blowout && mediumTotal) return 'live';
     return 'grind';
