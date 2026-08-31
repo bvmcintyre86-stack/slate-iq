@@ -308,7 +308,15 @@
       </div>
       <div class="field">
         <label>High total ≥</label>
-        <input id="thHighTotal" type="number" step="0.5" value="44.5" style="width:68px;">
+        <input id="thHighTotal" type="number" step="0.5" value="46.5" style="width:68px;">
+      </div>
+      <div class="field">
+        <label>Medium total ≥</label>
+        <input id="thMediumTotal" type="number" step="0.5" value="44" style="width:68px;">
+      </div>
+      <div class="field">
+        <label>Moderate spread ≥</label>
+        <input id="thModerateSpread" type="number" step="0.5" value="3.5" style="width:68px;">
       </div>
       <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);margin-top:4px;">
         <button id="loadUnabatedBtn">Load from Unabated</button>
@@ -1223,6 +1231,7 @@
     trail:     {label:'Trail volume',     color:'var(--amber)', bg:'var(--amber-bg)', note:'Underdog in a high-total blowout. QB and the alpha WR only, built on garbage-time volume.'},
     rush:      {label:'Rush script',      color:'var(--amber)', bg:'var(--amber-bg)', note:'Favorite in a low-total blowout. Lean on the early-down back, go light on the air raid.'},
     shootout:  {label:'Shootout side',    color:'var(--teal)',  bg:'var(--teal-bg)',  note:'Close game, high total. Both sides are live; a true bring-back fits here.'},
+    live:      {label:'Live script',      color:'var(--teal)',  bg:'var(--teal-bg)',  note:'Close game, moderate total. Not a true shootout, but competent enough to stay in play - worth a look, not a forced fade.'},
     grind:     {label:'Grind',            color:'var(--brick)', bg:'var(--brick-bg)', note:'Close game, low total. Low ceiling on both sides, treat as a fade unless salary forces it.'},
     fade:      {label:'Fade',             color:'var(--brick)', bg:'var(--brick-bg)', note:'Underdog in a low-total blowout. Avoid unless there is no cheaper option.'},
     unmatched: {label:'Unmatched',        color:'var(--muted)', bg:'var(--gray-bg)',  note:'No game entered yet for this team. Add it above to tag these players.'}
@@ -1237,10 +1246,21 @@
 
   function classify(isFavorite, spread, total){
     var blowout = spread >= parseFloat(document.getElementById('thBlowout').value || 6.5);
-    var highTotal = total >= parseFloat(document.getElementById('thHighTotal').value || 44.5);
+    var highTotal = total >= parseFloat(document.getElementById('thHighTotal').value || 46.5);
+    var mediumTotal = total >= parseFloat(document.getElementById('thMediumTotal').value || 44);
+    // A separate, lower bar than the full Blowout line - a spread can be big
+    // enough to meaningfully split how "live" each side really is without
+    // being a full blowout. Below THIS threshold, both sides share the same
+    // game-level tag (a 1.5-point spread splitting a decent total isn't
+    // meaningfully different for either side). At or above it, the underdog
+    // gets downgraded to Grind even if the combined game total reads as
+    // Shootout/Live, since a real chunk of that total isn't actually theirs.
+    var moderateSpread = spread >= parseFloat(document.getElementById('thModerateSpread').value || 3.5);
     if (blowout && highTotal) return isFavorite ? 'onslaught' : 'trail';
     if (blowout && !highTotal) return isFavorite ? 'rush' : 'fade';
+    if (!blowout && moderateSpread && !isFavorite) return 'grind';
     if (!blowout && highTotal) return 'shootout';
+    if (!blowout && mediumTotal) return 'live';
     return 'grind';
   }
 
@@ -1562,7 +1582,9 @@
         unabatedWorkerUrl: document.getElementById('unabatedWorkerUrl') ? document.getElementById('unabatedWorkerUrl').value : '',
         thresholds: {
           blowout: document.getElementById('thBlowout').value,
-          highTotal: document.getElementById('thHighTotal').value
+          highTotal: document.getElementById('thHighTotal').value,
+          mediumTotal: document.getElementById('thMediumTotal').value,
+          moderateSpread: document.getElementById('thModerateSpread').value
         },
         cap: salaryCap,
         stackSettings: stackSettings,
@@ -1614,7 +1636,9 @@
       if (state.unabatedWorkerUrl && document.getElementById('unabatedWorkerUrl')) document.getElementById('unabatedWorkerUrl').value = state.unabatedWorkerUrl;
       if (state.thresholds){
         document.getElementById('thBlowout').value = state.thresholds.blowout || 6.5;
-        document.getElementById('thHighTotal').value = state.thresholds.highTotal || 44.5;
+        document.getElementById('thHighTotal').value = state.thresholds.highTotal || 46.5;
+        document.getElementById('thMediumTotal').value = state.thresholds.mediumTotal || 44;
+        document.getElementById('thModerateSpread').value = state.thresholds.moderateSpread || 3.5;
       }
       salaryCap = state.cap || 60000;
       document.getElementById('capInput').value = salaryCap;
@@ -2286,6 +2310,7 @@
   var SCRIPT_BONUS = {
     onslaught: 15,
     shootout: 10,
+    live: 5,
     rush: 5,
     trail: 3,
     grind: -5,
@@ -3421,6 +3446,8 @@
   document.getElementById('addGameBtn').addEventListener('click', addGame);
   document.getElementById('thBlowout').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
   document.getElementById('thHighTotal').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
+  document.getElementById('thMediumTotal').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
+  document.getElementById('thModerateSpread').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
 
   var dropzone = document.getElementById('dropzone');
   var csvFile = document.getElementById('csvFile');
