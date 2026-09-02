@@ -2954,7 +2954,13 @@
       : '';
     var mkt = marketProjections[normalizeName(p.name)];
     var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mkt,p.position).replace(/"/g,'&quot;')+'">'+(mkt ? mktDisplayTotal(mkt).toFixed(1)+(mktCoverage(mkt,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mkt,p.position).matched+'/'+mktCoverage(mkt,p.position).total+')</span>':'') : '—')+'</td>';
-    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
+    var valueDelta = mkt3xDelta(p);
+    var valueCell = (function(){
+      if (valueDelta === null) return '<td class="mono" style="color:var(--muted);">—</td>';
+      var color = valueDelta <= 0 ? 'var(--gold)' : (valueDelta <= 2 ? 'var(--teal)' : 'var(--muted)');
+      return '<td class="mono" style="color:'+color+';font-weight:'+(valueDelta<=0?'700':'400')+';">'+(valueDelta > 0 ? '+' : '')+valueDelta.toFixed(1)+'</td>';
+    })();
+    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
   }
 
   function renderTopPlayers(){
@@ -2987,12 +2993,12 @@
       var allRows = '';
       [1,2,3,0].forEach(function(tier){
         if (!byTier[tier].length) return;
-        allRows += '<tr class="tp-tier-hdr-row"><td colspan="10"><span class="tp-tier-badge '+tc2[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl[tier]+' ('+byTier[tier].length+')</td></tr>';
+        allRows += '<tr class="tp-tier-hdr-row"><td colspan="11"><span class="tp-tier-badge '+tc2[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl[tier]+' ('+byTier[tier].length+')</td></tr>';
         allRows += byTier[tier].map(function(p){return renderTPCard(p,false);}).join('');
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
-        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th>Script</th>'
+        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th id="tpValueHeader">'+(slateMode==='sg'?'2x':'3x')+' &Delta;</th><th>Script</th>'
         +'<th></th><th></th></tr></thead><tbody>'+allRows+'</tbody></table>';
     } else {
       var byTier2 = {1:[],2:[],3:[],0:[]};
@@ -3003,12 +3009,12 @@
       var posRows = '';
       [1,2,3,0].forEach(function(tier){
         if (!byTier2[tier].length) return;
-        posRows += '<tr class="tp-tier-hdr-row"><td colspan="12"><span class="tp-tier-badge '+tc3[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl2[tier]+' ('+byTier2[tier].length+')</td></tr>';
+        posRows += '<tr class="tp-tier-hdr-row"><td colspan="13"><span class="tp-tier-badge '+tc3[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl2[tier]+' ('+byTier2[tier].length+')</td></tr>';
         posRows += byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('');
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
-        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th>Script</th>'
+        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th id="tpValueHeader">'+(slateMode==='sg'?'2x':'3x')+' &Delta;</th><th>Script</th>'
         +'<th>Rank</th><th>Tier</th><th></th><th></th></tr></thead><tbody>'+posRows+'</tbody></table>';
     }
     list.querySelectorAll('[data-tp-add]').forEach(function(btn){
