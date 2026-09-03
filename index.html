@@ -338,6 +338,22 @@
     <div class="games-grid" id="gamesGrid"></div>
   </section>
 
+  <section id="bestPlaysSection">
+    <div class="section-head">
+      <h2><span class="section-toggle" data-toggle-section="bestPlaysSection">&#9660;</span> Best plays</h2>
+      <div class="sub">Ranked across your whole Player Pool by Mkt projection, tier, script, and value - not just Top Players.</div>
+    </div>
+    <div id="bestPlaysView"></div>
+  </section>
+
+  <section id="stackSuggestSection">
+    <div class="section-head">
+      <h2><span class="section-toggle" data-toggle-section="stackSuggestSection">&#9660;</span> Stack suggestions</h2>
+      <div class="sub">Best QB + pass-catcher combos from your favorably-scripted games, with a bring-back where the script calls for one.</div>
+    </div>
+    <div id="stackSuggestView"></div>
+  </section>
+
   <section id="lineupsSection">
     <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div>
@@ -1008,6 +1024,8 @@
     setPropsStatus(matched + ' of ' + Object.keys(accum).length + ' players matched (' + Object.keys(people).length + ' names loaded). Open the browser console (F12) for names + a per-stat breakdown.');
     marketProjectionsLoadedAt = Date.now();
     renderTable();
+    renderBestPlaysView();
+    renderStackSuggestView();
     saveState();
 
     // Cache the raw pull for debugPlayerProps() below - lets you audit ANY
@@ -1483,6 +1501,8 @@
 
     populateFilterOptions();
     renderTable();
+    renderBestPlaysView();
+    renderStackSuggestView();
   }
 
   // ── Lineup construction (stack / bring-back / onslaught / shootout) ─────
@@ -1892,6 +1912,8 @@
     renderTopPlayers();
     renderLineupCompare();
     renderExposureTracker();
+    renderBestPlaysView();
+    renderStackSuggestView();
     saveState();
   }
 
@@ -2963,6 +2985,193 @@
     return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
   }
 
+  var bestPlaysPosFilter = 'ALL';
+
+  // Composite score for the Best Plays leaderboard - unlike playerScore()
+  // (used by the optimizer), this has no exposure penalty and no rank
+  // subtraction, since neither is meaningful outside an active lineup-build
+  // context. Requires real Mkt data - this leaderboard is specifically about
+  // leaning on the market signal, not a raw fppg guess.
+  function bestPlayScore(p, mp){
+    var tier = p.tier || 0;
+    var tierBonus = tier===1 ? 100 : tier===2 ? 50 : tier===3 ? 20 : 0;
+    var scriptBonus = SCRIPT_BONUS[p.tag] || 0;
+    var delta = mkt3xDelta(p);
+    var valueBonus = delta === null ? 0 : -delta; // beating the target (negative delta) becomes a bonus
+    return mktDisplayTotal(mp) + tierBonus + scriptBonus + valueBonus;
+  }
+
+  function renderBestPlaysView(){
+    var view = document.getElementById('bestPlaysView');
+    if (!view) return;
+
+    var candidates = players.filter(function(p){
+      return marketProjections[normalizeName(p.name)] && (bestPlaysPosFilter==='ALL' || p.position===bestPlaysPosFilter);
+    }).map(function(p){
+      var mp = marketProjections[normalizeName(p.name)];
+      return { player: p, mp: mp, score: bestPlayScore(p, mp) };
+    });
+
+    if (!candidates.length){
+      view.innerHTML = '<div class="lc-empty" style="padding:10px;">No players with Mkt data yet' +
+        (bestPlaysPosFilter!=='ALL' ? ' at ' + bestPlaysPosFilter : '') + ' - load player props first.</div>';
+      return;
+    }
+
+    candidates.sort(function(a,b){ return b.score - a.score; });
+    candidates = candidates.slice(0, 20);
+
+    var posOptions = slateMode === 'sg' ? ['ALL','QB','RB','WR','TE','DEF','K'] : ['ALL','QB','RB','WR','TE','DEF'];
+    var posFilterHtml = '<select id="bestPlaysPosSel" style="font-size:12px;margin-bottom:8px;">' +
+      posOptions.map(function(pos){
+        return '<option value="' + pos + '"' + (bestPlaysPosFilter===pos?' selected':'') + '>' + (pos==='ALL'?'All positions':pos) + '</option>';
+      }).join('') + '</select>';
+
+    var rowsHtml = candidates.map(function(c, idx){
+      var p = c.player, mp = c.mp, t = TAGS[p.tag] || TAGS.unmatched;
+      var delta = mkt3xDelta(p);
+      var deltaHtml = delta === null ? '—' : (delta > 0 ? '+' : '') + delta.toFixed(1);
+      var inLu = isPlayerInLineup(p);
+      var canAdd = !inLu && !!firstEmptySlotFor(p.position);
+      var starred = !!topPlayers[p.id];
+      return '<tr>' +
+        '<td class="num">' + (idx+1) + '</td>' +
+        '<td style="text-align:left;" title="' + mktTooltip(mp,p.position).replace(/"/g,'&quot;') + '" >' + p.name + '</td>' +
+        '<td class="pos-pill">' + p.position + '</td>' +
+        '<td class="mono">' + p.team + '</td>' +
+        '<td class="num">' + money(p.salary) + '</td>' +
+        '<td class="num" style="color:var(--teal);">' + mktDisplayTotal(mp).toFixed(1) + '</td>' +
+        '<td class="num">' + deltaHtml + '</td>' +
+        '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>' +
+        '<td><button class="tp-add-lu' + (inLu?' in-lu':canAdd?'':' full-lu') + '" data-bp-add="' + p.id + '" ' + (inLu?'disabled':'') + '>' + (inLu?'&#10003;':canAdd?'+ Add':'Full') + '</button></td>' +
+        '<td><button class="tp-add-lu" data-bp-star="' + p.id + '">' + (starred?'&#9733;':'&#9734;') + '</button></td>' +
+      '</tr>';
+    }).join('');
+
+    view.innerHTML = posFilterHtml +
+      '<table style="width:100%;"><thead><tr>' +
+        '<th>#</th><th style="text-align:left;">Player</th><th>Pos</th><th>Team</th><th>Salary</th><th>Mkt</th><th>Value &Delta;</th><th>Script</th><th></th><th></th>' +
+      '</tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+
+    var posSel = document.getElementById('bestPlaysPosSel');
+    if (posSel) posSel.addEventListener('change', function(){ bestPlaysPosFilter = this.value; renderBestPlaysView(); });
+
+    view.querySelectorAll('[data-bp-add]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var p = players.find(function(pl){ return String(pl.id) === btn.getAttribute('data-bp-add'); });
+        if (!p || isPlayerInLineup(p)) return;
+        var slotKey = firstEmptySlotFor(p.position);
+        if (!slotKey) return;
+        lineup[slotKey] = p;
+        lineups[activeIdx] = lineup;
+        saveState(); refreshLineupUI(); renderBestPlaysView();
+      });
+    });
+    view.querySelectorAll('[data-bp-star]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-bp-star');
+        if (topPlayers[id]) delete topPlayers[id];
+        else { var p = players.find(function(pl){ return String(pl.id) === id; }); if (p) topPlayers[id] = p; }
+        saveState(); renderTopPlayers(); renderBestPlaysView();
+      });
+    });
+  }
+
+  // Groups favorably-scripted teams (Onslaught/Shootout/Live) into suggested
+  // QB + pass-catcher stacks by real Mkt total, with a bring-back suggestion
+  // from the opponent when the script specifically calls for one.
+  function renderStackSuggestView(){
+    var view = document.getElementById('stackSuggestView');
+    if (!view) return;
+    if (slateMode !== 'main'){
+      view.innerHTML = '<div class="lc-empty" style="padding:10px;">Stack suggestions are a Main Slate concept - not applicable in Single Game.</div>';
+      return;
+    }
+
+    var GOOD_SCRIPTS = {onslaught:true, shootout:true, live:true};
+    var BRING_BACK_SCRIPTS = {shootout:true, live:true};
+
+    var byTeam = {};
+    players.forEach(function(p){
+      var mp = marketProjections[normalizeName(p.name)];
+      if (!mp) return;
+      if (!byTeam[p.team]) byTeam[p.team] = [];
+      byTeam[p.team].push({ player: p, mp: mp });
+    });
+
+    var suggestions = [];
+    Object.keys(byTeam).forEach(function(team){
+      var roster = byTeam[team];
+      var tag = roster[0].player.tag;
+      if (!GOOD_SCRIPTS[tag]) return;
+      var qbs = roster.filter(function(r){ return r.player.position === 'QB'; })
+        .sort(function(a,b){ return mktDisplayTotal(b.mp) - mktDisplayTotal(a.mp); });
+      if (!qbs.length) return;
+      var qb = qbs[0];
+      var catchers = roster.filter(function(r){ return r.player.position === 'WR' || r.player.position === 'TE'; })
+        .sort(function(a,b){ return mktDisplayTotal(b.mp) - mktDisplayTotal(a.mp); })
+        .slice(0, 2);
+      if (!catchers.length) return;
+
+      var stackPlayers = [qb].concat(catchers);
+      var bringBack = null;
+      if (BRING_BACK_SCRIPTS[tag] && qb.player.oppTeam && byTeam[qb.player.oppTeam]){
+        var oppRoster = byTeam[qb.player.oppTeam].filter(function(r){ return r.player.position === 'WR' || r.player.position === 'TE' || r.player.position === 'RB'; })
+          .sort(function(a,b){ return mktDisplayTotal(b.mp) - mktDisplayTotal(a.mp); });
+        if (oppRoster.length) bringBack = oppRoster[0];
+      }
+
+      var combinedMkt = stackPlayers.reduce(function(sum,r){ return sum + mktDisplayTotal(r.mp); }, 0) + (bringBack ? mktDisplayTotal(bringBack.mp) : 0);
+      suggestions.push({ team: team, tag: tag, qb: qb, catchers: catchers, bringBack: bringBack, combinedMkt: combinedMkt });
+    });
+
+    if (!suggestions.length){
+      view.innerHTML = '<div class="lc-empty" style="padding:10px;">No favorably-scripted teams with enough Mkt data yet to suggest a stack.</div>';
+      return;
+    }
+
+    suggestions.sort(function(a,b){ return b.combinedMkt - a.combinedMkt; });
+    suggestions = suggestions.slice(0, 5);
+
+    var cardsHtml = suggestions.map(function(s, idx){
+      var t = TAGS[s.tag] || TAGS.unmatched;
+      var allPlayers = [s.qb].concat(s.catchers).concat(s.bringBack ? [s.bringBack] : []);
+      var rowsHtml = allPlayers.map(function(r){
+        return '<div class="lc-row"><div class="lc-pos">' + r.player.position + '</div>' +
+          '<div><div class="lc-name">' + r.player.name + (r === s.bringBack ? ' <span style="opacity:.6;">(bring-back)</span>' : '') + '</div>' +
+          '<div class="lc-sub">' + r.player.team + ' &middot; ' + money(r.player.salary) + '</div></div>' +
+          '<div class="lc-proj-val">' + mktDisplayTotal(r.mp).toFixed(1) + '</div></div>';
+      }).join('');
+      var ids = allPlayers.map(function(r){ return r.player.id; }).join(',');
+      return '<div class="lc-card">' +
+        '<div class="lc-card-hdr"><span class="lc-idx">' + s.team + ' <span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';font-size:10px;">'+t.label+'</span></span>' +
+        '<span class="lc-proj">' + s.combinedMkt.toFixed(1) + '</span></div>' +
+        rowsHtml +
+        '<div style="padding:8px;"><button data-stack-add="' + ids + '" style="width:100%;">+ Add stack</button></div>' +
+      '</div>';
+    }).join('');
+
+    view.innerHTML = '<div class="lc-scroll">' + cardsHtml + '</div>';
+
+    view.querySelectorAll('[data-stack-add]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var ids = btn.getAttribute('data-stack-add').split(',');
+        var added = 0, skipped = 0;
+        ids.forEach(function(id){
+          var p = players.find(function(pl){ return String(pl.id) === id; });
+          if (!p || isPlayerInLineup(p)){ skipped++; return; }
+          var slotKey = firstEmptySlotFor(p.position);
+          if (!slotKey){ skipped++; return; }
+          lineup[slotKey] = p;
+          added++;
+        });
+        lineups[activeIdx] = lineup;
+        saveState(); refreshLineupUI(); renderStackSuggestView();
+        setMsg('Added ' + added + ' of ' + ids.length + ' stack players' + (skipped ? ' (' + skipped + ' skipped - already in lineup or no open slot)' : '') + '.');
+      });
+    });
+  }
+
   function renderTopPlayers(){
     var tabs = document.getElementById('tpTabs');
     var list = document.getElementById('tpList');
@@ -3532,6 +3741,8 @@
   renderConstructionBadge();
   renderLineupCompare();
   renderExposureTracker();
+  renderBestPlaysView();
+  renderStackSuggestView();
   var stackElInit = document.getElementById('stackSettings');
   if (stackElInit) stackElInit.style.display = slateMode==='sg' ? 'none' : 'flex';
   var stackDividerInit = document.getElementById('stackSettingsDivider');
