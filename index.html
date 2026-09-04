@@ -559,13 +559,28 @@
     source.forEach(function(s){ SG_SLOT_DEFS.push(s); });
   }
   var slateMode = 'main';
-  var collapsedSections = {}; // sectionId -> true/false, persisted like everything else
+  var collapsedSectionsByPlatform = { fd: {}, dk: {} }; // sectionId -> true/false, per platform
+  var collapsedSections = collapsedSectionsByPlatform.fd; // reference, not a copy - reassigned on platform switch
 
   function toggleSection(id){
     collapsedSections[id] = !collapsedSections[id];
     var el = document.getElementById(id);
     if (el) el.classList.toggle('collapsed', !!collapsedSections[id]);
     saveState();
+  }
+
+  // Syncs every section's .collapsed CSS class to match whatever
+  // collapsedSections currently points at - used both at page load and
+  // after a platform switch, since switching reassigns collapsedSections to
+  // a DIFFERENT platform's saved preferences and the DOM needs to catch up
+  // (including un-collapsing anything the new platform doesn't have
+  // collapsed, not just adding the class to what it does).
+  function applyCollapsedSectionsToDOM(){
+    document.querySelectorAll('[data-toggle-section]').forEach(function(el){
+      var id = el.getAttribute('data-toggle-section');
+      var sectionEl = document.getElementById(id);
+      if (sectionEl) sectionEl.classList.toggle('collapsed', !!collapsedSections[id]);
+    });
   }
   var activeSLOT_DEFS = SLOT_DEFS;
   var mvpPositionFilter = 'any'; // Single Game only: 'any' | 'qb' | 'rb' | 'qbrb'
@@ -1708,7 +1723,7 @@
         stackSettings: stackSettings,
         mvpPositionFilter: mvpPositionFilter,
         restrictToTopPlayers: restrictToTopPlayers,
-        collapsedSections: collapsedSections,
+        collapsedSectionsByPlatform: { fd: collapsedSectionsByPlatform.fd, dk: collapsedSectionsByPlatform.dk },
         projSource: projSource,
         marketProjections: marketProjections,
         marketProjectionsLoadedAt: marketProjectionsLoadedAt,
@@ -1800,11 +1815,21 @@
         var restrictChk = document.getElementById('restrictToTopPlayersChk');
         if (restrictChk) restrictChk.checked = restrictToTopPlayers;
       }
-      if (state.collapsedSections){
-        collapsedSections = state.collapsedSections;
-        // Applying the .collapsed class to each section happens at init
-        // time below too, once those <section> elements definitely exist.
+      if (state.collapsedSectionsByPlatform){
+        collapsedSectionsByPlatform = {
+          fd: state.collapsedSectionsByPlatform.fd || {},
+          dk: state.collapsedSectionsByPlatform.dk || {}
+        };
+      } else if (state.collapsedSections){
+        // Legacy save from before collapse state was split per platform -
+        // it was always FD back then, so that's where it belongs now.
+        collapsedSectionsByPlatform.fd = state.collapsedSections;
       }
+      // platform was already restored above (or defaulted to 'fd') - point
+      // collapsedSections at THAT platform's object now that it's populated.
+      // Applying the .collapsed class to each section happens at init time
+      // below, once those <section> elements definitely exist.
+      collapsedSections = collapsedSectionsByPlatform[platform];
       if (state.projSource){
         projSource = state.projSource;
         var projSel = document.getElementById('projSourceSel');
@@ -3814,6 +3839,12 @@
     platformMarketData[platform].marketProjections = marketProjections;
     platformMarketData[platform].marketProjectionsLoadedAt = marketProjectionsLoadedAt;
 
+    // Point collapsedSections at the NEW platform's own saved collapse
+    // preferences - no need to stash the current one, since it's already
+    // been mutating collapsedSectionsByPlatform[platform] directly in place
+    // this whole time (same object reference, not a copy).
+    collapsedSections = collapsedSectionsByPlatform[newPlatform];
+
     // Player IDs aren't guaranteed unique across platforms either - same
     // reasoning as the mode switch above.
     exposureFilterIds = {};
@@ -3858,6 +3889,7 @@
 
     setMsg('');
     updateLuSubAndLabels();
+    applyCollapsedSectionsToDOM();
     renderGames();
     if (players.length){ populateFilterOptions(); tagPlayers(); }
     else { renderTable(); }
@@ -4013,14 +4045,11 @@
   if (mvpFilterSelInit) mvpFilterSelInit.value = mvpPositionFilter;
   updateLuSubAndLabels();
 
-  // Restore any collapsed sections from the previous session, and wire up
-  // every collapse/expand arrow (works the same regardless of which section
-  // it's in - the id comes from data-toggle-section, not a per-section handler).
-  Object.keys(collapsedSections).forEach(function(id){
-    if (!collapsedSections[id]) return;
-    var el = document.getElementById(id);
-    if (el) el.classList.add('collapsed');
-  });
+  // Restore any collapsed sections from the previous session (for whichever
+  // platform is active after loadState() ran), and wire up every
+  // collapse/expand arrow (works the same regardless of which section it's
+  // in - the id comes from data-toggle-section, not a per-section handler).
+  applyCollapsedSectionsToDOM();
   document.querySelectorAll('[data-toggle-section]').forEach(function(el){
     el.addEventListener('click', function(e){
       e.stopPropagation();
