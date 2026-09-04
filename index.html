@@ -282,6 +282,10 @@
       <button class="mode-btn active" id="mainSlateBtn">Main Slate</button>
       <button class="mode-btn" id="singleGameBtn">Single Game</button>
     </div>
+    <div class="mode-toggle" style="margin-left:10px;">
+      <button class="mode-btn active" id="fdPlatformBtn">FanDuel</button>
+      <button class="mode-btn" id="dkPlatformBtn">DraftKings</button>
+    </div>
   </div>
 
   <section id="gameEnvSection">
@@ -385,7 +389,7 @@
       </div>
 
       <div class="field field-inline" id="mvpFilterWrap" style="display:none;align-self:center;">
-        <label>MVP must be</label>
+        <label id="mvpFilterLabel">MVP must be</label>
         <select id="mvpFilterSel" style="width:20ch;">
           <option value="any">Any position</option>
           <option value="qb">QB only</option>
@@ -439,7 +443,7 @@
     </div>
 
     <div class="dropzone" id="dropzone">
-      <div><strong>Drop the FanDuel CSV here</strong>, or click to choose a file.</div>
+      <div><strong>Drop your FanDuel or DraftKings player export here</strong>, or click to choose a file - format is detected automatically.</div>
       <div class="pool-status" id="poolStatus">No file loaded yet.</div>
     </div>
     <input type="file" id="csvFile" accept=".csv" style="display:none;">
@@ -523,7 +527,13 @@
     {key:'DEF', label:'DEF', eligible:['DEF']}
   ];
   var MAX_LINEUPS = 200;
-  var SG_SLOT_DEFS = [
+  // Two fixed "source" layouts for Single Game / Showdown - FanDuel's is
+  // 1 MVP + 5 FLEX (6 total), DraftKings Showdown is 1 Captain + 6 FLEX (7
+  // total), a genuine structural difference, not just a label swap. The
+  // ACTIVE SG_SLOT_DEFS array below is mutated in place (never reassigned)
+  // by applyPlatformSlotDefs() so every existing reference to it elsewhere
+  // in the app stays valid across a platform switch.
+  var SG_SLOT_DEFS_FD = [
     {key:'MVP',   label:'MVP',  eligible:['QB','RB','WR','TE','DEF','K'], mvp:true},
     {key:'FLEX1', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
     {key:'FLEX2', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
@@ -531,6 +541,23 @@
     {key:'FLEX4', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
     {key:'FLEX5', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']}
   ];
+  var SG_SLOT_DEFS_DK = [
+    {key:'CPT',   label:'CPT',  eligible:['QB','RB','WR','TE','DEF','K'], mvp:true},
+    {key:'FLEX1', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
+    {key:'FLEX2', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
+    {key:'FLEX3', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
+    {key:'FLEX4', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
+    {key:'FLEX5', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
+    {key:'FLEX6', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']}
+  ];
+  var SG_SLOT_DEFS = SG_SLOT_DEFS_FD.slice();
+  var platform = 'fd'; // 'fd' | 'dk'
+
+  function applyPlatformSlotDefs(){
+    var source = platform === 'dk' ? SG_SLOT_DEFS_DK : SG_SLOT_DEFS_FD;
+    SG_SLOT_DEFS.length = 0;
+    source.forEach(function(s){ SG_SLOT_DEFS.push(s); });
+  }
   var slateMode = 'main';
   var collapsedSections = {}; // sectionId -> true/false, persisted like everything else
 
@@ -552,9 +579,28 @@
     SG_SLOT_DEFS[0].eligible = map[mvpPositionFilter] || map.any;
   }
   // Separate state per mode
+  // Full parallel cache: platform (fd/dk) x mode (main/sg), matching exactly
+  // how Main Slate/Single Game already worked before this - each of the 4
+  // combinations keeps its own player pool, lineups, Top Players, and
+  // games, so switching back and forth never requires a re-upload.
   var modeState = {
-    main: { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} },
-    sg:   { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} }
+    fd: {
+      main: { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} },
+      sg:   { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} }
+    },
+    dk: {
+      main: { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} },
+      sg:   { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} }
+    }
+  };
+  // Salary cap and Mkt props data only vary by PLATFORM (not by mode within
+  // a platform - Main Slate and Single Game share the same cap and the same
+  // underlying market data on a given platform), so these get a simpler,
+  // platform-only cache rather than the full platform x mode matrix above.
+  var platformCap = { fd: 60000, dk: 50000 };
+  var platformMarketData = {
+    fd: { marketProjections: {}, marketProjectionsLoadedAt: null },
+    dk: { marketProjections: {}, marketProjectionsLoadedAt: null }
   };
   function emptyLineup(){ var l={}; activeSLOT_DEFS.forEach(function(s){l[s.key]=null;}); return l; }
   var lineups    = [emptyLineup()];
@@ -574,10 +620,35 @@
     rushAttempts: { id: 11,  kind: 'yardage', mult: 0 },
     rushTD:       { id: 102, kind: 'binary',  mult: 0 }, // overlaps with ATTD (which already covers rushing TDs) - kept fetched for reference/debugging, but not counted toward points to avoid double-counting the same touchdown equity twice
     recYards:     { id: 16,  kind: 'yardage', mult: 0.1 },
-    receptions:   { id: 15,  kind: 'yardage', mult: 0.5 },   // FanDuel standard (0.5 PPR)
+    receptions:   { id: 15,  kind: 'yardage', mult: 0.5 },   // FanDuel standard (0.5 PPR) - flipped to 1.0 for DraftKings (full PPR) by applyPlatformScoring()
     attd:         { id: 216, kind: 'binary',  mult: 6 }
   };
   var marketProjections = {}; // normalized "first last" -> {fp, breakdown, personId}
+
+  // The one confirmed, meaningful scoring difference between the two
+  // platforms: DraftKings uses full PPR (1.0 pt/reception), FanDuel uses
+  // half-PPR (0.5). Everything else (yardage rates, TD values, the
+  // milestone bonuses below) is treated as identical between the two -
+  // worth double-checking against DK's official scoring page if you want
+  // full certainty on the bonus thresholds specifically.
+  function applyPlatformScoring(){
+    PROP_BET_TYPES.receptions.mult = platform === 'dk' ? 1.0 : 0.5;
+  }
+
+  // Shared between switchMode() and switchPlatform() - both change what this
+  // text should say (Main/SG affects roster shape, FD/DK affects the
+  // MVP-vs-Captain wording and the 2x/3x value target label).
+  function updateLuSubAndLabels(){
+    var captainWord = platform === 'dk' ? 'Captain' : 'MVP';
+    var luSub = document.getElementById('luSub');
+    if (luSub) luSub.textContent = slateMode==='sg'
+      ? 'Single Game: 1 ' + captainWord + ' (1.5x pts) + ' + (SG_SLOT_DEFS.length - 1) + ' FLEX. Roster from one game only.'
+      : 'Build up to ' + MAX_LINEUPS + ' lineups. Click a card below to edit it.';
+    var mkt3xHeader = document.getElementById('mkt3xHeader');
+    if (mkt3xHeader) mkt3xHeader.innerHTML = (slateMode==='sg' ? '2x' : '3x') + ' &Delta;';
+    var mvpFilterLabel = document.getElementById('mvpFilterLabel');
+    if (mvpFilterLabel) mvpFilterLabel.textContent = captainWord + ' must be';
+  }
   var marketProjectionsLoadedAt = null; // timestamp (ms) of the last successful "Load player props" run
 
   // Human-readable "last loaded" message, shown on page load if props were
@@ -1598,10 +1669,34 @@
     return TEAM_ALIASES[up] || up;
   }
 
+  // Serializes one platform+mode combo's lineups/games/players/topPlayers
+  // for localStorage - reads from the LIVE variables if this combo is the
+  // one currently active, or from its cached slot in modeState otherwise.
+  // Needs its own slotDefs parameter (not the live activeSLOT_DEFS) because
+  // Single Game's slot structure differs between FD (6 slots) and DK (7
+  // slots) - serializing a CACHED platform's data must use that platform's
+  // own shape, not whichever one happens to be active right now.
+  function serializeCombo(plat, mode, slotDefs){
+    var isLive = plat === platform && mode === slateMode;
+    var src = isLive
+      ? { lineups: lineups, activeIdx: activeIdx, games: games, players: players, topPlayers: topPlayers }
+      : modeState[plat][mode];
+    return {
+      lineups: (src.lineups || []).map(function(lu){
+        var obj={}; slotDefs.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;}); return obj;
+      }),
+      activeIdx: src.activeIdx || 0,
+      games: src.games || [],
+      players: src.players || [],
+      topPlayers: src.topPlayers || {}
+    };
+  }
+
   function saveState(){
     try{
       var state = {
         slateMode: slateMode,
+        platform: platform,
         unabatedWorkerUrl: document.getElementById('unabatedWorkerUrl') ? document.getElementById('unabatedWorkerUrl').value : '',
         thresholds: {
           blowout: document.getElementById('thBlowout').value,
@@ -1627,24 +1722,39 @@
           activeSLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
           return obj;
         }),
-        mainLineups: (slateMode==='main' ? lineups : (modeState.main.lineups||[])).map(function(lu){
+        // Legacy flat fields, kept ONLY so a save from before this platform
+        // feature existed still loads correctly (treated as all-FD below).
+        // New saves rely on modeStateFull as the real source of truth.
+        mainLineups: (slateMode==='main' ? lineups : (modeState[platform].main.lineups||[])).map(function(lu){
           var obj={};
           SLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
           return obj;
         }),
-        mainActiveIdx: slateMode==='main'?activeIdx:(modeState.main.activeIdx||0),
-        mainGames: slateMode==='main'?games:(modeState.main.games||[]),
-        sgGames: slateMode==='sg'?games:(modeState.sg.games||[]),
-        mainPlayers: slateMode==='main'?players:(modeState.main.players||[]),
-        mainTopPlayers: slateMode==='main'?topPlayers:(modeState.main.topPlayers||{}),
-        sgPlayers: slateMode==='sg'?players:(modeState.sg.players||[]),
-        sgTopPlayers: slateMode==='sg'?topPlayers:(modeState.sg.topPlayers||{}),
-        sgLineups: (slateMode==='sg' ? lineups : (modeState.sg.lineups||[])).map(function(lu){
+        mainActiveIdx: slateMode==='main'?activeIdx:(modeState[platform].main.activeIdx||0),
+        mainGames: slateMode==='main'?games:(modeState[platform].main.games||[]),
+        sgGames: slateMode==='sg'?games:(modeState[platform].sg.games||[]),
+        mainPlayers: slateMode==='main'?players:(modeState[platform].main.players||[]),
+        mainTopPlayers: slateMode==='main'?topPlayers:(modeState[platform].main.topPlayers||{}),
+        sgPlayers: slateMode==='sg'?players:(modeState[platform].sg.players||[]),
+        sgTopPlayers: slateMode==='sg'?topPlayers:(modeState[platform].sg.topPlayers||{}),
+        sgLineups: (slateMode==='sg' ? lineups : (modeState[platform].sg.lineups||[])).map(function(lu){
           var obj={};
-          SG_SLOT_DEFS.forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
+          (platform==='dk'?SG_SLOT_DEFS_DK:SG_SLOT_DEFS_FD).forEach(function(s){obj[s.key]=lu[s.key]?lu[s.key].id:null;});
           return obj;
         }),
-        sgActiveIdx: slateMode==='sg'?activeIdx:(modeState.sg.activeIdx||0)
+        sgActiveIdx: slateMode==='sg'?activeIdx:(modeState[platform].sg.activeIdx||0),
+
+        platform: platform,
+        modeStateFull: {
+          fd: { main: serializeCombo('fd','main',SLOT_DEFS), sg: serializeCombo('fd','sg',SG_SLOT_DEFS_FD) },
+          dk: { main: serializeCombo('dk','main',SLOT_DEFS), sg: serializeCombo('dk','sg',SG_SLOT_DEFS_DK) }
+        },
+        platformCap: (function(){ var c={fd:platformCap.fd,dk:platformCap.dk}; c[platform]=salaryCap; return c; })(),
+        platformMarketData: (function(){
+          var d={fd:platformMarketData.fd, dk:platformMarketData.dk};
+          d[platform] = { marketProjections: marketProjections, marketProjectionsLoadedAt: marketProjectionsLoadedAt };
+          return d;
+        })()
       };
       localStorage.setItem('slateBoardState', JSON.stringify(state));
     }catch(e){ /* storage unavailable, skip silently */ }
@@ -1656,6 +1766,13 @@
       if (!raw) return false;
       var state = JSON.parse(raw);
       if (state.slateMode && state.slateMode !== slateMode){ slateMode=state.slateMode; activeSLOT_DEFS=slateMode==='sg'?SG_SLOT_DEFS:SLOT_DEFS; }
+      if (state.platform && state.platform !== platform){
+        platform = state.platform;
+        applyPlatformSlotDefs(); // must run before any SG_SLOT_DEFS-dependent reconstruction below
+        applyPlatformScoring();
+        document.getElementById('fdPlatformBtn').classList.toggle('active', platform==='fd');
+        document.getElementById('dkPlatformBtn').classList.toggle('active', platform==='dk');
+      }
       if (state.unabatedWorkerUrl && document.getElementById('unabatedWorkerUrl')) document.getElementById('unabatedWorkerUrl').value = state.unabatedWorkerUrl;
       if (state.thresholds){
         document.getElementById('thBlowout').value = state.thresholds.blowout || 6.5;
@@ -1694,36 +1811,79 @@
         if (projSel) projSel.value = projSource;
       }
       if (state.marketProjections){
-        marketProjections = state.marketProjections;
-        marketProjectionsLoadedAt = state.marketProjectionsLoadedAt || null;
-        setPropsStatus(propsFreshnessMsg());
+        // Legacy field, only used as a fallback below if this save predates
+        // the platform feature (platformMarketData won't exist yet).
       }
       games = (state.games || []).map(function(g){
         g.away = normalizeTeam(g.away); g.home = normalizeTeam(g.home); return g;
       });
       players = state.players || [];
       topPlayers = state.topPlayers || {};
-      // Restore main slate lineups - look players up in the MAIN SLATE pool
-      // specifically (state.mainPlayers), not whichever pool happened to be
-      // active when this was saved (state.players reflects only the LAST
-      // active mode - if Single Game was active at save time, that's a much
-      // smaller, single-game-scoped list, and any Main Slate player not also
-      // in it would silently fail to be found and come back null here).
-      var mainPlayersForLookup = state.mainPlayers || state.players || [];
-      var sgPlayersForLookup = state.sgPlayers || state.players || [];
-      if (state.mainLineups && state.mainLineups.length){
-        modeState.main.lineups = state.mainLineups.map(function(lu){
-          var obj={}; SLOT_DEFS.forEach(function(s){l=lu[s.key];obj[s.key]=l?(mainPlayersForLookup.find(function(p){return p.id===l;})||null):null;}); return obj;
+
+      if (state.modeStateFull){
+        // Current format: the full platform x mode matrix was already
+        // serialized correctly on save - just deserialize each combo's
+        // lineup IDs back into real player objects, using THAT combo's own
+        // player pool and slot shape (SG differs in size between FD and DK).
+        ['fd','dk'].forEach(function(plat){
+          ['main','sg'].forEach(function(mode){
+            var saved = state.modeStateFull[plat] && state.modeStateFull[plat][mode];
+            if (!saved) return;
+            var slotDefs = mode === 'sg' ? (plat==='dk'?SG_SLOT_DEFS_DK:SG_SLOT_DEFS_FD) : SLOT_DEFS;
+            var lookupPool = saved.players || [];
+            modeState[plat][mode].games = (saved.games||[]).map(function(g){ g.away=normalizeTeam(g.away); g.home=normalizeTeam(g.home); return g; });
+            modeState[plat][mode].players = lookupPool;
+            modeState[plat][mode].topPlayers = saved.topPlayers || {};
+            modeState[plat][mode].lineups = (saved.lineups||[]).map(function(lu){
+              var obj={};
+              slotDefs.forEach(function(s){ var l=lu[s.key]; obj[s.key]=l?(lookupPool.find(function(p){return p.id===l;})||null):null; });
+              return obj;
+            });
+            modeState[plat][mode].activeIdx = saved.activeIdx || 0;
+          });
         });
-        modeState.main.activeIdx = state.mainActiveIdx || 0;
+        if (state.platformCap) platformCap = { fd: state.platformCap.fd||60000, dk: state.platformCap.dk||50000 };
+        if (state.platformMarketData) platformMarketData = {
+          fd: state.platformMarketData.fd || {marketProjections:{}, marketProjectionsLoadedAt:null},
+          dk: state.platformMarketData.dk || {marketProjections:{}, marketProjectionsLoadedAt:null}
+        };
+      } else {
+        // Legacy save from before the platform feature existed - everything
+        // was always FD, so migrate the old flat fields into modeState.fd.*
+        // and seed platformCap.fd from whatever cap was actually saved
+        // (rather than just assuming the 60000 default, in case it was
+        // customized).
+        platform = 'fd';
+        platformCap.fd = state.cap || 60000;
+        var mainPlayersForLookup = state.mainPlayers || state.players || [];
+        var sgPlayersForLookup = state.sgPlayers || state.players || [];
+        if (state.mainLineups && state.mainLineups.length){
+          modeState.fd.main.lineups = state.mainLineups.map(function(lu){
+            var obj={}; SLOT_DEFS.forEach(function(s){var l=lu[s.key];obj[s.key]=l?(mainPlayersForLookup.find(function(p){return p.id===l;})||null):null;}); return obj;
+          });
+          modeState.fd.main.activeIdx = state.mainActiveIdx || 0;
+        }
+        if (state.sgLineups && state.sgLineups.length){
+          modeState.fd.sg.lineups = state.sgLineups.map(function(lu){
+            var obj={}; SG_SLOT_DEFS_FD.forEach(function(s){var l=lu[s.key];obj[s.key]=l?(sgPlayersForLookup.find(function(p){return p.id===l;})||null):null;}); return obj;
+          });
+          modeState.fd.sg.activeIdx = state.sgActiveIdx || 0;
+        }
+        if (state.mainGames) modeState.fd.main.games = state.mainGames.map(function(g){ g.away=normalizeTeam(g.away); g.home=normalizeTeam(g.home); return g; });
+        if (state.sgGames)   modeState.fd.sg.games   = state.sgGames.map(function(g){ g.away=normalizeTeam(g.away); g.home=normalizeTeam(g.home); return g; });
+        if (state.mainPlayers)    modeState.fd.main.players    = state.mainPlayers;
+        if (state.mainTopPlayers) modeState.fd.main.topPlayers = state.mainTopPlayers;
+        if (state.sgPlayers)      modeState.fd.sg.players      = state.sgPlayers;
+        if (state.sgTopPlayers)   modeState.fd.sg.topPlayers   = state.sgTopPlayers;
+        if (state.marketProjections){
+          platformMarketData.fd = { marketProjections: state.marketProjections, marketProjectionsLoadedAt: state.marketProjectionsLoadedAt || null };
+        }
+        applyPlatformSlotDefs();
+        applyPlatformScoring();
+        document.getElementById('fdPlatformBtn').classList.toggle('active', true);
+        document.getElementById('dkPlatformBtn').classList.toggle('active', false);
       }
-      // Restore SG lineups - same fix, using the SG-specific pool.
-      if (state.sgLineups && state.sgLineups.length){
-        modeState.sg.lineups = state.sgLineups.map(function(lu){
-          var obj={}; SG_SLOT_DEFS.forEach(function(s){l=lu[s.key];obj[s.key]=l?(sgPlayersForLookup.find(function(p){return p.id===l;})||null):null;}); return obj;
-        });
-        modeState.sg.activeIdx = state.sgActiveIdx || 0;
-      }
+
       // Restore active mode
       if (state.slateMode && state.slateMode !== slateMode){
         slateMode = state.slateMode;
@@ -1731,17 +1891,21 @@
         document.getElementById('mainSlateBtn').classList.toggle('active', slateMode==='main');
         document.getElementById('singleGameBtn').classList.toggle('active', slateMode==='sg');
       }
-      if (state.mainGames) modeState.main.games = state.mainGames.map(function(g){ g.away=normalizeTeam(g.away); g.home=normalizeTeam(g.home); return g; });
-      if (state.sgGames)   modeState.sg.games   = state.sgGames.map(function(g){ g.away=normalizeTeam(g.away); g.home=normalizeTeam(g.home); return g; });
-      if (state.mainPlayers)    modeState.main.players    = state.mainPlayers;
-      if (state.mainTopPlayers) modeState.main.topPlayers = state.mainTopPlayers;
-      if (state.sgPlayers)      modeState.sg.players      = state.sgPlayers;
-      if (state.sgTopPlayers)   modeState.sg.topPlayers   = state.sgTopPlayers;
-      var ms = modeState[slateMode];
-      games     = ms.games || [];
+
+      // Restore the currently active platform+mode combo into the live vars.
+      var ms = modeState[platform][slateMode];
+      games      = ms.games || [];
+      players    = ms.players || state.players || [];
+      topPlayers = ms.topPlayers || {};
       if (ms.lineups){ lineups=ms.lineups; activeIdx=ms.activeIdx; }
       else { lineups=[emptyLineup()]; activeIdx=0; }
       lineup = lineups[activeIdx];
+      salaryCap = platformCap[platform] || (platform==='dk'?50000:60000);
+      document.getElementById('capInput').value = salaryCap;
+      marketProjections = (platformMarketData[platform]||{}).marketProjections || {};
+      marketProjectionsLoadedAt = (platformMarketData[platform]||{}).marketProjectionsLoadedAt || null;
+      if (Object.keys(marketProjections).length) setPropsStatus(propsFreshnessMsg());
+
       if (players.length){
         var sgTeamCount = 0;
       if (slateMode === 'sg' && games.length > 0){
@@ -1767,13 +1931,34 @@
         players = rows.map(function(r){
           var keys = {};
           Object.keys(r).forEach(function(k){keys[normalizeHeader(k)] = r[k];});
-          var name = keys['nickname'] || ((keys['first name']||'')+' '+(keys['last name']||'')).trim();
-          var salary = parseFloat((keys['salary']||'0').toString().replace(/[^0-9.]/g,'')) || 0;
-          var fppg = parseFloat(keys['fppg']||'0') || 0;
-          var team = normalizeTeam(keys['team']||'');
-          var rawPos = (keys['position']||'').toString().trim().toUpperCase();
-          var position = rawPos === 'D' ? 'DEF' : rawPos;
-          var id = (keys['id']||'').toString().trim();
+
+          // Auto-detect DraftKings' export format by column names that only
+          // ever appear in DK's export (TeamAbbrev, AvgPointsPerGame, Roster
+          // Position) - detected from the actual file content, not just the
+          // platform toggle, so uploading the right file works even if you
+          // forgot to flip the toggle first.
+          var isDK = keys.hasOwnProperty('teamabbrev') || keys.hasOwnProperty('avgpointspergame') || keys.hasOwnProperty('roster position');
+
+          var name, salary, fppg, team, rawPos, id;
+          if (isDK){
+            name = (keys['name'] || '').toString().trim();
+            salary = parseFloat((keys['salary']||'0').toString().replace(/[^0-9.]/g,'')) || 0;
+            fppg = parseFloat(keys['avgpointspergame']||'0') || 0;
+            team = normalizeTeam(keys['teamabbrev']||keys['team']||'');
+            rawPos = (keys['roster position'] || keys['position'] || '').toString().trim().toUpperCase();
+            // DK's Roster Position can list FLEX-eligibility combos like
+            // "RB/FLEX" - the first segment is the player's real position.
+            rawPos = rawPos.split('/')[0].trim();
+            id = (keys['id']||'').toString().trim();
+          } else {
+            name = keys['nickname'] || ((keys['first name']||'')+' '+(keys['last name']||'')).trim();
+            salary = parseFloat((keys['salary']||'0').toString().replace(/[^0-9.]/g,'')) || 0;
+            fppg = parseFloat(keys['fppg']||'0') || 0;
+            team = normalizeTeam(keys['team']||'');
+            rawPos = (keys['position']||'').toString().trim().toUpperCase();
+            id = (keys['id']||'').toString().trim();
+          }
+          var position = (rawPos === 'D' || rawPos === 'DST') ? 'DEF' : rawPos;
           return {
             id: id || (name+'|'+team+'|'+position),
             name: name || 'Unknown',
@@ -3560,11 +3745,11 @@
   function switchMode(mode){
     if (slateMode === mode) return;
     // Save current mode state before switching
-    modeState[slateMode].lineups    = lineups;
-    modeState[slateMode].activeIdx  = activeIdx;
-    modeState[slateMode].games      = games;
-    modeState[slateMode].players    = players;
-    modeState[slateMode].topPlayers = topPlayers;
+    modeState[platform][slateMode].lineups    = lineups;
+    modeState[platform][slateMode].activeIdx  = activeIdx;
+    modeState[platform][slateMode].games      = games;
+    modeState[platform][slateMode].players    = players;
+    modeState[platform][slateMode].topPlayers = topPlayers;
     // Exposure tracker filter selections are tied to a specific mode's
     // player pool/lineups - player IDs aren't guaranteed unique across
     // Main Slate vs Single Game, so a filter selected in one mode could
@@ -3582,24 +3767,20 @@
     document.getElementById('mainSlateBtn').classList.toggle('active', mode==='main');
     document.getElementById('singleGameBtn').classList.toggle('active', mode==='sg');
     // Restore or init for new mode
-    games      = modeState[mode].games || [];
-    players    = modeState[mode].players || [];
-    topPlayers = modeState[mode].topPlayers || {};
-    if (modeState[mode].lineups) {
-      lineups   = modeState[mode].lineups;
-      activeIdx = modeState[mode].activeIdx;
+    var ms = modeState[platform][mode];
+    games      = ms.games || [];
+    players    = ms.players || [];
+    topPlayers = ms.topPlayers || {};
+    if (ms.lineups) {
+      lineups   = ms.lineups;
+      activeIdx = ms.activeIdx;
     } else {
       lineups   = [emptyLineup()];
       activeIdx = 0;
     }
     lineup = lineups[activeIdx];
     setMsg('');
-    var luSub = document.getElementById('luSub');
-    if (luSub) luSub.textContent = mode==='sg'
-      ? 'Single Game: 1 MVP (1.5x pts) + 5 FLEX. Roster from one game only.'
-      : 'Build up to 200 lineups. Click a card below to edit it.';
-    var mkt3xHeader = document.getElementById('mkt3xHeader');
-    if (mkt3xHeader) mkt3xHeader.innerHTML = (mode==='sg' ? '2x' : '3x') + ' &Delta;';
+    updateLuSubAndLabels();
     var stackEl = document.getElementById('stackSettings');
     if (stackEl) stackEl.style.display = mode==='sg' ? 'none' : 'flex';
     var stackDivider = document.getElementById('stackSettingsDivider');
@@ -3613,10 +3794,82 @@
     else { renderTable(); document.getElementById('poolStatus').textContent = players.length ? players.length+' players loaded.' : 'No players loaded.'; }
     renderTopPlayers();
     renderLuTabs(); refreshLineupUI(); saveState();
+    renderBestPlaysView(); renderStackSuggestView();
   }
 
   document.getElementById('mainSlateBtn').addEventListener('click', function(){ switchMode('main'); });
   document.getElementById('singleGameBtn').addEventListener('click', function(){ switchMode('sg'); });
+
+  function switchPlatform(newPlatform){
+    if (platform === newPlatform) return;
+
+    // Stash everything for the CURRENT platform+mode before switching -
+    // same pattern switchMode() already uses.
+    modeState[platform][slateMode].lineups    = lineups;
+    modeState[platform][slateMode].activeIdx  = activeIdx;
+    modeState[platform][slateMode].games      = games;
+    modeState[platform][slateMode].players    = players;
+    modeState[platform][slateMode].topPlayers = topPlayers;
+    platformCap[platform] = salaryCap;
+    platformMarketData[platform].marketProjections = marketProjections;
+    platformMarketData[platform].marketProjectionsLoadedAt = marketProjectionsLoadedAt;
+
+    // Player IDs aren't guaranteed unique across platforms either - same
+    // reasoning as the mode switch above.
+    exposureFilterIds = {};
+    exposureFilterPlayers = {};
+
+    platform = newPlatform;
+    applyPlatformSlotDefs();
+    applyPlatformScoring();
+
+    // Restore this platform's own cap and Mkt data (or its defaults, if
+    // this platform has never been loaded into this session before).
+    salaryCap = platformCap[platform];
+    var capEl = document.getElementById('capInput');
+    if (capEl) capEl.value = salaryCap;
+    marketProjections = platformMarketData[platform].marketProjections;
+    marketProjectionsLoadedAt = platformMarketData[platform].marketProjectionsLoadedAt;
+
+    // Restore this platform's player pool/lineups for whichever mode you're
+    // currently in (Main Slate stays Main Slate across the platform swap).
+    var ms = modeState[platform][slateMode];
+    games      = ms.games || [];
+    players    = ms.players || [];
+    topPlayers = ms.topPlayers || {};
+    if (ms.lineups){
+      lineups   = ms.lineups;
+      activeIdx = ms.activeIdx;
+    } else {
+      lineups   = [emptyLineup()];
+      activeIdx = 0;
+    }
+    lineup = lineups[activeIdx];
+
+    document.getElementById('fdPlatformBtn').classList.toggle('active', platform==='fd');
+    document.getElementById('dkPlatformBtn').classList.toggle('active', platform==='dk');
+    var platformName = platform === 'dk' ? 'DraftKings' : 'FanDuel';
+    var poolStatus = document.getElementById('poolStatus');
+    if (poolStatus) poolStatus.textContent = players.length ? players.length+' players loaded.' : 'No file loaded yet - upload your ' + platformName + ' player export.';
+    var propsStatusEl = document.getElementById('propsStatus');
+    if (propsStatusEl) propsStatusEl.textContent = Object.keys(marketProjections).length
+      ? Object.keys(marketProjections).length + ' players with market data (from this platform\'s last load).'
+      : '';
+
+    setMsg('');
+    updateLuSubAndLabels();
+    renderGames();
+    if (players.length){ populateFilterOptions(); tagPlayers(); }
+    else { renderTable(); }
+    renderTopPlayers();
+    renderLuTabs();
+    refreshLineupUI();
+    renderBestPlaysView();
+    renderStackSuggestView();
+    saveState();
+  }
+  document.getElementById('fdPlatformBtn').addEventListener('click', function(){ switchPlatform('fd'); });
+  document.getElementById('dkPlatformBtn').addEventListener('click', function(){ switchPlatform('dk'); });
   document.getElementById('stackLevelSel').addEventListener('change', function(){
     stackSettings.level = parseInt(this.value,10) || 0;
     saveState();
@@ -3624,14 +3877,18 @@
   document.getElementById('mvpFilterSel').addEventListener('change', function(){
     mvpPositionFilter = this.value;
     applyMvpPositionFilter();
-    // If the currently-placed MVP no longer qualifies under the new filter,
-    // clear just that slot rather than leaving an invalid lineup silently.
+    // If the currently-placed MVP/Captain no longer qualifies under the new
+    // filter, clear just that slot rather than leaving an invalid lineup
+    // silently. Uses the slot's own key dynamically (MVP for FD, CPT for
+    // DK) rather than a hardcoded name, since this now needs to work for
+    // both platforms' Single Game / Showdown formats.
     var mvpSlot = activeSLOT_DEFS[0];
-    if (lineup.MVP && mvpSlot.eligible.indexOf(lineup.MVP.position) === -1){
-      var clearedName = lineup.MVP.name;
-      lineup.MVP = null;
+    var mvpKey = mvpSlot.key;
+    if (lineup[mvpKey] && mvpSlot.eligible.indexOf(lineup[mvpKey].position) === -1){
+      var clearedName = lineup[mvpKey].name;
+      lineup[mvpKey] = null;
       lineups[activeIdx] = lineup;
-      setMsg(clearedName + ' no longer qualifies for MVP under this filter and was removed.');
+      setMsg(clearedName + ' no longer qualifies for ' + mvpSlot.label + ' under this filter and was removed.');
     }
     saveState();
     refreshLineupUI();
@@ -3754,8 +4011,7 @@
   applyMvpPositionFilter();
   var mvpFilterSelInit = document.getElementById('mvpFilterSel');
   if (mvpFilterSelInit) mvpFilterSelInit.value = mvpPositionFilter;
-  var mkt3xHeaderInit = document.getElementById('mkt3xHeader');
-  if (mkt3xHeaderInit) mkt3xHeaderInit.innerHTML = (slateMode==='sg' ? '2x' : '3x') + ' &Delta;';
+  updateLuSubAndLabels();
 
   // Restore any collapsed sections from the previous session, and wire up
   // every collapse/expand arrow (works the same regardless of which section
