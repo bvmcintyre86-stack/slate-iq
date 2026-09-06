@@ -1969,16 +1969,22 @@
           // forgot to flip the toggle first.
           var isDK = keys.hasOwnProperty('teamabbrev') || keys.hasOwnProperty('avgpointspergame') || keys.hasOwnProperty('roster position');
 
-          var name, salary, fppg, team, rawPos, id;
+          var name, salary, fppg, team, rawPos, id, dkRosterPos;
           if (isDK){
             name = (keys['name'] || '').toString().trim();
             salary = parseFloat((keys['salary']||'0').toString().replace(/[^0-9.]/g,'')) || 0;
             fppg = parseFloat(keys['avgpointspergame']||'0') || 0;
             team = normalizeTeam(keys['teamabbrev']||keys['team']||'');
-            rawPos = (keys['roster position'] || keys['position'] || '').toString().trim().toUpperCase();
-            // DK's Roster Position can list FLEX-eligibility combos like
-            // "RB/FLEX" - the first segment is the player's real position.
-            rawPos = rawPos.split('/')[0].trim();
+            dkRosterPos = (keys['roster position'] || '').toString().trim().toUpperCase();
+            // The "Position" column holds the player's REAL position
+            // (WR/RB/QB/etc). "Roster Position" is the SLOT they're priced
+            // for - for a Classic slate that's usually the same thing (or a
+            // combo like "RB/FLEX"), but for Showdown/Captain Mode it's
+            // literally "CPT" or "FLEX", which is not a real position at
+            // all. Always prefer Position; only parse Roster Position as a
+            // fallback if Position is missing.
+            rawPos = (keys['position'] || '').toString().trim().toUpperCase();
+            if (!rawPos) rawPos = dkRosterPos.split('/')[0].trim();
             id = (keys['id']||'').toString().trim();
           } else {
             name = keys['nickname'] || ((keys['first name']||'')+' '+(keys['last name']||'')).trim();
@@ -1998,9 +2004,27 @@
             fppg: fppg,
             value: salary > 0 ? Math.round((fppg/(salary/1000))*100)/100 : 0,
             tag: 'unmatched',
-            teamImplied: null
+            teamImplied: null,
+            _dkRosterPos: dkRosterPos || null // temp field, used only for dedup below then discarded
           };
         }).filter(function(p){return p.name !== 'Unknown' && p.team;});
+
+        // DraftKings Showdown/Captain Mode CSVs list every real player TWICE
+        // - once priced at 1.5x under the "CPT" roster slot, once at normal
+        // price under "FLEX". We already apply that 1.5x ourselves via the
+        // slot itself (same mechanism as FanDuel's MVP), so keep only ONE
+        // entry per real player - the lower-salaried FLEX row - and drop the
+        // duplicate CPT-priced row entirely. Classic DK slates never have
+        // this duplication, so this is a no-op for them.
+        if (players.some(function(p){ return p._dkRosterPos === 'CPT' || p._dkRosterPos === 'FLEX'; })){
+          var byNameTeam = {};
+          players.forEach(function(p){
+            var key = p.name + '|' + p.team;
+            if (!byNameTeam[key] || p.salary < byNameTeam[key].salary) byNameTeam[key] = p;
+          });
+          players = Object.values(byNameTeam);
+        }
+        players.forEach(function(p){ delete p._dkRosterPos; });
 
         // Normalize D->DEF in existing topPlayers
         var newTP = {};
