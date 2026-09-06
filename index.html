@@ -385,7 +385,7 @@
             <option value="3">QB + 3</option>
           </select>
         </div>
-        <label class="stack-chk"><input type="checkbox" id="bringBackChk"> Bring-back</label>
+        <label class="stack-chk" title="Forces in your best available WR from a favorably-scripted team (Onslaught/Shootout/Live) other than your QB's - not required to be the QB's specific opponent, and WR only (not TE/RB)."><input type="checkbox" id="bringBackChk"> Bring-back</label>
       </div>
 
       <div class="field field-inline" id="mvpFilterWrap" style="display:none;align-self:center;">
@@ -1621,10 +1621,15 @@
       });
       result.stackCount = passCatchers.length;
       result.stackTeam = qb.team;
-      if (qb.oppTeam){
-        var bb = filled.filter(function(f){ return f.player.team === qb.oppTeam; });
-        result.bringBack = bb.length > 0;
-        result.bringBackTeam = qb.oppTeam;
+      // Bring-back is no longer required to be specifically the QB's
+      // opponent - detect any WR from a team OTHER than the QB's as a
+      // bring-back-style pick, and report whichever team it actually is.
+      var bb = filled.filter(function(f){
+        return f.player.team !== qb.team && f.player.position === 'WR';
+      });
+      if (bb.length){
+        result.bringBack = true;
+        result.bringBackTeam = bb[0].player.team;
         result.bringBackCount = bb.length;
       }
       if (qb.tag && TAGS[qb.tag]) result.envNote = TAGS[qb.tag];
@@ -2535,6 +2540,10 @@
   var exposureCount = {};
   var EXPOSURE_PENALTY_PER_USE = 4;
 
+  // Shared by bring-back (below) and Stack Suggestions - the tags that
+  // represent a genuinely favorable game script worth correlating around.
+  var GOOD_SCRIPT_TAGS = {onslaught:true, shootout:true, live:true};
+
   // Game-script bonus/penalty, based on the same Onslaught/Shootout/Rush/
   // Trail/Grind/Fade tags already shown as "Script" throughout the app.
   // Sized to matter as a real factor without overriding a Top Players tier
@@ -2603,6 +2612,13 @@
 
     var picks = {};
     var slotTeamConstraint = {};
+    // Bring-back specifically needs the OPPOSITE kind of team constraint
+    // (any team EXCEPT this one, not exactly-this-team) plus a hard position
+    // lock (WR only) that survives into the later upgrade/salary-floor
+    // phases, not just the initial pick.
+    var slotExcludeTeam = {};
+    var slotPositionLock = {};
+    var slotRequireGoodScript = {};
     var slotStackRole = {};
     var stackNote = null;
     var autoQbNote = null;
@@ -2703,14 +2719,18 @@
           }
         }
 
-        // Bring-back: 1 player from the QB's opponent
-        if (stackSettings.bringBack && qb.oppTeam){
+        // Bring-back: 1 WR from any team OTHER than the QB's own team, but
+        // only from a team currently tagged with a favorable game script
+        // (Onslaught/Shootout/Live) - not required to be specifically the
+        // QB's own opponent, but still real correlation logic, not just
+        // "force in my best standalone WR" with no game-context requirement.
+        if (stackSettings.bringBack){
           var bbPool = pool.filter(function(p){
-            return p.team === qb.oppTeam && corrPositions.indexOf(p.position) !== -1;
+            return p.team !== qb.team && p.position === 'WR' && GOOD_SCRIPT_TAGS[p.tag];
           });
           if (!bbPool.length){
             bbPool = fullPool.filter(function(p){
-              return p.team === qb.oppTeam && corrPositions.indexOf(p.position) !== -1;
+              return p.team !== qb.team && p.position === 'WR' && GOOD_SCRIPT_TAGS[p.tag];
             });
           }
           var bbSlot = null, bbPlayer = null;
@@ -2722,8 +2742,8 @@
               bbSlot = s2;
               bbPlayer = opts2.reduce(function(m,p){
                 var pExp = exposureCount[p.id] || 0, mExp = exposureCount[m.id] || 0;
-                if (pExp !== mExp) return pExp < mExp ? p : m;
-                return p.salary < m.salary ? p : m;
+                var pScore = playerScore(p) - pExp, mScore = playerScore(m) - mExp;
+                return pScore > mScore ? p : m;
               }, opts2[0]);
               break;
             }
@@ -2731,9 +2751,11 @@
           if (bbSlot){
             picks[bbPlayer.id] = true;
             lineup[bbSlot.key] = bbPlayer;
-            slotTeamConstraint[bbSlot.key] = qb.oppTeam;
+            slotExcludeTeam[bbSlot.key] = qb.team;
+            slotPositionLock[bbSlot.key] = 'WR';
+            slotRequireGoodScript[bbSlot.key] = true;
           } else {
-            stackNote = (stackNote ? stackNote + ' ' : '') + 'No bring-back candidate found for ' + qb.oppTeam + '.';
+            stackNote = (stackNote ? stackNote + ' ' : '') + 'No bring-back WR candidate available from a favorably-scripted team.';
           }
         }
       }
@@ -2787,6 +2809,9 @@
         var reqTeam = slotTeamConstraint[slot.key];
         var opts = currentPool.filter(function(p){
           if (reqTeam && p.team !== reqTeam) return false;
+          if (slotExcludeTeam[slot.key] && p.team === slotExcludeTeam[slot.key]) return false;
+          if (slotPositionLock[slot.key] && p.position !== slotPositionLock[slot.key]) return false;
+          if (slotRequireGoodScript[slot.key] && !GOOD_SCRIPT_TAGS[p.tag]) return false;
           return slot.eligible.indexOf(p.position)!==-1;
         });
         opts.forEach(function(cand){
@@ -2827,6 +2852,9 @@
         var reqTeam = slotTeamConstraint[slot.key];
         var opts = currentPool3.filter(function(p){
           if (reqTeam && p.team !== reqTeam) return false;
+          if (slotExcludeTeam[slot.key] && p.team === slotExcludeTeam[slot.key]) return false;
+          if (slotPositionLock[slot.key] && p.position !== slotPositionLock[slot.key]) return false;
+          if (slotRequireGoodScript[slot.key] && !GOOD_SCRIPT_TAGS[p.tag]) return false;
           return slot.eligible.indexOf(p.position)!==-1;
         });
         opts.forEach(function(cand){
@@ -3298,7 +3326,6 @@
       return;
     }
 
-    var GOOD_SCRIPTS = {onslaught:true, shootout:true, live:true};
     var BRING_BACK_SCRIPTS = {shootout:true, live:true};
 
     var byTeam = {};
@@ -3313,7 +3340,7 @@
     Object.keys(byTeam).forEach(function(team){
       var roster = byTeam[team];
       var tag = roster[0].player.tag;
-      if (!GOOD_SCRIPTS[tag]) return;
+      if (!GOOD_SCRIPT_TAGS[tag]) return;
       var qbs = roster.filter(function(r){ return r.player.position === 'QB'; })
         .sort(function(a,b){ return mktDisplayTotal(b.mp) - mktDisplayTotal(a.mp); });
       if (!qbs.length) return;
