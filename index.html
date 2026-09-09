@@ -1953,7 +1953,12 @@
           // Position) - detected from the actual file content, not just the
           // platform toggle, so uploading the right file works even if you
           // forgot to flip the toggle first.
-          var isDK = keys.hasOwnProperty('teamabbrev') || keys.hasOwnProperty('avgpointspergame') || keys.hasOwnProperty('roster position');
+          // "Roster Position" is NOT a reliable DK-only signal - confirmed
+          // FanDuel's own Single Game export also uses that exact column
+          // name (for its MVP/FLEX designation), which was false-triggering
+          // DK parsing on real FD files and producing zero valid players.
+          // TeamAbbrev and AvgPointsPerGame are genuinely DK-exclusive.
+          var isDK = keys.hasOwnProperty('teamabbrev') || keys.hasOwnProperty('avgpointspergame');
 
           var name, salary, fppg, team, rawPos, id, dkRosterPos;
           if (isDK){
