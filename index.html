@@ -370,7 +370,7 @@
             <option value="3">QB + 3</option>
           </select>
         </div>
-        <label class="stack-chk" title="Forces in your best available WR from a favorably-scripted team (Onslaught/Shootout/Live) other than your QB's - not required to be the QB's specific opponent, and WR only (not TE/RB)."><input type="checkbox" id="bringBackChk"> Bring-back</label>
+        <label class="stack-chk" title="Forces in your QB's opponent's alpha WR (their highest-salaried receiver) - a true same-game bring-back, matching what actually showed up in your tournament-winning-lineup study."><input type="checkbox" id="bringBackChk"> Bring-back</label>
       </div>
 
       <div class="field field-inline" id="mvpFilterWrap" style="display:none;align-self:center;">
@@ -1603,15 +1603,13 @@
       });
       result.stackCount = passCatchers.length;
       result.stackTeam = qb.team;
-      // Bring-back is no longer required to be specifically the QB's
-      // opponent - detect any WR from a team OTHER than the QB's as a
-      // bring-back-style pick, and report whichever team it actually is.
-      var bb = filled.filter(function(f){
-        return f.player.team !== qb.team && f.player.position === 'WR';
-      });
-      if (bb.length){
-        result.bringBack = true;
-        result.bringBackTeam = bb[0].player.team;
+      // Reverted to requiring the QB's own opponent specifically, per the
+      // tournament-winning-lineup study - a true bring-back is a same-game
+      // construction, not just any WR from an unrelated favorable script.
+      if (qb.oppTeam){
+        var bb = filled.filter(function(f){ return f.player.team === qb.oppTeam; });
+        result.bringBack = bb.length > 0;
+        result.bringBackTeam = qb.oppTeam;
         result.bringBackCount = bb.length;
       }
       if (qb.tag && TAGS[qb.tag]) result.envNote = TAGS[qb.tag];
@@ -2737,18 +2735,21 @@
           }
         }
 
-        // Bring-back: 1 WR from any team OTHER than the QB's own team, but
-        // only from a team currently tagged with a favorable game script
-        // (Onslaught/Shootout/Live) - not required to be specifically the
-        // QB's own opponent, but still real correlation logic, not just
-        // "force in my best standalone WR" with no game-context requirement.
-        if (stackSettings.bringBack){
+        // Bring-back: 1 WR from the QB's OWN opponent specifically - reverted
+        // per the tournament-winning-lineup study: true bring-backs were
+        // rare among winners in the first place, and the one pattern that
+        // did work (garbage-time QB + the winning team's alpha receiver)
+        // was still tied to the QB's own game, not decoupled from it.
+        // Biased toward the opponent's ALPHA WR (highest salary - the
+        // market's own read on who's the true #1) rather than just whoever
+        // scores marginally best, matching that same finding.
+        if (stackSettings.bringBack && qb.oppTeam){
           var bbPool = pool.filter(function(p){
-            return p.team !== qb.team && p.position === 'WR' && GOOD_SCRIPT_TAGS[p.tag];
+            return p.team === qb.oppTeam && p.position === 'WR';
           });
           if (!bbPool.length){
             bbPool = fullPool.filter(function(p){
-              return p.team !== qb.team && p.position === 'WR' && GOOD_SCRIPT_TAGS[p.tag];
+              return p.team === qb.oppTeam && p.position === 'WR';
             });
           }
           var bbSlot = null, bbPlayer = null;
@@ -2759,9 +2760,9 @@
             if (opts2.length){
               bbSlot = s2;
               bbPlayer = opts2.reduce(function(m,p){
+                if (p.salary !== m.salary) return p.salary > m.salary ? p : m;
                 var pExp = exposureCount[p.id] || 0, mExp = exposureCount[m.id] || 0;
-                var pScore = playerScore(p) - pExp, mScore = playerScore(m) - mExp;
-                return pScore > mScore ? p : m;
+                return (playerScore(p)-pExp) > (playerScore(m)-mExp) ? p : m;
               }, opts2[0]);
               break;
             }
@@ -2769,12 +2770,13 @@
           if (bbSlot){
             picks[bbPlayer.id] = true;
             lineup[bbSlot.key] = bbPlayer;
-            slotExcludeTeam[bbSlot.key] = qb.team;
+            slotTeamConstraint[bbSlot.key] = qb.oppTeam;
             slotPositionLock[bbSlot.key] = 'WR';
-            slotRequireGoodScript[bbSlot.key] = true;
           } else {
-            stackNote = (stackNote ? stackNote + ' ' : '') + 'No bring-back WR candidate available from a favorably-scripted team.';
+            stackNote = (stackNote ? stackNote + ' ' : '') + 'No bring-back WR candidate found for ' + qb.oppTeam + '.';
           }
+        } else if (stackSettings.bringBack && !qb.oppTeam){
+          stackNote = (stackNote ? stackNote + ' ' : '') + 'No opponent found for ' + qb.team + ' - bring-back skipped.';
         }
       }
     }
