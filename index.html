@@ -512,12 +512,14 @@
     {key:'DEF', label:'DEF', eligible:['DEF']}
   ];
   var MAX_LINEUPS = 200;
-  // Two fixed "source" layouts for Single Game / Showdown - FanDuel's is
-  // 1 MVP + 5 FLEX (6 total), DraftKings Showdown is 1 Captain + 6 FLEX (7
-  // total), a genuine structural difference, not just a label swap. The
-  // ACTIVE SG_SLOT_DEFS array below is mutated in place (never reassigned)
-  // by applyPlatformSlotDefs() so every existing reference to it elsewhere
-  // in the app stays valid across a platform switch.
+  // Two fixed "source" layouts for Single Game / Showdown - both FanDuel
+  // and DraftKings use 1 Captain/MVP + 5 FLEX (6 total), same roster size,
+  // just a different label for the 1.5x slot. Kept as two separate arrays
+  // (rather than one shared one) purely so each platform's slot key/label
+  // stays correct (MVP vs CPT) without needing to relabel on every switch.
+  // The ACTIVE SG_SLOT_DEFS array below is mutated in place (never
+  // reassigned) by applyPlatformSlotDefs() so every existing reference to
+  // it elsewhere in the app stays valid across a platform switch.
   var SG_SLOT_DEFS_FD = [
     {key:'MVP',   label:'MVP',  eligible:['QB','RB','WR','TE','DEF','K'], mvp:true},
     {key:'FLEX1', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
@@ -532,8 +534,7 @@
     {key:'FLEX2', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
     {key:'FLEX3', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
     {key:'FLEX4', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
-    {key:'FLEX5', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']},
-    {key:'FLEX6', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']}
+    {key:'FLEX5', label:'FLEX', eligible:['QB','RB','WR','TE','DEF','K']}
   ];
   var SG_SLOT_DEFS = SG_SLOT_DEFS_FD.slice();
   var platform = 'fd'; // 'fd' | 'dk'
