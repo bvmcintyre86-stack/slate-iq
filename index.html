@@ -478,6 +478,8 @@
             <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their actual Mkt projection. Smaller or negative = closer to or past that target.">3x &Delta;</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="tag">Script</th>
+            <th data-key="actualPts" title="Enter after the games are final, to compare against your Mkt projection.">Actual</th>
+            <th data-key="ownership" title="Enter from FanDuel/DraftKings' own post-contest ownership export.">Own %</th>
             <th>Lineup</th>
             <th>Top</th>
           </tr>
@@ -486,6 +488,19 @@
       </table>
       <div class="empty" id="poolEmpty">Upload a player pool to see tagged players here.</div>
     </div>
+  </section>
+
+  <section id="resultsSection">
+    <div class="section-head">
+      <h2><span class="section-toggle" data-toggle-section="resultsSection">&#9660;</span> Results tracking</h2>
+      <div class="sub">Enter Actual and Own % in Player Pool above once games are final, then save the week here - Mkt projections stay compared against what actually happened, week to week and year to year.</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+      <button id="saveWeekResultsBtn">Save this week's results</button>
+      <button id="exportResultsCsvBtn">Export full history to CSV</button>
+      <span class="sub" id="resultsSummaryLine"></span>
+    </div>
+    <div id="resultsHistoryView"></div>
   </section>
 
 </div>
@@ -603,6 +618,12 @@
     fd: { marketProjections: {}, marketProjectionsLoadedAt: null },
     dk: { marketProjections: {}, marketProjectionsLoadedAt: null }
   };
+  // Permanent results history - survives future CSV uploads/platform
+  // switches, since the live player pool gets replaced every week but past
+  // results shouldn't be. Each entry is one saved week: a label, a
+  // timestamp, which platform/mode it was, and every player who had actual
+  // points and/or ownership entered at save time.
+  var resultsHistory = [];
   function emptyLineup(){ var l={}; activeSLOT_DEFS.forEach(function(s){l[s.key]=null;}); return l; }
   var lineups    = [emptyLineup()];
   var activeIdx  = 0;
@@ -1761,7 +1782,13 @@
           var d={fd:platformMarketData.fd, dk:platformMarketData.dk};
           d[platform] = { marketProjections: marketProjections, marketProjectionsLoadedAt: marketProjectionsLoadedAt };
           return d;
-        })()
+        })(),
+        resultsHistory: resultsHistory,
+        // Also persist any actual/ownership values entered but not yet
+        // saved into history, keyed by id, so an in-progress week's data
+        // entry survives a refresh even before you click "Save week".
+        pendingResults: players.filter(function(p){ return p.actualPts!=null || p.ownership!=null; })
+          .map(function(p){ return { id: p.id, actualPts: p.actualPts, ownership: p.ownership }; })
       };
       localStorage.setItem('slateBoardState', JSON.stringify(state));
     }catch(e){ /* storage unavailable, skip silently */ }
@@ -1922,6 +1949,16 @@
       marketProjections = (platformMarketData[platform]||{}).marketProjections || {};
       marketProjectionsLoadedAt = (platformMarketData[platform]||{}).marketProjectionsLoadedAt || null;
       if (Object.keys(marketProjections).length) setPropsStatus(propsFreshnessMsg());
+
+      resultsHistory = state.resultsHistory || [];
+      if (state.pendingResults && state.pendingResults.length){
+        var pendingById = {};
+        state.pendingResults.forEach(function(r){ pendingById[r.id] = r; });
+        players.forEach(function(p){
+          var pr = pendingById[p.id];
+          if (pr){ p.actualPts = pr.actualPts; p.ownership = pr.ownership; }
+        });
+      }
 
       if (players.length){
         var sgTeamCount = 0;
@@ -3180,10 +3217,38 @@
         })()+
         '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
         '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
+        '<td>'+
+          '<input type="number" step="0.1" class="row-result-input" data-actual-id="'+p.id+'" value="'+(p.actualPts!=null?p.actualPts:'')+'" style="width:56px;" placeholder="—">'+
+          (function(){
+            if (p.actualPts == null || !mp) return '';
+            var d = Math.round((p.actualPts - mktDisplayTotal(mp)) * 10) / 10;
+            var dColor = d >= 0 ? 'var(--teal)' : 'var(--brick)';
+            return '<span style="color:'+dColor+';font-size:11px;margin-left:4px;">'+(d>0?'+':'')+d.toFixed(1)+'</span>';
+          })()+
+        '</td>'+
+        '<td><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-own-id="'+p.id+'" value="'+(p.ownership!=null?p.ownership:'')+'" style="width:48px;" placeholder="—">%</td>'+
         '<td>'+action+'</td>'+
         '<td><button class="tp-add-btn'+(topPlayers[p.id]?' in-tp':'')+'" data-tp-id="'+p.id+'">'+(topPlayers[p.id]?'★ Starred':'☆ Star')+'</button></td>'+
       '</tr>';
     }).join('');
+
+    body.querySelectorAll('[data-actual-id]').forEach(function(inp){
+      inp.addEventListener('change', function(){
+        var p = players.find(function(pl){return pl.id === inp.getAttribute('data-actual-id');});
+        if (!p) return;
+        p.actualPts = inp.value === '' ? null : parseFloat(inp.value);
+        saveState();
+        renderTable();
+      });
+    });
+    body.querySelectorAll('[data-own-id]').forEach(function(inp){
+      inp.addEventListener('change', function(){
+        var p = players.find(function(pl){return pl.id === inp.getAttribute('data-own-id');});
+        if (!p) return;
+        p.ownership = inp.value === '' ? null : parseFloat(inp.value);
+        saveState();
+      });
+    });
 
     body.querySelectorAll('[data-add-id]').forEach(function(btn){
       btn.addEventListener('click', function(){
@@ -3633,6 +3698,97 @@
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   }
 
+  function renderResultsHistory(){
+    var view = document.getElementById('resultsHistoryView');
+    var summaryLine = document.getElementById('resultsSummaryLine');
+    if (!view) return;
+    if (!resultsHistory.length){
+      view.innerHTML = '<div class="lc-empty" style="padding:10px;">No weeks saved yet. Enter Actual pts (and Own % if you have it) in Player Pool above, then click "Save this week\'s results".</div>';
+      if (summaryLine) summaryLine.textContent = '';
+      return;
+    }
+    if (summaryLine) summaryLine.textContent = resultsHistory.length + ' week' + (resultsHistory.length>1?'s':'') + ' saved.';
+
+    var html = resultsHistory.map(function(entry, idx){
+      var withDelta = entry.players.filter(function(p){ return p.mktDelta != null; });
+      var avgAbsErr = withDelta.length ? (withDelta.reduce(function(s,p){return s+Math.abs(p.mktDelta);},0)/withDelta.length) : null;
+      var avgBias = withDelta.length ? (withDelta.reduce(function(s,p){return s+p.mktDelta;},0)/withDelta.length) : null;
+
+      var detailRows = entry.players.map(function(p){
+        var dColor = p.mktDelta == null ? 'var(--muted)' : (p.mktDelta >= 0 ? 'var(--teal)' : 'var(--brick)');
+        return '<tr>' +
+          '<td style="text-align:left;">'+p.name+'</td>' +
+          '<td class="pos-pill">'+p.position+'</td>' +
+          '<td class="mono">'+p.team+'</td>' +
+          '<td class="num">'+(p.mkt!=null?p.mkt.toFixed(1):'—')+'</td>' +
+          '<td class="num">'+p.actualPts.toFixed(1)+'</td>' +
+          '<td class="num" style="color:'+dColor+';">'+(p.mktDelta!=null?((p.mktDelta>0?'+':'')+p.mktDelta.toFixed(1)):'—')+'</td>' +
+          '<td class="num">'+(p.ownership!=null?p.ownership.toFixed(1)+'%':'—')+'</td>' +
+        '</tr>';
+      }).join('');
+
+      return '<div style="border:1px solid var(--line);border-radius:8px;margin-bottom:12px;overflow:hidden;">' +
+        '<div data-rh-toggle="'+idx+'" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--panel-2);cursor:pointer;flex-wrap:wrap;gap:8px;">' +
+          '<div><strong>'+entry.weekLabel+'</strong> <span class="sub" style="margin-left:8px;">'+new Date(entry.savedAt).toLocaleDateString()+' &middot; '+entry.platform.toUpperCase()+' '+(entry.mode==='sg'?'Single Game':'Main Slate')+' &middot; '+entry.players.length+' players</span></div>' +
+          '<div style="display:flex;align-items:center;gap:14px;">' +
+            (avgAbsErr!=null ? '<span class="sub">Avg |Mkt error|: <strong>'+avgAbsErr.toFixed(1)+'</strong></span>' : '') +
+            (avgBias!=null ? '<span class="sub">Bias: <strong style="color:'+(avgBias>=0?'var(--teal)':'var(--brick)')+';">'+(avgBias>0?'+':'')+avgBias.toFixed(1)+'</strong></span>' : '') +
+            '<button data-rh-delete="'+idx+'" style="color:#c00;padding:4px 10px;">Delete</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="rh-body-'+idx+'" style="display:none;padding:10px 14px;">' +
+          '<table style="width:100%;"><thead><tr><th style="text-align:left;">Player</th><th>Pos</th><th>Team</th><th>Mkt</th><th>Actual</th><th>Mkt &Delta;</th><th>Own %</th></tr></thead><tbody>'+detailRows+'</tbody></table>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    view.innerHTML = html;
+
+    view.querySelectorAll('[data-rh-toggle]').forEach(function(hdr){
+      hdr.addEventListener('click', function(e){
+        if (e.target.hasAttribute('data-rh-delete')) return;
+        var idx = hdr.getAttribute('data-rh-toggle');
+        var body = document.getElementById('rh-body-'+idx);
+        if (body) body.style.display = body.style.display === 'none' ? 'block' : 'none';
+      });
+    });
+    view.querySelectorAll('[data-rh-delete]').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var idx = parseInt(btn.getAttribute('data-rh-delete'), 10);
+        if (!confirm('Delete "' + resultsHistory[idx].weekLabel + '" from your results history? This can\'t be undone.')) return;
+        resultsHistory.splice(idx, 1);
+        saveState();
+        renderResultsHistory();
+      });
+    });
+  }
+
+  function exportResultsCSV(){
+    if (!resultsHistory.length){ alert('No results saved yet.'); return; }
+    var sep = ',';
+    var dq = String.fromCharCode(34);
+    function q(v){ var s=String(v==null?'':v).replace(new RegExp(dq,'g'),dq+dq); return dq+s+dq; }
+    var rows = [['Week','Date','Platform','Mode','Player','Position','Team','Salary','FPPG','Mkt','Actual','Mkt Delta','Ownership %'].map(q).join(sep)];
+    resultsHistory.forEach(function(entry){
+      entry.players.forEach(function(p){
+        rows.push([
+          entry.weekLabel, new Date(entry.savedAt).toLocaleDateString(), entry.platform.toUpperCase(),
+          entry.mode==='sg'?'Single Game':'Main Slate',
+          p.name, p.position, p.team, p.salary, p.fppg,
+          p.mkt!=null?p.mkt:'', p.actualPts, p.mktDelta!=null?p.mktDelta:'',
+          p.ownership!=null?p.ownership:''
+        ].map(q).join(sep));
+      });
+    });
+    var csv = rows.join(String.fromCharCode(10));
+    var blob = new Blob([csv],{type:'text/csv'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href=url; a.download='slate_iq_results_history_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+
   // ── Mode Toggle ────────────────────────────────────────────────────────────
   function switchMode(mode){
     if (slateMode === mode) return;
@@ -3867,6 +4023,38 @@
   // loadRostersBtn removed from the UI per request - loadRosters() itself is
   // left defined but unused, in case it's wanted again later.
   document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
+  document.getElementById('exportResultsCsvBtn').addEventListener('click', exportResultsCSV);
+  document.getElementById('saveWeekResultsBtn').addEventListener('click', function(){
+    var tracked = players.filter(function(p){ return p.actualPts != null; });
+    if (!tracked.length){
+      alert('No players have Actual points entered yet - fill those in first, in the Player Pool table above.');
+      return;
+    }
+    var label = prompt('Label this week (e.g. "2026 Week 1 - SEA@NE Single Game"):', '');
+    if (label === null) return; // cancelled
+    if (!label.trim()) label = new Date().toLocaleDateString();
+
+    var entry = {
+      weekLabel: label.trim(),
+      savedAt: Date.now(),
+      platform: platform,
+      mode: slateMode,
+      players: tracked.map(function(p){
+        var mp = marketProjections[normalizeName(p.name)];
+        var mktVal = mp ? mktDisplayTotal(mp) : null;
+        return {
+          name: p.name, position: p.position, team: p.team, salary: p.salary,
+          fppg: p.fppg, mkt: mktVal, actualPts: p.actualPts,
+          ownership: p.ownership != null ? p.ownership : null,
+          mktDelta: mktVal != null ? Math.round((p.actualPts - mktVal)*10)/10 : null
+        };
+      })
+    };
+    resultsHistory.push(entry);
+    saveState();
+    renderResultsHistory();
+    setMsg('Saved "' + entry.weekLabel + '" to results history (' + entry.players.length + ' players).');
+  });
   document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
   document.getElementById('refreshLinesBtn').addEventListener('click', refreshLines);
   document.getElementById('clearGamesBtn').addEventListener('click', function(){
@@ -3889,6 +4077,7 @@
   renderGames();
   renderLuTabs();
   renderTopPlayers();
+  renderResultsHistory();
   if (players.length) { populateFilterOptions(); tagPlayers(); } else { renderTable(); }
   renderLineupBar();
   renderConstructionBadge();
