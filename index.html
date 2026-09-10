@@ -481,7 +481,6 @@
             <th data-key="actualPts" title="Enter after the games are final, to compare against your Mkt projection.">Actual</th>
             <th data-key="ownership" title="Enter from FanDuel/DraftKings' own post-contest ownership export.">Own %</th>
             <th data-key="mvpOwnership" id="mvpOwnHeader" title="Single Game only: what % of entries had this player specifically as MVP/Captain, not just anywhere in the roster.">MVP Own %</th>
-            <th>Lineup</th>
             <th>Top</th>
           </tr>
         </thead>
@@ -496,7 +495,7 @@
       <h2><span class="section-toggle" data-toggle-section="resultsSection">&#9660;</span> Results tracking</h2>
       <div class="sub">DraftKings: import their contest-standings CSV to auto-fill Actual/Own %/MVP Own % below. FanDuel doesn't offer this export, so those stay manual entry in Player Pool above.</div>
     </div>
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+    <div id="dkImportRow" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
       <button id="importDkResultsBtn">Import DK contest-standings CSV</button>
       <input type="file" id="dkResultsFile" accept=".csv" style="display:none;">
       <span class="sub" id="dkImportStatus"></span>
@@ -661,6 +660,14 @@
   // full certainty on the bonus thresholds specifically.
   function applyPlatformScoring(){
     PROP_BET_TYPES.receptions.mult = platform === 'dk' ? 1.0 : 0.5;
+  }
+
+  // The DK contest-standings import only makes sense on DK - FanDuel
+  // doesn't offer this export at all, so hide the control entirely rather
+  // than leave a button that can never do anything on FD.
+  function applyDkImportVisibility(){
+    var row = document.getElementById('dkImportRow');
+    if (row) row.style.display = platform === 'dk' ? 'flex' : 'none';
   }
 
   // Shared between switchMode() and switchPlatform() - both change what this
@@ -1821,6 +1828,7 @@
         platform = state.platform;
         applyPlatformSlotDefs(); // must run before any SG_SLOT_DEFS-dependent reconstruction below
         applyPlatformScoring();
+        applyDkImportVisibility();
         document.getElementById('fdPlatformBtn').classList.toggle('active', platform==='fd');
         document.getElementById('dkPlatformBtn').classList.toggle('active', platform==='dk');
       }
@@ -3245,7 +3253,6 @@
         '</td>'+
         '<td><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-own-id="'+p.id+'" value="'+(p.ownership!=null?p.ownership:'')+'" style="width:48px;" placeholder="—">%</td>'+
         '<td class="mvp-own-cell"><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-mvp-own-id="'+p.id+'" value="'+(p.mvpOwnership!=null?p.mvpOwnership:'')+'" style="width:48px;" placeholder="—">%</td>'+
-        '<td>'+action+'</td>'+
         '<td><button class="tp-add-btn'+(topPlayers[p.id]?' in-tp':'')+'" data-tp-id="'+p.id+'">'+(topPlayers[p.id]?'★ Starred':'☆ Star')+'</button></td>'+
       '</tr>';
     }).join('');
@@ -3976,6 +3983,7 @@
     platform = newPlatform;
     applyPlatformSlotDefs();
     applyPlatformScoring();
+    applyDkImportVisibility();
 
     // Restore this platform's own cap and Mkt data (or its defaults, if
     // this platform has never been loaded into this session before).
@@ -4187,6 +4195,7 @@
   renderLuTabs();
   renderTopPlayers();
   renderResultsHistory();
+  applyDkImportVisibility();
   if (players.length) { populateFilterOptions(); tagPlayers(); } else { renderTable(); }
   renderLineupBar();
   renderConstructionBadge();
