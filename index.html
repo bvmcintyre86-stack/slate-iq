@@ -2232,6 +2232,12 @@
     // Precompute every lineup's totals first, so we can find whichever
     // complete lineup projects highest and flag it - the single most useful
     // thing to see at a glance when scanning a batch of 20.
+    // Look up actual points by player id (not the lineup's own embedded
+    // copy, which could be stale) so retroactive scoring always reflects
+    // whatever's currently entered in Player Pool / imported from DK.
+    var actualById = {};
+    players.forEach(function(p){ if (p.actualPts != null) actualById[p.id] = p.actualPts; });
+
     var computed = lineups.map(function(lu){
       var filledSlots = slotDefs.filter(function(s){ return lu[s.key]; });
       var totalSalary = filledSlots.reduce(function(sum,s){ return sum + slotSalary(s, lu[s.key]); }, 0);
@@ -2239,11 +2245,28 @@
         var base = effectiveFppg(lu[s.key]);
         return sum + (slateMode==='sg' && s.mvp ? base*1.5 : base);
       }, 0);
-      return { complete: filledSlots.length === slotDefs.length, totalSalary: totalSalary, totalProj: totalProj };
+      var actualMatched = 0, totalActual = 0;
+      filledSlots.forEach(function(s){
+        var ap = actualById[lu[s.key].id];
+        if (ap == null) return;
+        actualMatched++;
+        totalActual += (slateMode==='sg' && s.mvp ? ap*1.5 : ap);
+      });
+      return {
+        complete: filledSlots.length === slotDefs.length, totalSalary: totalSalary, totalProj: totalProj,
+        totalActual: totalActual, actualMatched: actualMatched, actualOf: filledSlots.length
+      };
     });
-    var bestIdx = -1, bestProj = -Infinity;
+
+    // Once any lineup in the batch has real results entered, "best" should
+    // mean best ACTUAL performer, not the now-historical projection -
+    // otherwise the sort order (below) and the badge would disagree.
+    var hasAnyActual = computed.some(function(c){ return c.actualMatched > 0; });
+
+    var bestIdx = -1, bestScore = -Infinity;
     computed.forEach(function(c, idx){
-      if (c.complete && c.totalProj > bestProj){ bestProj = c.totalProj; bestIdx = idx; }
+      var score = hasAnyActual ? c.totalActual : c.totalProj;
+      if (c.complete && score > bestScore){ bestScore = score; bestIdx = idx; }
     });
 
     // Exposure tracker filter: if players are selected there, only show
@@ -2253,13 +2276,15 @@
     var filterIds = Object.keys(exposureFilterIds);
     var visibleIndices = getExposureFilteredIndices();
 
-    // Order the cards by projected points, highest to lowest - complete
-    // lineups first (a partial build's total isn't really comparable),
-    // then sorted within that group. Doesn't touch lineup tabs or the
-    // underlying lineups array, purely the order cards are displayed in.
+    // Order the cards highest to lowest (by actual score if available,
+    // otherwise projected) - complete lineups first (a partial build's
+    // total isn't really comparable), then sorted within that group.
+    // Doesn't touch lineup tabs or the underlying lineups array, purely the
+    // order cards are displayed in.
     visibleIndices.sort(function(a, b){
       var ca = computed[a], cb = computed[b];
       if (ca.complete !== cb.complete) return ca.complete ? -1 : 1;
+      if (hasAnyActual) return cb.totalActual - ca.totalActual;
       return cb.totalProj - ca.totalProj;
     });
 
@@ -2296,9 +2321,16 @@
         var isMvp = s.mvp && slateMode==='sg';
         var rowSalary = isMvp ? slotSalary(s,p) : p.salary;
         var rowProj = isMvp ? effectiveFppg(p)*1.5 : effectiveFppg(p);
+        var rowActualRaw = actualById[p.id];
+        var rowActualHtml = '';
+        if (rowActualRaw != null){
+          var rowActual = isMvp ? rowActualRaw*1.5 : rowActualRaw;
+          var raColor = rowActual >= rowProj ? 'var(--teal)' : 'var(--brick)';
+          rowActualHtml = '<div style="color:'+raColor+';font-size:11px;">'+rowActual.toFixed(1)+'</div>';
+        }
         return '<div class="lc-row'+(differs?' lc-diff':'')+'"><div class="lc-pos">'+s.label+'</div>'+
           '<div><div class="lc-name" title="'+p.name+'">'+p.name+'</div><div class="lc-sub">'+p.team+(oppText?(' '+oppText):'')+' &middot; '+money(rowSalary)+'</div></div>'+
-          '<div class="lc-proj-val">'+rowProj.toFixed(1)+rmBtn+'</div></div>';
+          '<div class="lc-proj-val">'+rowProj.toFixed(1)+rowActualHtml+rmBtn+'</div></div>';
       }).join('');
 
       var construction = lineupConstruction(lu);
@@ -2308,10 +2340,19 @@
         constructionHtml = '<div class="lc-construction" style="color:'+cColors.color+';background:'+cColors.bg+';">'+construction.label+'</div>';
       }
 
+      var cc = computed[idx];
+      var scoreHtml;
+      if (cc.actualMatched > 0){
+        scoreHtml = '<span class="lc-proj" title="Actual score - '+cc.actualMatched+' of '+cc.actualOf+' players have results entered">'+cc.totalActual.toFixed(1)+'</span>'+
+          '<span class="sub" style="font-size:10px;margin-left:4px;">proj '+totalProj.toFixed(1)+'</span>';
+      } else {
+        scoreHtml = '<span class="lc-proj">'+totalProj.toFixed(1)+'</span>';
+      }
+
       return '<div class="lc-card'+(isActive?' lc-active':'')+(isBest?' lc-best':'')+'" data-lc-card="'+idx+'">'+
-        '<div class="lc-card-hdr"><span class="lc-idx">Lineup '+(idx+1)+(isActive?' (editing)':'')+(isBest?'<span class="lc-best-badge">&#9733; Best</span>':'')+'</span>'+
+        '<div class="lc-card-hdr"><span class="lc-idx">Lineup '+(idx+1)+(isActive?' (editing)':'')+(isBest?'<span class="lc-best-badge">&#9733; '+(hasAnyActual?'Best Actual':'Best')+'</span>':'')+'</span>'+
         '<span class="lc-salary">'+money(totalSalary)+'</span>'+
-        '<span class="lc-proj">'+totalProj.toFixed(1)+'</span></div>'+
+        scoreHtml+'</div>'+
         constructionHtml+
         rowsHtml+
         '</div>';
