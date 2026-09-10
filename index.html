@@ -480,6 +480,7 @@
             <th data-key="tag">Script</th>
             <th data-key="actualPts" title="Enter after the games are final, to compare against your Mkt projection.">Actual</th>
             <th data-key="ownership" title="Enter from FanDuel/DraftKings' own post-contest ownership export.">Own %</th>
+            <th data-key="mvpOwnership" id="mvpOwnHeader" title="Single Game only: what % of entries had this player specifically as MVP/Captain, not just anywhere in the roster.">MVP Own %</th>
             <th>Lineup</th>
             <th>Top</th>
           </tr>
@@ -493,7 +494,12 @@
   <section id="resultsSection">
     <div class="section-head">
       <h2><span class="section-toggle" data-toggle-section="resultsSection">&#9660;</span> Results tracking</h2>
-      <div class="sub">Enter Actual and Own % in Player Pool above once games are final, then save the week here - Mkt projections stay compared against what actually happened, week to week and year to year.</div>
+      <div class="sub">DraftKings: import their contest-standings CSV to auto-fill Actual/Own %/MVP Own % below. FanDuel doesn't offer this export, so those stay manual entry in Player Pool above.</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+      <button id="importDkResultsBtn">Import DK contest-standings CSV</button>
+      <input type="file" id="dkResultsFile" accept=".csv" style="display:none;">
+      <span class="sub" id="dkImportStatus"></span>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
       <button id="saveWeekResultsBtn">Save this week's results</button>
@@ -660,6 +666,17 @@
   // Shared between switchMode() and switchPlatform() - both change what this
   // text should say (Main/SG affects roster shape, FD/DK affects the
   // MVP-vs-Captain wording and the 2x/3x value target label).
+  // MVP ownership only means anything in Single Game - hides the column
+  // entirely in Main Slate rather than leaving a meaningless blank field.
+  function applyMvpOwnColumnVisibility(){
+    var show = slateMode === 'sg';
+    var header = document.getElementById('mvpOwnHeader');
+    if (header) header.style.display = show ? '' : 'none';
+    document.querySelectorAll('.mvp-own-cell').forEach(function(td){
+      td.style.display = show ? '' : 'none';
+    });
+  }
+
   function updateLuSubAndLabels(){
     var captainWord = platform === 'dk' ? 'Captain' : 'MVP';
     var luSub = document.getElementById('luSub');
@@ -1787,8 +1804,8 @@
         // Also persist any actual/ownership values entered but not yet
         // saved into history, keyed by id, so an in-progress week's data
         // entry survives a refresh even before you click "Save week".
-        pendingResults: players.filter(function(p){ return p.actualPts!=null || p.ownership!=null; })
-          .map(function(p){ return { id: p.id, actualPts: p.actualPts, ownership: p.ownership }; })
+        pendingResults: players.filter(function(p){ return p.actualPts!=null || p.ownership!=null || p.mvpOwnership!=null; })
+          .map(function(p){ return { id: p.id, actualPts: p.actualPts, ownership: p.ownership, mvpOwnership: p.mvpOwnership }; })
       };
       localStorage.setItem('slateBoardState', JSON.stringify(state));
     }catch(e){ /* storage unavailable, skip silently */ }
@@ -1956,7 +1973,7 @@
         state.pendingResults.forEach(function(r){ pendingById[r.id] = r; });
         players.forEach(function(p){
           var pr = pendingById[p.id];
-          if (pr){ p.actualPts = pr.actualPts; p.ownership = pr.ownership; }
+          if (pr){ p.actualPts = pr.actualPts; p.ownership = pr.ownership; p.mvpOwnership = pr.mvpOwnership; }
         });
       }
 
@@ -3227,6 +3244,7 @@
           })()+
         '</td>'+
         '<td><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-own-id="'+p.id+'" value="'+(p.ownership!=null?p.ownership:'')+'" style="width:48px;" placeholder="—">%</td>'+
+        '<td class="mvp-own-cell"><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-mvp-own-id="'+p.id+'" value="'+(p.mvpOwnership!=null?p.mvpOwnership:'')+'" style="width:48px;" placeholder="—">%</td>'+
         '<td>'+action+'</td>'+
         '<td><button class="tp-add-btn'+(topPlayers[p.id]?' in-tp':'')+'" data-tp-id="'+p.id+'">'+(topPlayers[p.id]?'★ Starred':'☆ Star')+'</button></td>'+
       '</tr>';
@@ -3249,6 +3267,15 @@
         saveState();
       });
     });
+    body.querySelectorAll('[data-mvp-own-id]').forEach(function(inp){
+      inp.addEventListener('change', function(){
+        var p = players.find(function(pl){return pl.id === inp.getAttribute('data-mvp-own-id');});
+        if (!p) return;
+        p.mvpOwnership = inp.value === '' ? null : parseFloat(inp.value);
+        saveState();
+      });
+    });
+    applyMvpOwnColumnVisibility();
 
     body.querySelectorAll('[data-add-id]').forEach(function(btn){
       btn.addEventListener('click', function(){
@@ -3724,6 +3751,7 @@
           '<td class="num">'+p.actualPts.toFixed(1)+'</td>' +
           '<td class="num" style="color:'+dColor+';">'+(p.mktDelta!=null?((p.mktDelta>0?'+':'')+p.mktDelta.toFixed(1)):'—')+'</td>' +
           '<td class="num">'+(p.ownership!=null?p.ownership.toFixed(1)+'%':'—')+'</td>' +
+          (entry.mode==='sg' ? '<td class="num">'+(p.mvpOwnership!=null?p.mvpOwnership.toFixed(1)+'%':'—')+'</td>' : '') +
         '</tr>';
       }).join('');
 
@@ -3737,7 +3765,7 @@
           '</div>' +
         '</div>' +
         '<div id="rh-body-'+idx+'" style="display:none;padding:10px 14px;">' +
-          '<table style="width:100%;"><thead><tr><th style="text-align:left;">Player</th><th>Pos</th><th>Team</th><th>Mkt</th><th>Actual</th><th>Mkt &Delta;</th><th>Own %</th></tr></thead><tbody>'+detailRows+'</tbody></table>' +
+          '<table style="width:100%;"><thead><tr><th style="text-align:left;">Player</th><th>Pos</th><th>Team</th><th>Mkt</th><th>Actual</th><th>Mkt &Delta;</th><th>Own %</th>'+(entry.mode==='sg'?'<th>MVP Own %</th>':'')+'</tr></thead><tbody>'+detailRows+'</tbody></table>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -3764,12 +3792,85 @@
     });
   }
 
+  // DraftKings' contest-standings export crams two unrelated tables into one
+  // CSV: per-ENTRY standings on the left (Rank/EntryId/.../Lineup), and
+  // per-PLAYER ownership on the right (Player/Roster Position/%Drafted/
+  // FPTS), separated by one blank column. We only care about the right
+  // side. Each real player can appear as up to two rows - one per Roster
+  // Position they were used in (e.g. "CPT" and "FLEX" for Showdown) - with
+  // OWNERSHIP tracked independently per role, but FPTS for the "CPT" role
+  // is always exactly 1.5x whatever their true base score was (confirmed
+  // directly against a real export: 12.82 FLEX -> 19.23 CPT, etc). Since we
+  // apply that 1.5x ourselves at the slot level, we need the BASE score,
+  // not the already-multiplied one.
+  function importDkResultsCsv(file){
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results){
+        var byPlayer = {}; // normalized name -> { roles: {ROLE: {own, fpts}}, displayName }
+        results.data.forEach(function(row){
+          var name = (row['Player'] || '').toString().trim();
+          if (!name) return; // this row belongs to the standings side only
+          var role = (row['Roster Position'] || '').toString().trim().toUpperCase();
+          var ownPct = parseFloat((row['%Drafted']||'0').toString().replace('%','')) || 0;
+          var fpts = parseFloat(row['FPTS']||'0') || 0;
+          var key = normalizeName(name);
+          if (!byPlayer[key]) byPlayer[key] = { roles: {}, displayName: name };
+          byPlayer[key].roles[role] = { own: ownPct, fpts: fpts };
+        });
+
+        var matched = 0, unmatched = [];
+        players.forEach(function(p){
+          var entry = byPlayer[normalizeName(p.name)];
+          if (!entry) return;
+          var roles = entry.roles;
+          var roleKeys = Object.keys(roles);
+
+          // Base (1x) actual points: prefer any non-CPT role's FPTS as-is;
+          // if CPT is the ONLY role anyone used them in, back out the base
+          // value by dividing out the 1.5x rather than reporting the
+          // inflated number.
+          var nonCptKey = roleKeys.find(function(r){ return r !== 'CPT'; });
+          if (nonCptKey){
+            p.actualPts = roles[nonCptKey].fpts;
+          } else if (roles.CPT){
+            p.actualPts = Math.round((roles.CPT.fpts / 1.5) * 100) / 100;
+          }
+
+          // Overall ownership = sum across every role (mutually exclusive
+          // per entry, so this is a legitimate total). MVP ownership = the
+          // CPT role specifically, 0 if nobody drafted them as CPT at all.
+          var totalOwn = roleKeys.reduce(function(sum, r){ return sum + roles[r].own; }, 0);
+          p.ownership = Math.round(totalOwn * 100) / 100;
+          p.mvpOwnership = roles.CPT ? roles.CPT.own : 0;
+
+          matched++;
+        });
+
+        Object.keys(byPlayer).forEach(function(key){
+          if (!players.some(function(p){ return normalizeName(p.name) === key; })){
+            unmatched.push(byPlayer[key].displayName);
+          }
+        });
+
+        saveState();
+        renderTable();
+        var statusEl = document.getElementById('dkImportStatus');
+        var msg = matched + ' of ' + Object.keys(byPlayer).length + ' players matched and filled in.';
+        if (unmatched.length) msg += ' Unmatched: ' + unmatched.join(', ') + '.';
+        if (statusEl) statusEl.textContent = msg;
+        setMsg(msg);
+      }
+    });
+  }
+
   function exportResultsCSV(){
     if (!resultsHistory.length){ alert('No results saved yet.'); return; }
     var sep = ',';
     var dq = String.fromCharCode(34);
     function q(v){ var s=String(v==null?'':v).replace(new RegExp(dq,'g'),dq+dq); return dq+s+dq; }
-    var rows = [['Week','Date','Platform','Mode','Player','Position','Team','Salary','FPPG','Mkt','Actual','Mkt Delta','Ownership %'].map(q).join(sep)];
+    var rows = [['Week','Date','Platform','Mode','Player','Position','Team','Salary','FPPG','Mkt','Actual','Mkt Delta','Ownership %','MVP Ownership %'].map(q).join(sep)];
     resultsHistory.forEach(function(entry){
       entry.players.forEach(function(p){
         rows.push([
@@ -3777,7 +3878,7 @@
           entry.mode==='sg'?'Single Game':'Main Slate',
           p.name, p.position, p.team, p.salary, p.fppg,
           p.mkt!=null?p.mkt:'', p.actualPts, p.mktDelta!=null?p.mktDelta:'',
-          p.ownership!=null?p.ownership:''
+          p.ownership!=null?p.ownership:'', p.mvpOwnership!=null?p.mvpOwnership:''
         ].map(q).join(sep));
       });
     });
@@ -4024,6 +4125,13 @@
   // left defined but unused, in case it's wanted again later.
   document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
   document.getElementById('exportResultsCsvBtn').addEventListener('click', exportResultsCSV);
+  document.getElementById('importDkResultsBtn').addEventListener('click', function(){
+    document.getElementById('dkResultsFile').click();
+  });
+  document.getElementById('dkResultsFile').addEventListener('change', function(){
+    if (this.files && this.files[0]) importDkResultsCsv(this.files[0]);
+    this.value = ''; // allow re-selecting the same file later
+  });
   document.getElementById('saveWeekResultsBtn').addEventListener('click', function(){
     var tracked = players.filter(function(p){ return p.actualPts != null; });
     if (!tracked.length){
@@ -4046,6 +4154,7 @@
           name: p.name, position: p.position, team: p.team, salary: p.salary,
           fppg: p.fppg, mkt: mktVal, actualPts: p.actualPts,
           ownership: p.ownership != null ? p.ownership : null,
+          mvpOwnership: p.mvpOwnership != null ? p.mvpOwnership : null,
           mktDelta: mktVal != null ? Math.round((p.actualPts - mktVal)*10)/10 : null
         };
       })
