@@ -132,6 +132,8 @@
   .lc-best-badge{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--gold);font-weight:700;margin-left:6px;}
   .lc-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);font-size:12px;}
   .lc-construction{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;padding:4px 10px;border-bottom:1px solid var(--line);}
+  .lc-actual-line{font-size:11px;color:var(--muted);padding:5px 10px;border-bottom:1px solid var(--line);background:var(--panel-2);}
+  .lc-actual-line strong{color:var(--gold);font-weight:700;}
   .lc-card-hdr .lc-idx{font-weight:700;color:var(--chalk);}
   .lc-card-hdr .lc-salary{color:var(--muted);}
   .lc-card-hdr .lc-proj{color:var(--gold);font-weight:700;}
@@ -620,8 +622,8 @@
   // platform-only cache rather than the full platform x mode matrix above.
   var platformCap = { fd: 60000, dk: 50000 };
   var platformMarketData = {
-    fd: { marketProjections: {}, marketProjectionsLoadedAt: null },
-    dk: { marketProjections: {}, marketProjectionsLoadedAt: null }
+    fd: { main: { marketProjections: {}, marketProjectionsLoadedAt: null }, sg: { marketProjections: {}, marketProjectionsLoadedAt: null } },
+    dk: { main: { marketProjections: {}, marketProjectionsLoadedAt: null }, sg: { marketProjections: {}, marketProjectionsLoadedAt: null } }
   };
   // Permanent results history - survives future CSV uploads/platform
   // switches, since the live player pool gets replaced every week but past
@@ -1803,8 +1805,11 @@
         },
         platformCap: (function(){ var c={fd:platformCap.fd,dk:platformCap.dk}; c[platform]=salaryCap; return c; })(),
         platformMarketData: (function(){
-          var d={fd:platformMarketData.fd, dk:platformMarketData.dk};
-          d[platform] = { marketProjections: marketProjections, marketProjectionsLoadedAt: marketProjectionsLoadedAt };
+          var d={
+            fd:{main:platformMarketData.fd.main, sg:platformMarketData.fd.sg},
+            dk:{main:platformMarketData.dk.main, sg:platformMarketData.dk.sg}
+          };
+          d[platform][slateMode] = { marketProjections: marketProjections, marketProjectionsLoadedAt: marketProjectionsLoadedAt };
           return d;
         })(),
         resultsHistory: resultsHistory,
@@ -1912,10 +1917,22 @@
           });
         });
         if (state.platformCap) platformCap = { fd: state.platformCap.fd||60000, dk: state.platformCap.dk||50000 };
-        if (state.platformMarketData) platformMarketData = {
-          fd: state.platformMarketData.fd || {marketProjections:{}, marketProjectionsLoadedAt:null},
-          dk: state.platformMarketData.dk || {marketProjections:{}, marketProjectionsLoadedAt:null}
-        };
+        if (state.platformMarketData){
+          var emptyMd = function(){ return {marketProjections:{}, marketProjectionsLoadedAt:null}; };
+          ['fd','dk'].forEach(function(plat){
+            var saved = state.platformMarketData[plat];
+            if (saved && (saved.main || saved.sg)){
+              // Current format: already mode-scoped.
+              platformMarketData[plat] = { main: saved.main || emptyMd(), sg: saved.sg || emptyMd() };
+            } else if (saved && saved.marketProjections){
+              // Mid-migration format: platform-scoped only, from before mode-
+              // scoping existed - treat it as belonging to Main Slate, since
+              // that's almost certainly what it was (Single Game is newer
+              // and less used), rather than discarding it.
+              platformMarketData[plat] = { main: saved, sg: emptyMd() };
+            }
+          });
+        }
       } else {
         // Legacy save from before the platform feature existed - everything
         // was always FD, so migrate the old flat fields into modeState.fd.*
@@ -1945,7 +1962,7 @@
         if (state.sgPlayers)      modeState.fd.sg.players      = state.sgPlayers;
         if (state.sgTopPlayers)   modeState.fd.sg.topPlayers   = state.sgTopPlayers;
         if (state.marketProjections){
-          platformMarketData.fd = { marketProjections: state.marketProjections, marketProjectionsLoadedAt: state.marketProjectionsLoadedAt || null };
+          platformMarketData.fd.main = { marketProjections: state.marketProjections, marketProjectionsLoadedAt: state.marketProjectionsLoadedAt || null };
         }
         applyPlatformSlotDefs();
         applyPlatformScoring();
@@ -1971,8 +1988,8 @@
       lineup = lineups[activeIdx];
       salaryCap = platformCap[platform] || (platform==='dk'?50000:60000);
       document.getElementById('capInput').value = salaryCap;
-      marketProjections = (platformMarketData[platform]||{}).marketProjections || {};
-      marketProjectionsLoadedAt = (platformMarketData[platform]||{}).marketProjectionsLoadedAt || null;
+      marketProjections = ((platformMarketData[platform]||{})[slateMode]||{}).marketProjections || {};
+      marketProjectionsLoadedAt = ((platformMarketData[platform]||{})[slateMode]||{}).marketProjectionsLoadedAt || null;
       if (Object.keys(marketProjections).length) setPropsStatus(propsFreshnessMsg());
 
       resultsHistory = state.resultsHistory || [];
@@ -2341,18 +2358,20 @@
       }
 
       var cc = computed[idx];
-      var scoreHtml;
+      var scoreHtml = '<span class="lc-proj">'+(cc.actualMatched > 0 ? cc.totalActual.toFixed(1) : totalProj.toFixed(1))+'</span>';
+
+      var actualLineHtml = '';
       if (cc.actualMatched > 0){
-        scoreHtml = '<span class="lc-proj" title="Actual score - '+cc.actualMatched+' of '+cc.actualOf+' players have results entered">'+cc.totalActual.toFixed(1)+'</span>'+
-          '<span class="sub" style="font-size:10px;margin-left:4px;">proj '+totalProj.toFixed(1)+'</span>';
-      } else {
-        scoreHtml = '<span class="lc-proj">'+totalProj.toFixed(1)+'</span>';
+        actualLineHtml = '<div class="lc-actual-line" title="'+cc.actualMatched+' of '+cc.actualOf+' players have results entered">' +
+          'Actual <strong>'+cc.totalActual.toFixed(1)+'</strong> &middot; Proj was '+totalProj.toFixed(1) +
+        '</div>';
       }
 
       return '<div class="lc-card'+(isActive?' lc-active':'')+(isBest?' lc-best':'')+'" data-lc-card="'+idx+'">'+
-        '<div class="lc-card-hdr"><span class="lc-idx">Lineup '+(idx+1)+(isActive?' (editing)':'')+(isBest?'<span class="lc-best-badge">&#9733; '+(hasAnyActual?'Best Actual':'Best')+'</span>':'')+'</span>'+
+        '<div class="lc-card-hdr"><span class="lc-idx">Lineup '+(idx+1)+(isActive?' (editing)':'')+(isBest?'<span class="lc-best-badge">&#9733; Best</span>':'')+'</span>'+
         '<span class="lc-salary">'+money(totalSalary)+'</span>'+
         scoreHtml+'</div>'+
+        actualLineHtml+
         constructionHtml+
         rowsHtml+
         '</div>';
@@ -3284,16 +3303,18 @@
         '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
         '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
         '<td>'+
-          '<input type="number" step="0.1" class="row-result-input" data-actual-id="'+p.id+'" value="'+(p.actualPts!=null?p.actualPts:'')+'" style="width:56px;" placeholder="—">'+
-          (function(){
-            if (p.actualPts == null || !mp) return '';
-            var d = Math.round((p.actualPts - mktDisplayTotal(mp)) * 10) / 10;
-            var dColor = d >= 0 ? 'var(--teal)' : 'var(--brick)';
-            return '<span style="color:'+dColor+';font-size:11px;margin-left:4px;">'+(d>0?'+':'')+d.toFixed(1)+'</span>';
-          })()+
+          '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">'+
+            '<input type="number" step="0.1" class="row-result-input" data-actual-id="'+p.id+'" value="'+(p.actualPts!=null?p.actualPts:'')+'" style="width:64px;text-align:center;" placeholder="—">'+
+            (function(){
+              if (p.actualPts == null || !mp) return '';
+              var d = Math.round((p.actualPts - mktDisplayTotal(mp)) * 10) / 10;
+              var dColor = d >= 0 ? 'var(--teal)' : 'var(--brick)';
+              return '<span style="color:'+dColor+';font-size:11px;">'+(d>0?'+':'')+d.toFixed(1)+'</span>';
+            })()+
+          '</div>'+
         '</td>'+
-        '<td><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-own-id="'+p.id+'" value="'+(p.ownership!=null?p.ownership:'')+'" style="width:48px;" placeholder="—">%</td>'+
-        '<td class="mvp-own-cell"><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-mvp-own-id="'+p.id+'" value="'+(p.mvpOwnership!=null?p.mvpOwnership:'')+'" style="width:48px;" placeholder="—">%</td>'+
+        '<td><div style="display:flex;align-items:center;justify-content:center;gap:3px;"><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-own-id="'+p.id+'" value="'+(p.ownership!=null?p.ownership:'')+'" style="width:60px;text-align:center;" placeholder="—"><span>%</span></div></td>'+
+        '<td class="mvp-own-cell"><div style="display:flex;align-items:center;justify-content:center;gap:3px;"><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-mvp-own-id="'+p.id+'" value="'+(p.mvpOwnership!=null?p.mvpOwnership:'')+'" style="width:60px;text-align:center;" placeholder="—"><span>%</span></div></td>'+
         '<td><button class="tp-add-btn'+(topPlayers[p.id]?' in-tp':'')+'" data-tp-id="'+p.id+'">'+(topPlayers[p.id]?'★ Starred':'☆ Star')+'</button></td>'+
       '</tr>';
     }).join('');
@@ -3947,6 +3968,11 @@
     modeState[platform][slateMode].games      = games;
     modeState[platform][slateMode].players    = players;
     modeState[platform][slateMode].topPlayers = topPlayers;
+    // Mkt props data is scoped per platform+mode too now, same reasoning as
+    // the lineup/player caching above - loading props for Main Slate should
+    // never silently overwrite what's cached for Single Game.
+    platformMarketData[platform][slateMode].marketProjections = marketProjections;
+    platformMarketData[platform][slateMode].marketProjectionsLoadedAt = marketProjectionsLoadedAt;
     // Exposure tracker filter selections are tied to a specific mode's
     // player pool/lineups - player IDs aren't guaranteed unique across
     // Main Slate vs Single Game, so a filter selected in one mode could
@@ -3976,6 +4002,11 @@
       activeIdx = 0;
     }
     lineup = lineups[activeIdx];
+    var mms = platformMarketData[platform][mode];
+    marketProjections = mms.marketProjections || {};
+    marketProjectionsLoadedAt = mms.marketProjectionsLoadedAt || null;
+    if (Object.keys(marketProjections).length) setPropsStatus(propsFreshnessMsg());
+    else { var propsStatusEl = document.getElementById('propsStatus'); if (propsStatusEl) propsStatusEl.textContent = ''; }
     setMsg('');
     updateLuSubAndLabels();
     var stackEl = document.getElementById('stackSettings');
@@ -4007,8 +4038,8 @@
     modeState[platform][slateMode].players    = players;
     modeState[platform][slateMode].topPlayers = topPlayers;
     platformCap[platform] = salaryCap;
-    platformMarketData[platform].marketProjections = marketProjections;
-    platformMarketData[platform].marketProjectionsLoadedAt = marketProjectionsLoadedAt;
+    platformMarketData[platform][slateMode].marketProjections = marketProjections;
+    platformMarketData[platform][slateMode].marketProjectionsLoadedAt = marketProjectionsLoadedAt;
 
     // Point collapsedSections at the NEW platform's own saved collapse
     // preferences - no need to stash the current one, since it's already
@@ -4031,8 +4062,8 @@
     salaryCap = platformCap[platform];
     var capEl = document.getElementById('capInput');
     if (capEl) capEl.value = salaryCap;
-    marketProjections = platformMarketData[platform].marketProjections;
-    marketProjectionsLoadedAt = platformMarketData[platform].marketProjectionsLoadedAt;
+    marketProjections = platformMarketData[platform][slateMode].marketProjections;
+    marketProjectionsLoadedAt = platformMarketData[platform][slateMode].marketProjectionsLoadedAt;
 
     // Restore this platform's player pool/lineups for whichever mode you're
     // currently in (Main Slate stays Main Slate across the platform swap).
