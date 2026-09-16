@@ -1399,6 +1399,14 @@
     if (!blowout && moderateSpread && !isFavorite && ownImplied < ownFloor) return 'grind';
     if (!blowout && highTotal) return 'shootout';
     if (!blowout && mediumTotal) return 'live';
+    // Symmetric case to the downgrade above: a moderate favorite can have a
+    // genuinely healthy OWN implied total even when the combined GAME total
+    // falls just short of Medium - a moderate spread pulls more of that
+    // total toward them specifically. Give them credit for that rather than
+    // defaulting to Grind purely because the game-level number came up
+    // short (never upgrades past Live - this isn't evidence the OTHER side
+    // is live too, just that this side individually is).
+    if (isFavorite && ownImplied >= ownFloor) return 'live';
     return 'grind';
   }
 
