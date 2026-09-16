@@ -327,6 +327,10 @@
         <label>Moderate spread ≥</label>
         <input id="thModerateSpread" type="number" step="0.5" value="3.5" style="width:68px;">
       </div>
+      <div class="field">
+        <label title="A team's own implied total needs to clear this to earn Live on its own, or fall below it to get downgraded to Grind - independent of the combined game total.">Team total floor ≥</label>
+        <input id="thTeamFloor" type="number" step="0.5" value="24" style="width:68px;">
+      </div>
       <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);margin-top:4px;">
         <button id="loadUnabatedBtn">Load from Unabated</button>
         <button id="refreshLinesBtn">Refresh lines</button>
@@ -1394,8 +1398,16 @@
     // real number (e.g. 51.5 total, 3.5 spread still leaves the dog at 24).
     // Only downgrade when the spread has ALSO actually pulled this team's
     // own implied total below a real floor - both conditions have to be true.
+    // This floor is a direct, independently-tuned setting now (not derived
+    // from Medium Total/2) - by the time either check below runs, the game
+    // total is already confirmed under High Total, which mathematically
+    // caps how high BOTH sides can be at once, so requiring the opponent to
+    // ALSO clear this same floor here would make the rule unreachable -
+    // raising this one number already pulls the effective opponent ceiling
+    // down with it (a 24 floor on one side leaves at most ~22.5 for the
+    // other, given the current total ceiling).
     var ownImplied = implied(total, spread, isFavorite);
-    var ownFloor = mediumTotalThreshold / 2;
+    var ownFloor = parseFloat(document.getElementById('thTeamFloor').value || 24);
     if (!blowout && moderateSpread && !isFavorite && ownImplied < ownFloor) return 'grind';
     if (!blowout && highTotal) return 'shootout';
     if (!blowout && mediumTotal) return 'live';
@@ -1764,7 +1776,8 @@
           blowout: document.getElementById('thBlowout').value,
           highTotal: document.getElementById('thHighTotal').value,
           mediumTotal: document.getElementById('thMediumTotal').value,
-          moderateSpread: document.getElementById('thModerateSpread').value
+          moderateSpread: document.getElementById('thModerateSpread').value,
+          teamFloor: document.getElementById('thTeamFloor').value
         },
         cap: salaryCap,
         stackSettings: stackSettings,
@@ -1851,6 +1864,7 @@
         document.getElementById('thHighTotal').value = state.thresholds.highTotal || 46.5;
         document.getElementById('thMediumTotal').value = state.thresholds.mediumTotal || 44;
         document.getElementById('thModerateSpread').value = state.thresholds.moderateSpread || 3.5;
+        document.getElementById('thTeamFloor').value = state.thresholds.teamFloor || 24;
       }
       salaryCap = state.cap || 60000;
       document.getElementById('capInput').value = salaryCap;
@@ -4164,6 +4178,7 @@
   document.getElementById('thHighTotal').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
   document.getElementById('thMediumTotal').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
   document.getElementById('thModerateSpread').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
+  document.getElementById('thTeamFloor').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
 
   var dropzone = document.getElementById('dropzone');
   var csvFile = document.getElementById('csvFile');
