@@ -2460,24 +2460,17 @@
   // "in scope". A filter of 'mvp' requires that exact player in the MVP
   // slot specifically (Single Game only); 'any' requires them anywhere.
   // Always excludes fully-empty lineups.
-  function getExposureFilteredIndices(){
+  // Player-lock filter only (ignores the stack/bring-back dropdowns) - this
+  // is the scope the Stack/Bring-back dropdown OPTIONS are built from, so
+  // locking in a player (e.g. an RB and a DEF) automatically narrows those
+  // dropdowns down to only the stacks/bring-backs that actually co-occur
+  // with the locked player(s), instead of listing every stack in the batch.
+  function getPlayerFilteredIndices(){
     var filterIds = Object.keys(exposureFilterIds);
     var mvpSlotDef = slateMode === 'sg' ? activeSLOT_DEFS.find(function(s){ return s.mvp; }) : null;
     return lineups.map(function(_, idx){ return idx; }).filter(function(idx){
       var lu = lineups[idx];
       if (!activeSLOT_DEFS.some(function(s){ return lu[s.key]; })) return false;
-
-      if (stackFilterTeam || bringBackFilterTeam){
-        var c = lineupConstruction(lu);
-        if (!c) return false;
-        if (stackFilterTeam && c.stackTeam !== stackFilterTeam) return false;
-        if (bringBackFilterTeam === '__NONE__'){
-          if (c.bringBack) return false;
-        } else if (bringBackFilterTeam){
-          if (!c.bringBack || c.bringBackTeam !== bringBackFilterTeam) return false;
-        }
-      }
-
       if (!filterIds.length) return true;
       return filterIds.every(function(fid){
         if (exposureFilterIds[fid] === 'mvp' && mvpSlotDef){
@@ -2485,6 +2478,22 @@
         }
         return activeSLOT_DEFS.some(function(s){ return lu[s.key] && String(lu[s.key].id) === fid; });
       });
+    });
+  }
+
+  function getExposureFilteredIndices(){
+    var base = getPlayerFilteredIndices();
+    if (!stackFilterTeam && !bringBackFilterTeam) return base;
+    return base.filter(function(idx){
+      var c = lineupConstruction(lineups[idx]);
+      if (!c) return false;
+      if (stackFilterTeam && c.stackTeam !== stackFilterTeam) return false;
+      if (bringBackFilterTeam === '__NONE__'){
+        if (c.bringBack) return false;
+      } else if (bringBackFilterTeam){
+        if (!c.bringBack || c.bringBackTeam !== bringBackFilterTeam) return false;
+      }
+      return true;
     });
   }
 
@@ -2522,19 +2531,28 @@
       }).join('') +
       '</select>';
 
-    // Stack/bring-back drill-down options, scanned across the FULL current
-    // batch (not whatever's already filtered) so the dropdown always shows
-    // every stack/bring-back you actually generated, not just what survives
-    // the other active filters.
+    // Stack/bring-back drill-down options, scanned only across lineups that
+    // survive the currently locked-in player filter(s) - so locking an RB
+    // and a DEF immediately narrows these dropdowns down to just the
+    // stacks/bring-backs that actually co-occur with those two players,
+    // rather than every stack in the full 200-lineup batch.
+    var playerScopedIndices = getPlayerFilteredIndices();
     var stackTeamsSeen = {}, bbTeamsSeen = {};
-    lineups.forEach(function(lu){
-      var c = lineupConstruction(lu);
+    playerScopedIndices.forEach(function(idx){
+      var c = lineupConstruction(lineups[idx]);
       if (!c) return;
       if (c.stackTeam) stackTeamsSeen[c.stackTeam] = true;
       if (c.bringBack && c.bringBackTeam) bbTeamsSeen[c.bringBackTeam] = true;
     });
     var stackTeamOptions = Object.keys(stackTeamsSeen).sort();
     var bbTeamOptions = Object.keys(bbTeamsSeen).sort();
+
+    // If a previously-selected stack/bring-back no longer occurs anywhere in
+    // the newly-narrowed scope (e.g. you just locked in a player that never
+    // shares a lineup with that stack), drop it automatically rather than
+    // silently filtering everything down to zero lineups.
+    if (stackFilterTeam && stackTeamOptions.indexOf(stackFilterTeam) === -1) stackFilterTeam = null;
+    if (bringBackFilterTeam && bringBackFilterTeam !== '__NONE__' && bbTeamOptions.indexOf(bringBackFilterTeam) === -1) bringBackFilterTeam = null;
 
     var stackFilterHtml = stackTeamOptions.length ?
       '<select id="stackTeamFilter" style="font-size:12px;margin-bottom:8px;margin-left:8px;">' +
