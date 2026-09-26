@@ -2328,13 +2328,16 @@
     });
 
     var filterBannerHtml = '';
-    if (filterIds.length){
-      var names = filterIds.map(function(id){
-        var nm = exposureFilterPlayers[id] ? exposureFilterPlayers[id].name : id;
-        return exposureFilterIds[id] === 'mvp' ? (nm + ' (as MVP)') : nm;
-      });
+    var filterDescriptions = filterIds.map(function(id){
+      var nm = exposureFilterPlayers[id] ? exposureFilterPlayers[id].name : id;
+      return exposureFilterIds[id] === 'mvp' ? (nm + ' (as MVP)') : nm;
+    });
+    if (stackFilterTeam) filterDescriptions.push('Stack: ' + stackFilterTeam);
+    if (bringBackFilterTeam === '__NONE__') filterDescriptions.push('No bring-back');
+    else if (bringBackFilterTeam) filterDescriptions.push('Bring-back: ' + bringBackFilterTeam);
+    if (filterDescriptions.length){
       filterBannerHtml = '<div class="sub" style="margin-bottom:10px;">Showing ' + visibleIndices.length + ' of ' + lineups.length +
-        ' lineups matching: <strong>' + names.join(', ') + '</strong></div>';
+        ' lineups matching: <strong>' + filterDescriptions.join(', ') + '</strong></div>';
     }
 
     var cardsHtml = visibleIndices.map(function(idx){
@@ -2399,8 +2402,8 @@
         '</div>';
     }).join('');
 
-    var emptyFilterMsg = (filterIds.length && !visibleIndices.length)
-      ? '<div class="lc-empty" style="padding:10px;">No lineups contain the selected player(s).</div>' : '';
+    var emptyFilterMsg = (filterDescriptions.length && !visibleIndices.length)
+      ? '<div class="lc-empty" style="padding:10px;">No lineups match the selected filter(s).</div>' : '';
     view.innerHTML = filterBannerHtml + '<div class="lc-scroll">' + cardsHtml + '</div>' + emptyFilterMsg;
 
     // Clicking a card switches to editing that lineup (mirrors the LU tabs);
@@ -2430,6 +2433,17 @@
   var exposureFilterIds = {}; // player id -> 'any' | 'mvp', for filtering Compare Lineups cards
   var exposureFilterPlayers = {}; // player id -> player object, for the "showing X, Y" label
 
+  // Stack/bring-back drill-down, same idea as the player exposure filter but
+  // keyed off lineupConstruction()'s output instead of a specific player id.
+  // stackFilterTeam: null (any) or a team abbr - only lineups QB-stacked with that team.
+  // bringBackFilterTeam: null (any), '__NONE__' (no bring-back at all), or a team abbr
+  // - only lineups that actually rostered a bring-back player from that team
+  // (bringBackTeam alone isn't enough since lineupConstruction sets it to the
+  // QB's opponent whenever the QB HAS an opponent, whether or not a bring-back
+  // player was actually drafted - c.bringBack is the real signal).
+  var stackFilterTeam = null;
+  var bringBackFilterTeam = null;
+
   // Indices of lineups that satisfy ALL currently-selected exposure filters
   // (not just any one) - shared by both the tracker's own stats and the
   // Compare Lineups card list, so they always agree on which lineups are
@@ -2442,6 +2456,18 @@
     return lineups.map(function(_, idx){ return idx; }).filter(function(idx){
       var lu = lineups[idx];
       if (!activeSLOT_DEFS.some(function(s){ return lu[s.key]; })) return false;
+
+      if (stackFilterTeam || bringBackFilterTeam){
+        var c = lineupConstruction(lu);
+        if (!c) return false;
+        if (stackFilterTeam && c.stackTeam !== stackFilterTeam) return false;
+        if (bringBackFilterTeam === '__NONE__'){
+          if (c.bringBack) return false;
+        } else if (bringBackFilterTeam){
+          if (!c.bringBack || c.bringBackTeam !== bringBackFilterTeam) return false;
+        }
+      }
+
       if (!filterIds.length) return true;
       return filterIds.every(function(fid){
         if (exposureFilterIds[fid] === 'mvp' && mvpSlotDef){
@@ -2485,6 +2511,33 @@
         return '<option value="' + pos + '"' + (exposurePositionFilter===pos?' selected':'') + '>' + (pos==='ALL'?'All positions':pos) + '</option>';
       }).join('') +
       '</select>';
+
+    // Stack/bring-back drill-down options, scanned across the FULL current
+    // batch (not whatever's already filtered) so the dropdown always shows
+    // every stack/bring-back you actually generated, not just what survives
+    // the other active filters.
+    var stackTeamsSeen = {}, bbTeamsSeen = {};
+    lineups.forEach(function(lu){
+      var c = lineupConstruction(lu);
+      if (!c) return;
+      if (c.stackTeam) stackTeamsSeen[c.stackTeam] = true;
+      if (c.bringBack && c.bringBackTeam) bbTeamsSeen[c.bringBackTeam] = true;
+    });
+    var stackTeamOptions = Object.keys(stackTeamsSeen).sort();
+    var bbTeamOptions = Object.keys(bbTeamsSeen).sort();
+
+    var stackFilterHtml = stackTeamOptions.length ?
+      '<select id="stackTeamFilter" style="font-size:12px;margin-bottom:8px;margin-left:8px;">' +
+        '<option value="">Any stack</option>' +
+        stackTeamOptions.map(function(t){ return '<option value="'+t+'"'+(stackFilterTeam===t?' selected':'')+'>Stack: '+t+'</option>'; }).join('') +
+      '</select>' : '';
+
+    var bbFilterHtml = bbTeamOptions.length ?
+      '<select id="bringBackTeamFilter" style="font-size:12px;margin-bottom:8px;margin-left:8px;">' +
+        '<option value="">Any bring-back</option>' +
+        '<option value="__NONE__"'+(bringBackFilterTeam==='__NONE__'?' selected':'')+'>No bring-back</option>' +
+        bbTeamOptions.map(function(t){ return '<option value="'+t+'"'+(bringBackFilterTeam===t?' selected':'')+'>Bring-back: '+t+'</option>'; }).join('') +
+      '</select>' : '';
 
     var mvpSlotDef = slateMode === 'sg' ? activeSLOT_DEFS.find(function(s){ return s.mvp; }) : null;
 
@@ -2569,12 +2622,12 @@
       '</tr>';
     }).join('');
 
-    var filterCount = Object.keys(exposureFilterIds).length;
+    var filterCount = Object.keys(exposureFilterIds).length + (stackFilterTeam ? 1 : 0) + (bringBackFilterTeam ? 1 : 0);
     var filterNote = filterCount
       ? '<div class="sub" style="margin-bottom:8px;">Showing only lineups matching ALL selected filters - stats above are scoped to those lineups too. <button id="exposureClearFilterBtn" style="margin-left:6px;">Clear filter (' + filterCount + ')</button></div>'
-      : '<div class="sub" style="margin-bottom:8px;">Click a player to drill into lineups that include them' + (showMvpCol ? ', or click their "As MVP" cell to filter to lineups where they\'re specifically the MVP' : '') + ' - select more than one to combine filters.</div>';
+      : '<div class="sub" style="margin-bottom:8px;">Click a player to drill into lineups that include them' + (showMvpCol ? ', or click their "As MVP" cell to filter to lineups where they\'re specifically the MVP' : '') + ', or use the Stack/Bring-back dropdowns' + (stackTeamOptions.length||bbTeamOptions.length?'':' (once you\'ve generated some lineups)') + ' - combine as many filters as you like.</div>';
 
-    view.innerHTML = headerHtml + posFilterHtml + filterNote +
+    view.innerHTML = headerHtml + posFilterHtml + stackFilterHtml + bbFilterHtml + filterNote +
       '<table style="width:100%;margin-bottom:20px;">' +
         '<thead><tr>' +
           headerCell('name', 'Player') + headerCell('position', 'Pos') + headerCell('team', 'Team') +
@@ -2590,6 +2643,20 @@
     if (posFilterSel) posFilterSel.addEventListener('change', function(){
       exposurePositionFilter = this.value;
       renderExposureTracker();
+    });
+
+    var stackFilterSel = document.getElementById('stackTeamFilter');
+    if (stackFilterSel) stackFilterSel.addEventListener('change', function(){
+      stackFilterTeam = this.value || null;
+      renderExposureTracker();
+      renderLineupCompare();
+    });
+
+    var bbFilterSel = document.getElementById('bringBackTeamFilter');
+    if (bbFilterSel) bbFilterSel.addEventListener('change', function(){
+      bringBackFilterTeam = this.value || null;
+      renderExposureTracker();
+      renderLineupCompare();
     });
 
     view.querySelectorAll('[data-exposure-sort]').forEach(function(th){
@@ -2636,6 +2703,8 @@
       e.stopPropagation();
       exposureFilterIds = {};
       exposureFilterPlayers = {};
+      stackFilterTeam = null;
+      bringBackFilterTeam = null;
       renderExposureTracker();
       renderLineupCompare();
     });
@@ -4002,6 +4071,8 @@
     // Always clear on switch rather than let it carry over.
     exposureFilterIds = {};
     exposureFilterPlayers = {};
+    stackFilterTeam = null;
+    bringBackFilterTeam = null;
     // Switch
     slateMode = mode;
     activeSLOT_DEFS = mode === 'sg' ? SG_SLOT_DEFS : SLOT_DEFS;
@@ -4073,6 +4144,8 @@
     // reasoning as the mode switch above.
     exposureFilterIds = {};
     exposureFilterPlayers = {};
+    stackFilterTeam = null;
+    bringBackFilterTeam = null;
 
     platform = newPlatform;
     applyPlatformSlotDefs();
