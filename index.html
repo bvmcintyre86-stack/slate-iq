@@ -697,7 +697,7 @@
       ? 'Single Game: 1 ' + captainWord + ' (1.5x pts) + ' + (SG_SLOT_DEFS.length - 1) + ' FLEX. Roster from one game only.'
       : 'Build up to ' + MAX_LINEUPS + ' lineups. Click a card below to edit it.';
     var mkt3xHeader = document.getElementById('mkt3xHeader');
-    if (mkt3xHeader) mkt3xHeader.innerHTML = (slateMode==='sg' ? '2x' : '3x') + ' &Delta;';
+    if (mkt3xHeader) mkt3xHeader.innerHTML = valueTargetLabel() + ' &Delta;';
     var mvpFilterLabel = document.getElementById('mvpFilterLabel');
     if (mvpFilterLabel) mvpFilterLabel.textContent = captainWord + ' must be';
   }
@@ -786,8 +786,18 @@
   // MVP's own 1.5x multiplier even factors in. Scaling the classic 3x value
   // target down by that same ratio lands at 2x - the mode-appropriate
   // equivalent, not an arbitrary different number.
+  // On Main Slate specifically, DK's $50k cap (vs FD's $60k) shifts the same
+  // per-$1,000 bar higher, so DK Main uses a 4x target while FD Main keeps 3x -
+  // per-platform preference, not derived automatically from the cap ratio.
   function valueTargetMultiplier(){
-    return slateMode === 'sg' ? 2 : 3;
+    if (slateMode === 'sg') return 2;
+    return platform === 'dk' ? 4 : 3;
+  }
+
+  // Column-header label matching whatever valueTargetMultiplier() currently
+  // returns, so the two never drift apart across platform/mode switches.
+  function valueTargetLabel(){
+    return valueTargetMultiplier() + 'x';
   }
 
   function mkt3xDelta(p){
@@ -3536,7 +3546,7 @@
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
-        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th id="tpValueHeader">'+(slateMode==='sg'?'2x':'3x')+' &Delta;</th><th>Script</th>'
+        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
         +'<th></th><th></th></tr></thead><tbody>'+allRows+'</tbody></table>';
     } else {
       var byTier2 = {1:[],2:[],3:[],0:[]};
@@ -3552,7 +3562,7 @@
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
-        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th id="tpValueHeader">'+(slateMode==='sg'?'2x':'3x')+' &Delta;</th><th>Script</th>'
+        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
         +'<th>Rank</th><th>Tier</th><th></th><th></th></tr></thead><tbody>'+posRows+'</tbody></table>';
     }
     list.querySelectorAll('[data-tp-add]').forEach(function(btn){
