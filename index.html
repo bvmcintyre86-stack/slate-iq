@@ -2531,27 +2531,45 @@
       }).join('') +
       '</select>';
 
-    // Stack/bring-back drill-down options, scanned only across lineups that
-    // survive the currently locked-in player filter(s) - so locking an RB
-    // and a DEF immediately narrows these dropdowns down to just the
-    // stacks/bring-backs that actually co-occur with those two players,
-    // rather than every stack in the full 200-lineup batch.
-    var playerScopedIndices = getPlayerFilteredIndices();
-    var stackTeamsSeen = {}, bbTeamsSeen = {};
-    playerScopedIndices.forEach(function(idx){
+    // Stack/bring-back drill-down options - each dropdown's OWN option list
+    // is scanned across lineups scoped by the locked-in player(s) PLUS
+    // whatever's selected in the OTHER dropdown (never itself, or picking a
+    // stack would immediately wipe out its own option list). That makes all
+    // three filters (players, stack, bring-back) narrow each other mutually:
+    // locking a player narrows both dropdowns, and picking a stack team also
+    // narrows which bring-backs are even still possible, and vice versa.
+    function scopedIndicesExcluding(excludeStack, excludeBringBack){
+      return getPlayerFilteredIndices().filter(function(idx){
+        var c = lineupConstruction(lineups[idx]);
+        if (!c) return false;
+        if (!excludeStack && stackFilterTeam && c.stackTeam !== stackFilterTeam) return false;
+        if (!excludeBringBack && bringBackFilterTeam){
+          if (bringBackFilterTeam === '__NONE__'){ if (c.bringBack) return false; }
+          else if (!c.bringBack || c.bringBackTeam !== bringBackFilterTeam) return false;
+        }
+        return true;
+      });
+    }
+
+    var stackTeamsSeen = {};
+    scopedIndicesExcluding(true, false).forEach(function(idx){
       var c = lineupConstruction(lineups[idx]);
-      if (!c) return;
-      if (c.stackTeam) stackTeamsSeen[c.stackTeam] = true;
-      if (c.bringBack && c.bringBackTeam) bbTeamsSeen[c.bringBackTeam] = true;
+      if (c && c.stackTeam) stackTeamsSeen[c.stackTeam] = true;
     });
     var stackTeamOptions = Object.keys(stackTeamsSeen).sort();
-    var bbTeamOptions = Object.keys(bbTeamsSeen).sort();
 
-    // If a previously-selected stack/bring-back no longer occurs anywhere in
-    // the newly-narrowed scope (e.g. you just locked in a player that never
-    // shares a lineup with that stack), drop it automatically rather than
-    // silently filtering everything down to zero lineups.
+    // If the stack you had selected no longer occurs given the current
+    // bring-back selection (or a newly-locked player), drop it before
+    // computing the bring-back options below, so that list reflects
+    // whichever stack selection is actually still in effect.
     if (stackFilterTeam && stackTeamOptions.indexOf(stackFilterTeam) === -1) stackFilterTeam = null;
+
+    var bbTeamsSeen = {};
+    scopedIndicesExcluding(false, true).forEach(function(idx){
+      var c = lineupConstruction(lineups[idx]);
+      if (c && c.bringBack && c.bringBackTeam) bbTeamsSeen[c.bringBackTeam] = true;
+    });
+    var bbTeamOptions = Object.keys(bbTeamsSeen).sort();
     if (bringBackFilterTeam && bringBackFilterTeam !== '__NONE__' && bbTeamOptions.indexOf(bringBackFilterTeam) === -1) bringBackFilterTeam = null;
 
     var stackFilterHtml = stackTeamOptions.length ?
