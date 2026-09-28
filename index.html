@@ -342,6 +342,12 @@
         <input id="unabatedWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://unabated-proxy.bvmcintyre86.workers.dev">
         <span id="unabatedStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
       </div>
+      <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);margin-top:4px;">
+        <button id="loadMatchupBtn">Load matchup data</button>
+        <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Proxy URL</label>
+        <input id="matchupWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://matchup-proxy-worker.bvmcintyre86.workers.dev" placeholder="https://your-matchup-proxy.workers.dev">
+        <span id="matchupStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+      </div>
     </div>
 
     <div class="legend" id="legend"></div>
@@ -702,6 +708,53 @@
     if (mvpFilterLabel) mvpFilterLabel.textContent = captainWord + ' must be';
   }
   var marketProjectionsLoadedAt = null; // timestamp (ms) of the last successful "Load player props" run
+
+  // Season-context matchup data (opportunity role + defense-vs-position),
+  // pulled from a separate Cloudflare Worker proxying nflverse's free public
+  // player-stats CSV. NOT platform/mode scoped like marketProjections - it's
+  // the same underlying season data regardless of which slate/platform
+  // you're building for, so it's a single global cache.
+  var matchupData = null; // { season, weeksSeen, players:{normName:{...}}, defenseVsPosition:{TEAM:{POS:{...}}} }
+  var matchupDataLoadedAt = null;
+
+  // Looks up a player's role/opportunity numbers plus how their SPECIFIC
+  // opponent this week has fared against that position - the two "extra
+  // separators" this data is for. Returns null pieces (not an error) when
+  // matchup data hasn't been loaded yet or this player/team isn't in it.
+  function getMatchupInfo(p){
+    if (!matchupData || !p) return null;
+    var role = matchupData.players[normalizeName(p.name)] || null;
+    var oppRank = (p.oppTeam && matchupData.defenseVsPosition[p.oppTeam])
+      ? (matchupData.defenseVsPosition[p.oppTeam][p.position] || null)
+      : null;
+    if (!role && !oppRank) return null;
+    return { role: role, oppRank: oppRank };
+  }
+
+  async function loadMatchupData(){
+    var urlInput = document.getElementById('matchupWorkerUrl');
+    var status = document.getElementById('matchupStatus');
+    var base = (urlInput && urlInput.value || '').trim().replace(/\/+$/, '');
+    if (!base){ if (status) status.textContent = 'Set your matchup Proxy URL above first.'; return; }
+    if (status) status.textContent = 'Loading matchup data...';
+    try{
+      var resp = await fetch(base + '/matchups?_cb=' + Date.now(), { cache: 'no-store' });
+      var data = await resp.json();
+      if (!data || data.error || !data.players){
+        if (status) status.textContent = 'Matchup load failed: ' + (data && data.error ? data.error : 'unexpected response');
+        return;
+      }
+      matchupData = data;
+      matchupDataLoadedAt = Date.now();
+      if (status) status.textContent = 'Loaded ' + Object.keys(data.players).length + ' players, weeks ' +
+        (data.weeksSeen || []).join(',') + ' of ' + data.season + ' (' + new Date(matchupDataLoadedAt).toLocaleTimeString() + ').';
+      saveState();
+      renderTopPlayers();
+    } catch(e){
+      if (status) status.textContent = 'Matchup load failed: ' + (e && e.message || e);
+    }
+  }
+  document.getElementById('loadMatchupBtn').addEventListener('click', loadMatchupData);
 
   // Human-readable "last loaded" message, shown on page load if props were
   // restored from a previous session, and after any fresh load.
@@ -1782,6 +1835,9 @@
         slateMode: slateMode,
         platform: platform,
         unabatedWorkerUrl: document.getElementById('unabatedWorkerUrl') ? document.getElementById('unabatedWorkerUrl').value : '',
+        matchupWorkerUrl: document.getElementById('matchupWorkerUrl') ? document.getElementById('matchupWorkerUrl').value : '',
+        matchupData: matchupData,
+        matchupDataLoadedAt: matchupDataLoadedAt,
         thresholds: {
           blowout: document.getElementById('thBlowout').value,
           highTotal: document.getElementById('thHighTotal').value,
@@ -1869,6 +1925,16 @@
         document.getElementById('dkPlatformBtn').classList.toggle('active', platform==='dk');
       }
       if (state.unabatedWorkerUrl && document.getElementById('unabatedWorkerUrl')) document.getElementById('unabatedWorkerUrl').value = state.unabatedWorkerUrl;
+      if (state.matchupWorkerUrl && document.getElementById('matchupWorkerUrl')) document.getElementById('matchupWorkerUrl').value = state.matchupWorkerUrl;
+      if (state.matchupData){
+        matchupData = state.matchupData;
+        matchupDataLoadedAt = state.matchupDataLoadedAt || null;
+        var matchupStatusEl = document.getElementById('matchupStatus');
+        if (matchupStatusEl && matchupDataLoadedAt) matchupStatusEl.textContent =
+          'Loaded ' + Object.keys(matchupData.players||{}).length + ' players, weeks ' +
+          (matchupData.weeksSeen||[]).join(',') + ' of ' + matchupData.season +
+          ' (' + new Date(matchupDataLoadedAt).toLocaleTimeString() + ').';
+      }
       if (state.thresholds){
         document.getElementById('thBlowout').value = state.thresholds.blowout || 6.5;
         document.getElementById('thHighTotal').value = state.thresholds.highTotal || 46.5;
@@ -3544,7 +3610,65 @@
       var color = valueDelta <= 0 ? 'var(--gold)' : (valueDelta <= 2 ? 'var(--teal)' : 'var(--muted)');
       return '<td class="mono" style="color:'+color+';font-weight:'+(valueDelta<=0?'700':'400')+';">'+(valueDelta > 0 ? '+' : '')+valueDelta.toFixed(1)+'</td>';
     })();
-    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
+    var matchupCells = renderMatchupCells(p);
+    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+matchupCells+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
+  }
+
+  // The two "extra separator" columns from nflverse matchup data: how the
+  // player's specific opponent has fared defending their position this
+  // season (Opp), and the player's own opportunity role - WOPR for
+  // pass-catchers, carries/game for RBs, attempts/game for QBs (Role).
+  // Prefers the last-2-week number over season-to-date since a role change
+  // (or a new starter) shows up there first - falls back to season-to-date
+  // when there aren't 2 games yet.
+  function renderMatchupCells(p){
+    if (!matchupData){
+      return '<td class="mono" style="color:var(--muted);" title="Load matchup data in Game Environment first.">—</td>'+
+             '<td class="mono" style="color:var(--muted);" title="Load matchup data in Game Environment first.">—</td>';
+    }
+    var info = getMatchupInfo(p);
+    var oppRank = info && info.oppRank;
+    var role = info && info.role;
+
+    var oppCell;
+    if (!oppRank){
+      oppCell = '<td class="mono" style="color:var(--muted);">—</td>';
+    } else {
+      // Rank 1 = allows the MOST fantasy points at this position (good matchup
+      // to attack) - color it favorably; rank near teamsRanked = stingy.
+      var pct = (oppRank.rank - 1) / Math.max(1, oppRank.teamsRanked - 1); // 0 = most generous, 1 = stingiest
+      var color = pct <= 0.33 ? 'var(--teal)' : (pct >= 0.67 ? 'var(--brick)' : 'var(--muted)');
+      oppCell = '<td class="mono" style="color:'+color+';cursor:help;" title="'+p.oppTeam+' allows '+oppRank.avgAllowedPpr+' PPR pts/gm to '+p.position+
+        ' this season (rank '+oppRank.rank+' of '+oppRank.teamsRanked+', 1=most generous).">#'+oppRank.rank+'</td>';
+    }
+
+    var roleCell;
+    if (!role){
+      roleCell = '<td class="mono" style="color:var(--muted);">—</td>';
+    } else {
+      var pos = p.position;
+      var l2 = role.last2 || {}, std = role.seasonToDate || {};
+      var val, label, tip;
+      if (pos === 'WR' || pos === 'TE'){
+        val = l2.wopr != null ? l2.wopr : std.wopr;
+        label = val != null ? val.toFixed(2)+' wopr' : '—';
+        tip = 'WOPR (last 2 gm: '+(l2.wopr!=null?l2.wopr.toFixed(2):'—')+', season: '+(std.wopr!=null?std.wopr.toFixed(2):'—')+
+          ') - target share '+(l2.targetShare!=null?(l2.targetShare*100).toFixed(0)+'%':'—')+', air yards share '+(l2.airYardsShare!=null?(l2.airYardsShare*100).toFixed(0)+'%':'—')+' over last 2 games.';
+      } else if (pos === 'RB'){
+        val = l2.carriesPerGame != null ? l2.carriesPerGame : std.carriesPerGame;
+        label = val != null ? val.toFixed(1)+' car/gm' : '—';
+        tip = 'Carries/gm (last 2: '+(l2.carriesPerGame!=null?l2.carriesPerGame.toFixed(1):'—')+', season: '+(std.carriesPerGame!=null?std.carriesPerGame.toFixed(1):'—')+
+          ') - target share '+(l2.targetShare!=null?(l2.targetShare*100).toFixed(0)+'%':'—')+' over last 2 games.';
+      } else if (pos === 'QB'){
+        val = l2.attemptsPerGame != null ? l2.attemptsPerGame : std.attemptsPerGame;
+        label = val != null ? val.toFixed(1)+' att/gm' : '—';
+        tip = 'Pass attempts/gm (last 2: '+(l2.attemptsPerGame!=null?l2.attemptsPerGame.toFixed(1):'—')+', season: '+(std.attemptsPerGame!=null?std.attemptsPerGame.toFixed(1):'—')+').';
+      } else {
+        label = '—'; tip = '';
+      }
+      roleCell = '<td class="mono" style="color:'+(val!=null?'var(--teal)':'var(--muted)')+';cursor:help;font-size:11px;" title="'+tip.replace(/"/g,'&quot;')+'">'+label+'</td>';
+    }
+    return oppCell + roleCell;
   }
 
   function renderTopPlayers(){
@@ -3577,12 +3701,13 @@
       var allRows = '';
       [1,2,3,0].forEach(function(tier){
         if (!byTier[tier].length) return;
-        allRows += '<tr class="tp-tier-hdr-row"><td colspan="11"><span class="tp-tier-badge '+tc2[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl[tier]+' ('+byTier[tier].length+')</td></tr>';
+        allRows += '<tr class="tp-tier-hdr-row"><td colspan="13"><span class="tp-tier-badge '+tc2[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl[tier]+' ('+byTier[tier].length+')</td></tr>';
         allRows += byTier[tier].map(function(p){return renderTPCard(p,false);}).join('');
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
         +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
+        +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>'
         +'<th></th><th></th></tr></thead><tbody>'+allRows+'</tbody></table>';
     } else {
       var byTier2 = {1:[],2:[],3:[],0:[]};
@@ -3593,12 +3718,13 @@
       var posRows = '';
       [1,2,3,0].forEach(function(tier){
         if (!byTier2[tier].length) return;
-        posRows += '<tr class="tp-tier-hdr-row"><td colspan="13"><span class="tp-tier-badge '+tc3[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl2[tier]+' ('+byTier2[tier].length+')</td></tr>';
+        posRows += '<tr class="tp-tier-hdr-row"><td colspan="15"><span class="tp-tier-badge '+tc3[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl2[tier]+' ('+byTier2[tier].length+')</td></tr>';
         posRows += byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('');
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
         +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
+        +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>'
         +'<th>Rank</th><th>Tier</th><th></th><th></th></tr></thead><tbody>'+posRows+'</tbody></table>';
     }
     list.querySelectorAll('[data-tp-add]').forEach(function(btn){
