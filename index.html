@@ -342,12 +342,6 @@
         <input id="unabatedWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://unabated-proxy.bvmcintyre86.workers.dev">
         <span id="unabatedStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
       </div>
-      <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line);margin-top:4px;">
-        <button id="loadMatchupBtn">Load matchup data</button>
-        <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Proxy URL</label>
-        <input id="matchupWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://matchup-proxy-worker.bvmcintyre86.workers.dev" placeholder="https://your-matchup-proxy.workers.dev">
-        <span id="matchupStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
-      </div>
     </div>
 
     <div class="legend" id="legend"></div>
@@ -446,7 +440,7 @@
     <input type="file" id="csvFile" accept=".csv" style="display:none;">
 
     <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:12px;margin-top:8px;border-top:1px solid var(--line);">
-      <button id="loadPropsBtn">Load player props</button>
+      <button id="loadPropsBtn">Load Unabated props</button>
       <span style="color:var(--line);padding:0 4px;">|</span>
       <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Projection source</label>
       <select id="projSourceSel" style="font-size:12px;">
@@ -455,6 +449,17 @@
         <option value="blend">Blend (50/50)</option>
       </select>
       <span id="propsStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+    </div>
+    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
+      <button id="loadKalshiBtn">Load Kalshi props</button>
+      <input id="kalshiWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://kalshi-proxy-deno.bvmcintyre86-stack.deno.net" placeholder="https://your-kalshi-proxy.deno.dev">
+      <span id="kalshiStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+    </div>
+    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
+      <button id="loadMatchupBtn">Load matchup data</button>
+      <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Proxy URL</label>
+      <input id="matchupWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://matchup-proxy-worker.bvmcintyre86.workers.dev" placeholder="https://your-matchup-proxy.workers.dev">
+      <span id="matchupStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
     </div>
     <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
       <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Audit a player</label>
@@ -487,9 +492,12 @@
             <th data-key="salary">Salary</th>
             <th data-key="fppg">FPPG</th>
             <th data-key="mkt">Mkt</th>
+            <th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th>
             <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their actual Mkt projection. Smaller or negative = closer to or past that target.">3x &Delta;</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="tag">Script</th>
+            <th title="Opponent's rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th>
+            <th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>
             <th data-key="actualPts" title="Enter after the games are final, to compare against your Mkt projection.">Actual</th>
             <th data-key="ownership" title="Enter from FanDuel/DraftKings' own post-contest ownership export.">Own %</th>
             <th data-key="mvpOwnership" id="mvpOwnHeader" title="Single Game only: what % of entries had this player specifically as MVP/Captain, not just anywhere in the roster.">MVP Own %</th>
@@ -664,6 +672,10 @@
   };
   var marketProjections = {}; // normalized "first last" -> {fp, breakdown, personId}
 
+  // ── Kalshi (alongside Unabated's props, as a cross-check) ────────────────
+  var kalshiProjections = {}; // normalized "first last" -> {fp, breakdown}
+  var kalshiProjectionsLoadedAt = null;
+
   // The one confirmed, meaningful scoring difference between the two
   // platforms: DraftKings uses full PPR (1.0 pt/reception), FanDuel uses
   // half-PPR (0.5). Everything else (yardage rates, TD values, the
@@ -707,7 +719,7 @@
     var mvpFilterLabel = document.getElementById('mvpFilterLabel');
     if (mvpFilterLabel) mvpFilterLabel.textContent = captainWord + ' must be';
   }
-  var marketProjectionsLoadedAt = null; // timestamp (ms) of the last successful "Load player props" run
+  var marketProjectionsLoadedAt = null; // timestamp (ms) of the last successful "Load Unabated props" run
 
   // Season-context matchup data (opportunity role + defense-vs-position),
   // pulled from a separate Cloudflare Worker proxying nflverse's free public
@@ -762,7 +774,7 @@
     if (!marketProjectionsLoadedAt) return '';
     var mins = Math.round((Date.now() - marketProjectionsLoadedAt) / 60000);
     var when = mins < 1 ? 'just now' : mins < 60 ? (mins + ' min ago') : (Math.round(mins/60) + ' hr ago');
-    return Object.keys(marketProjections).length + ' players with market data (loaded ' + when + ' - click "Load player props" to refresh).';
+    return Object.keys(marketProjections).length + ' players with market data (loaded ' + when + ' - click "Load Unabated props" to refresh).';
   }
 
   // FanDuel's built-in yardage milestone bonuses: +3 pts each for 300+
@@ -922,6 +934,208 @@
     }
     return lines.join('\n');
   }
+
+  // Same "already-rounded-per-line" display logic as mktDisplayTotal, for
+  // Kalshi's breakdown instead of Unabated's.
+  function kalshiDisplayTotal(kp){
+    if (!kp || !kp.breakdown) return 0;
+    var sum = 0;
+    for (var k in kp.breakdown){
+      sum += Math.round(kp.breakdown[k].value * 10) / 10;
+    }
+    return Math.round(sum * 10) / 10;
+  }
+
+  function kalshiTooltip(kp, position){
+    if (!kp) return 'No Kalshi data loaded for this player yet.';
+    var lines = ['Kalshi-implied projection: ' + kalshiDisplayTotal(kp).toFixed(1) + ' pts', ''];
+    var relevant = POSITION_RELEVANT_STATS[position] || Object.keys(STAT_LABELS);
+    var shown = {};
+    relevant.forEach(function(sk){
+      shown[sk] = true;
+      var b = kp.breakdown && kp.breakdown[sk];
+      if (b){
+        lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts (' + b.threshold + '+ line, ' + Math.round(b.prob*100) + '% implied' +
+          (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')');
+      } else {
+        lines.push((STAT_LABELS[sk]||sk) + ': not posted on Kalshi');
+      }
+    });
+    var extras = [];
+    for (var sk2 in kp.breakdown){ if (!shown[sk2]) extras.push(sk2); }
+    if (extras.length){
+      lines.push('');
+      lines.push('Other (tracked, not counted toward the point total):');
+      extras.forEach(function(sk3){
+        var b3 = kp.breakdown[sk3];
+        lines.push((STAT_LABELS[sk3]||sk3) + ': ' + b3.threshold + '+ line, ' + Math.round(b3.prob*100) + '% implied' +
+          (b3.candidateCount > 1 ? ' (best of ' + b3.candidateCount + ' thresholds)' : ''));
+      });
+    }
+    return lines.join('\n');
+  }
+
+  function kalshiFreshnessMsg(){
+    if (!kalshiProjectionsLoadedAt) return '';
+    var mins = Math.round((Date.now() - kalshiProjectionsLoadedAt) / 60000);
+    var when = mins < 1 ? 'just now' : mins < 60 ? (mins + ' min ago') : (Math.round(mins/60) + ' hr ago');
+    return Object.keys(kalshiProjections).length + ' players with Kalshi data (loaded ' + when + ' - click "Load Kalshi props" to refresh).';
+  }
+
+  function setKalshiStatus(msg){
+    var el = document.getElementById('kalshiStatus');
+    if (el) el.textContent = msg;
+  }
+
+  // Maps a Kalshi NFL prop series ticker to one of our internal stat keys
+  // (from PROP_BET_TYPES) via keyword matching, rather than a hardcoded
+  // exhaustive ticker list - Kalshi adds/renames series over time, and this
+  // way anything matching a known stat keyword is picked up automatically.
+  // An unmatched series (a game-line series like KXNFLSPREAD, or a prop type
+  // we don't track) is just skipped, logged to console for visibility.
+  // "kind" decides how a threshold market converts to an expected-value
+  // proxy: 'yardage' uses the threshold itself (same logic as an Unabated
+  // O/U line), 'binary' uses the implied probability (same as an
+  // Unabated TD-type prop).
+  var KALSHI_STAT_MATCHERS = [
+    { re: /ANYTD/,       key: 'attd',       kind: 'binary'  },
+    { re: /PASSYDS/,     key: 'passYards',  kind: 'yardage' },
+    { re: /RUSHYDS/,     key: 'rushYards',  kind: 'yardage' },
+    { re: /RECYDS/,      key: 'recYards',   kind: 'yardage' },
+    { re: /RECEPTIONS?/, key: 'receptions', kind: 'yardage' },
+    { re: /PASSTD/,      key: 'passTD',     kind: 'binary'  },
+    { re: /RUSHTD/,      key: 'rushTD',     kind: 'binary'  }, // tracked, not counted (overlaps attd) - mirrors Unabated's own rushTD handling
+    { re: /RECTD/,       key: 'recTD',      kind: 'binary'  }  // tracked, not counted - no PROP_BET_TYPES slot, shown as "Other" only
+  ];
+
+  function classifyKalshiSeries(ticker){
+    for (var i=0;i<KALSHI_STAT_MATCHERS.length;i++){
+      if (KALSHI_STAT_MATCHERS[i].re.test(ticker)) return KALSHI_STAT_MATCHERS[i];
+    }
+    return null;
+  }
+
+  // Kalshi market titles for props are formatted like
+  // "Josh Allen: 250+ passing yards" - the player's name is the text before
+  // the first colon. Requires at least two words (first + last) so a
+  // single-word team/segment label doesn't get mistaken for a player.
+  function kalshiPlayerNameFromTitle(title){
+    if (!title) return null;
+    var idx = title.indexOf(':');
+    if (idx === -1) return null;
+    var name = title.slice(0, idx).trim();
+    if (!/^[A-Za-z.'\-]+(\s+[A-Za-z.'\-]+)+$/.test(name)) return null;
+    return name;
+  }
+
+  // Walks a Kalshi list endpoint's cursor pagination, same shape Unabated's
+  // own /people endpoint uses - collects every page into one array.
+  async function kalshiFetchAllPages(base, path){
+    var out = [];
+    var cursor = null;
+    var guard = 0;
+    do {
+      var sep = path.indexOf('?') === -1 ? '?' : '&';
+      var url = base + path + sep + '_cb=' + Date.now() + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+      var resp = await fetch(url, {cache:'no-store'}).then(function(r){return r.json();}).catch(function(){return null;});
+      if (!resp) break;
+      out.push(resp);
+      cursor = resp.cursor || null;
+      guard++;
+    } while (cursor && guard < 20);
+    return out;
+  }
+
+  async function fetchKalshiProjections(){
+    var workerUrl = (document.getElementById('kalshiWorkerUrl').value||'').trim().replace(/\/+$/,'');
+    if (!workerUrl){ setKalshiStatus('Set your Kalshi Proxy URL above first.'); return; }
+
+    setKalshiStatus('Finding NFL prop markets on Kalshi...');
+    var seriesPages = await kalshiFetchAllPages(workerUrl, '/series?category=Sports&limit=200');
+    var relevantSeries = []; // {ticker, key, kind}
+    var skipped = [];
+    seriesPages.forEach(function(page){
+      (page.series||[]).forEach(function(s){
+        var ticker = s.ticker || '';
+        if (ticker.indexOf('KXNFL') !== 0) return; // not an NFL series at all
+        var m = classifyKalshiSeries(ticker);
+        if (m) relevantSeries.push({ ticker: ticker, key: m.key, kind: m.kind });
+        else skipped.push(ticker);
+      });
+    });
+    if (skipped.length) console.log('Kalshi NFL series skipped (no matching stat keyword - likely a game line, not a player prop): ' + skipped.join(', '));
+    if (!relevantSeries.length){
+      setKalshiStatus('No matching NFL prop series found on Kalshi right now.');
+      return;
+    }
+
+    setKalshiStatus('Loading ' + relevantSeries.length + ' Kalshi prop market group(s)...');
+    var candidates = {}; // normalizedName -> {statKey: [{threshold, prob, kind}, ...]}
+
+    for (var i=0;i<relevantSeries.length;i++){
+      var rs = relevantSeries[i];
+      setKalshiStatus('Loading Kalshi markets... (' + (i+1) + ' of ' + relevantSeries.length + ')');
+      var eventPages = await kalshiFetchAllPages(workerUrl, '/events?series_ticker=' + rs.ticker + '&status=open&with_nested_markets=true&limit=200');
+      eventPages.forEach(function(page){
+        (page.events||[]).forEach(function(ev){
+          (ev.markets||[]).forEach(function(mkt){
+            var name = kalshiPlayerNameFromTitle(mkt.title || mkt.yes_sub_title || '');
+            if (!name) return;
+            var threshold = mkt.floor_strike;
+            if (threshold === undefined || threshold === null){
+              var m2 = /(\d+(\.\d+)?)\+/.exec(mkt.title || '');
+              threshold = m2 ? parseFloat(m2[1]) : null;
+            }
+            if (threshold === null) return;
+            var bid = mkt.yes_bid_dollars, ask = mkt.yes_ask_dollars, last = mkt.last_price_dollars;
+            var prob = (bid != null && ask != null && (bid > 0 || ask > 0)) ? (bid + ask) / 2 : (last != null ? last : null);
+            if (prob === null) return;
+            var norm = normalizeName(name);
+            if (!candidates[norm]) candidates[norm] = {};
+            if (!candidates[norm][rs.key]) candidates[norm][rs.key] = [];
+            candidates[norm][rs.key].push({ threshold: threshold, prob: prob, kind: rs.kind });
+          });
+        });
+      });
+    }
+
+    kalshiProjections = {};
+    var matched = 0;
+    for (var normName in candidates){
+      var fp = 0;
+      var breakdown = {};
+      var stats = candidates[normName];
+      for (var sk in stats){
+        // Among however many threshold markets exist for this player/stat,
+        // pick whichever is priced closest to a coinflip (50%) - the same
+        // EV-proxy logic already used for Unabated's alt-line fallback: a
+        // near-even-money line sits closest to the market's real expectation.
+        var list = stats[sk];
+        var best = null, bestDist = Infinity;
+        list.forEach(function(c){
+          var dist = Math.abs(c.prob - 0.5);
+          if (dist < bestDist){ bestDist = dist; best = c; }
+        });
+        if (!best) continue;
+        var cfg = PROP_BET_TYPES[sk];
+        var mult = cfg ? cfg.mult : 0;
+        var contribution = best.kind === 'yardage' ? best.threshold * mult : best.prob * mult;
+        fp += contribution;
+        breakdown[sk] = { value: contribution, threshold: best.threshold, prob: best.prob, candidateCount: list.length };
+      }
+      if (!Object.keys(breakdown).length) continue;
+      kalshiProjections[normName] = { fp: fp, breakdown: breakdown };
+      matched++;
+    }
+
+    kalshiProjectionsLoadedAt = Date.now();
+    setKalshiStatus(matched + ' players matched across ' + relevantSeries.length + ' Kalshi market group(s).');
+    console.log('Kalshi projections:', kalshiProjections);
+    renderTable();
+    renderTopPlayers();
+    saveState();
+  }
+  document.getElementById('loadKalshiBtn').addEventListener('click', fetchKalshiProjections);
 
   function americanToProb(price){
     price = Number(price);
@@ -1249,7 +1463,7 @@
   // versus completely absent, the way we found FanDuel to be.
   function debugBookAvailability(){
     if (!Object.keys(lastRawPregame).length){
-      console.log('debugBookAvailability: no props data loaded yet - run "Load player props" first.');
+      console.log('debugBookAvailability: no props data loaded yet - run "Load Unabated props" first.');
       return;
     }
     var counts = {}; // sourceId -> count
@@ -1305,7 +1519,7 @@
     if (!matches.length){
       console.log('No player matching "' + query + '" found in the last props pull. ' +
         'Either the name doesn\'t match exactly (check spelling/suffix), or you need to ' +
-        'run "Load player props" at least once first.');
+        'run "Load Unabated props" at least once first.');
       return;
     }
 
@@ -1838,6 +2052,9 @@
         matchupWorkerUrl: document.getElementById('matchupWorkerUrl') ? document.getElementById('matchupWorkerUrl').value : '',
         matchupData: matchupData,
         matchupDataLoadedAt: matchupDataLoadedAt,
+        kalshiWorkerUrl: document.getElementById('kalshiWorkerUrl') ? document.getElementById('kalshiWorkerUrl').value : '',
+        kalshiProjections: kalshiProjections,
+        kalshiProjectionsLoadedAt: kalshiProjectionsLoadedAt,
         thresholds: {
           blowout: document.getElementById('thBlowout').value,
           highTotal: document.getElementById('thHighTotal').value,
@@ -1926,6 +2143,12 @@
       }
       if (state.unabatedWorkerUrl && document.getElementById('unabatedWorkerUrl')) document.getElementById('unabatedWorkerUrl').value = state.unabatedWorkerUrl;
       if (state.matchupWorkerUrl && document.getElementById('matchupWorkerUrl')) document.getElementById('matchupWorkerUrl').value = state.matchupWorkerUrl;
+      if (state.kalshiWorkerUrl && document.getElementById('kalshiWorkerUrl')) document.getElementById('kalshiWorkerUrl').value = state.kalshiWorkerUrl;
+      if (state.kalshiProjections){
+        kalshiProjections = state.kalshiProjections;
+        kalshiProjectionsLoadedAt = state.kalshiProjectionsLoadedAt || null;
+        if (Object.keys(kalshiProjections).length) setKalshiStatus(kalshiFreshnessMsg());
+      }
       if (state.matchupData){
         matchupData = state.matchupData;
         matchupDataLoadedAt = state.matchupDataLoadedAt || null;
@@ -3490,6 +3713,7 @@
         action = '<span class="row-tag-full">Full</span>';
       }
       var mp = marketProjections[normalizeName(p.name)];
+      var kp = kalshiProjections[normalizeName(p.name)];
       return '<tr>'+
         '<td style="text-align:left;">'+p.name+'</td>'+
         '<td class="pos-pill">'+p.position+'</td>'+
@@ -3497,6 +3721,7 @@
         '<td class="num">'+money(p.salary)+'</td>'+
         '<td class="num">'+p.fppg.toFixed(1)+'</td>'+
         '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : '—')+'</td>'+
+        '<td class="num" style="color:'+(kp?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kp,p.position).replace(/"/g,'&quot;')+'">'+(kp ? kalshiDisplayTotal(kp).toFixed(1) : '—')+'</td>'+
         (function(){
           var delta = mkt3xDelta(p);
           if (delta === null) return '<td class="num" style="color:var(--muted);">—</td>';
@@ -3505,6 +3730,7 @@
         })()+
         '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
         '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
+        renderMatchupCells(p).replace(/class="mono"/g, 'class="num"')+
         '<td>'+
           '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">'+
             '<input type="number" step="0.1" class="row-result-input" data-actual-id="'+p.id+'" value="'+(p.actualPts!=null?p.actualPts:'')+'" style="width:64px;text-align:center;" placeholder="—">'+
@@ -3604,6 +3830,8 @@
       : '';
     var mkt = marketProjections[normalizeName(p.name)];
     var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mkt,p.position).replace(/"/g,'&quot;')+'">'+(mkt ? mktDisplayTotal(mkt).toFixed(1)+(mktCoverage(mkt,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mkt,p.position).matched+'/'+mktCoverage(mkt,p.position).total+')</span>':'') : '—')+'</td>';
+    var kalshi = kalshiProjections[normalizeName(p.name)];
+    var kalshiCell = '<td class="mono" style="color:'+(kalshi?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kalshi,p.position).replace(/"/g,'&quot;')+'">'+(kalshi ? kalshiDisplayTotal(kalshi).toFixed(1) : '—')+'</td>';
     var valueDelta = mkt3xDelta(p);
     var valueCell = (function(){
       if (valueDelta === null) return '<td class="mono" style="color:var(--muted);">—</td>';
@@ -3611,7 +3839,7 @@
       return '<td class="mono" style="color:'+color+';font-weight:'+(valueDelta<=0?'700':'400')+';">'+(valueDelta > 0 ? '+' : '')+valueDelta.toFixed(1)+'</td>';
     })();
     var matchupCells = renderMatchupCells(p);
-    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+matchupCells+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
+    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+kalshiCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+matchupCells+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
   }
 
   // The two "extra separator" columns from nflverse matchup data: how the
@@ -3701,12 +3929,12 @@
       var allRows = '';
       [1,2,3,0].forEach(function(tier){
         if (!byTier[tier].length) return;
-        allRows += '<tr class="tp-tier-hdr-row"><td colspan="13"><span class="tp-tier-badge '+tc2[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl[tier]+' ('+byTier[tier].length+')</td></tr>';
+        allRows += '<tr class="tp-tier-hdr-row"><td colspan="14"><span class="tp-tier-badge '+tc2[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl[tier]+' ('+byTier[tier].length+')</td></tr>';
         allRows += byTier[tier].map(function(p){return renderTPCard(p,false);}).join('');
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
-        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
+        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
         +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>'
         +'<th></th><th></th></tr></thead><tbody>'+allRows+'</tbody></table>';
     } else {
@@ -3718,12 +3946,12 @@
       var posRows = '';
       [1,2,3,0].forEach(function(tier){
         if (!byTier2[tier].length) return;
-        posRows += '<tr class="tp-tier-hdr-row"><td colspan="15"><span class="tp-tier-badge '+tc3[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl2[tier]+' ('+byTier2[tier].length+')</td></tr>';
+        posRows += '<tr class="tp-tier-hdr-row"><td colspan="16"><span class="tp-tier-badge '+tc3[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl2[tier]+' ('+byTier2[tier].length+')</td></tr>';
         posRows += byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('');
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
-        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
+        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
         +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>'
         +'<th>Rank</th><th>Tier</th><th></th><th></th></tr></thead><tbody>'+posRows+'</tbody></table>';
     }
