@@ -997,15 +997,18 @@
   // proxy: 'yardage' uses the threshold itself (same logic as an Unabated
   // O/U line), 'binary' uses the implied probability (same as an
   // Unabated TD-type prop).
+  // Kalshi abbreviates rushing as "RSH", not "RUSH" (KXNFLRSHYDS,
+  // KXNFLRSHTD, KXNFLRSHATT) - confirmed from a real skipped-series dump.
+  // Both spellings are matched in case that ever changes.
   var KALSHI_STAT_MATCHERS = [
-    { re: /ANYTD/,       key: 'attd',       kind: 'binary'  },
-    { re: /PASSYDS/,     key: 'passYards',  kind: 'yardage' },
-    { re: /RUSHYDS/,     key: 'rushYards',  kind: 'yardage' },
-    { re: /RECYDS/,      key: 'recYards',   kind: 'yardage' },
-    { re: /RECEPTIONS?/, key: 'receptions', kind: 'yardage' },
-    { re: /PASSTD/,      key: 'passTD',     kind: 'binary'  },
-    { re: /RUSHTD/,      key: 'rushTD',     kind: 'binary'  }, // tracked, not counted (overlaps attd) - mirrors Unabated's own rushTD handling
-    { re: /RECTD/,       key: 'recTD',      kind: 'binary'  }  // tracked, not counted - no PROP_BET_TYPES slot, shown as "Other" only
+    { re: /ANYTD/,          key: 'attd',       kind: 'binary'  },
+    { re: /PASSYDS/,        key: 'passYards',  kind: 'yardage' },
+    { re: /R(U)?SHYDS/,     key: 'rushYards',  kind: 'yardage' },
+    { re: /RECYDS/,         key: 'recYards',   kind: 'yardage' },
+    { re: /RECEPTIONS?/,    key: 'receptions', kind: 'yardage' },
+    { re: /PASSTD/,         key: 'passTD',     kind: 'binary'  },
+    { re: /R(U)?SHTD/,      key: 'rushTD',     kind: 'binary'  }, // tracked, not counted (overlaps attd) - mirrors Unabated's own rushTD handling
+    { re: /RECTD/,          key: 'recTD',      kind: 'binary'  }  // tracked, not counted - no PROP_BET_TYPES slot, shown as "Other" only
   ];
 
   // Kalshi runs several DIFFERENT market shapes under tickers that still
@@ -1045,20 +1048,51 @@
 
   // Walks a Kalshi list endpoint's cursor pagination, same shape Unabated's
   // own /people endpoint uses - collects every page into one array.
+  function sleep(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
+
+  // Kalshi returns a rate-limit error ({"error":{"code":"too_many_requests"}})
+  // as a normal 200-with-JSON-body response in some cases and a non-2xx in
+  // others - either way, r.json() succeeds, so treating "parsed without
+  // throwing" as "got real data" silently swallowed rate-limit failures as
+  // if they were legitimate empty results (the bug behind an all-empty
+  // "Kalshi projections: {}" even when series were correctly matched). This
+  // checks both r.ok and an embedded error field, retries once, and reports
+  // an actual failure instead of quietly returning nothing.
+  async function kalshiFetchJson(url){
+    for (var attempt=0; attempt<2; attempt++){
+      try{
+        var r = await fetch(url, {cache:'no-store'});
+        var body = await r.json().catch(function(){ return null; });
+        if (!r.ok || (body && body.error)){
+          var errMsg = (body && body.error && (body.error.message || body.error.code)) || ('HTTP ' + r.status);
+          console.warn('Kalshi request failed (attempt ' + (attempt+1) + '/2): ' + url + ' -> ' + errMsg);
+          if (attempt === 0){ await sleep(800); continue; }
+          return { __failed: true, error: errMsg };
+        }
+        return body;
+      } catch(e){
+        console.warn('Kalshi request errored (attempt ' + (attempt+1) + '/2): ' + url + ' -> ' + (e && e.message || e));
+        if (attempt === 0){ await sleep(800); continue; }
+        return { __failed: true, error: (e && e.message) || String(e) };
+      }
+    }
+  }
+
   async function kalshiFetchAllPages(base, path){
     var out = [];
     var cursor = null;
     var guard = 0;
+    var failed = false;
     do {
       var sep = path.indexOf('?') === -1 ? '?' : '&';
       var url = base + path + sep + '_cb=' + Date.now() + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
-      var resp = await fetch(url, {cache:'no-store'}).then(function(r){return r.json();}).catch(function(){return null;});
-      if (!resp) break;
+      var resp = await kalshiFetchJson(url);
+      if (!resp || resp.__failed){ failed = true; break; }
       out.push(resp);
       cursor = resp.cursor || null;
       guard++;
     } while (cursor && guard < 20);
-    return out;
+    return { pages: out, failed: failed };
   }
 
   async function fetchKalshiProjections(){
@@ -1066,10 +1100,11 @@
     if (!workerUrl){ setKalshiStatus('Set your Kalshi Proxy URL above first.'); return; }
 
     setKalshiStatus('Finding NFL prop markets on Kalshi...');
-    var seriesPages = await kalshiFetchAllPages(workerUrl, '/series?category=Sports&limit=200');
+    var seriesResult = await kalshiFetchAllPages(workerUrl, '/series?category=Sports&limit=200');
+    if (seriesResult.failed) console.warn('Kalshi series discovery hit an error partway through - results below may be incomplete.');
     var relevantSeries = []; // {ticker, key, kind}
     var skipped = [];
-    seriesPages.forEach(function(page){
+    seriesResult.pages.forEach(function(page){
       (page.series||[]).forEach(function(s){
         var ticker = s.ticker || '';
         if (ticker.indexOf('KXNFL') !== 0) return; // not an NFL series at all
@@ -1080,17 +1115,21 @@
     });
     if (skipped.length) console.log('Kalshi NFL series skipped (no matching stat keyword - likely a game line, not a player prop): ' + skipped.join(', '));
     if (!relevantSeries.length){
-      setKalshiStatus('No matching NFL prop series found on Kalshi right now.');
+      setKalshiStatus(seriesResult.failed
+        ? 'Kalshi series discovery failed (rate limited or an error) - see console, then try again shortly.'
+        : 'No matching NFL prop series found on Kalshi right now.');
       return;
     }
 
     setKalshiStatus('Loading ' + relevantSeries.length + ' Kalshi prop market group(s)...');
     var candidates = {}; // normalizedName -> {statKey: [{threshold, prob, kind}, ...]}
     var completedCount = 0;
+    var failedSeries = [];
 
     async function processSeries(rs){
-      var eventPages = await kalshiFetchAllPages(workerUrl, '/events?series_ticker=' + rs.ticker + '&status=open&with_nested_markets=true&limit=200');
-      eventPages.forEach(function(page){
+      var result = await kalshiFetchAllPages(workerUrl, '/events?series_ticker=' + rs.ticker + '&status=open&with_nested_markets=true&limit=200');
+      if (result.failed) failedSeries.push(rs.ticker);
+      result.pages.forEach(function(page){
         (page.events||[]).forEach(function(ev){
           (ev.markets||[]).forEach(function(mkt){
             var name = kalshiPlayerNameFromTitle(mkt.title || mkt.yes_sub_title || '');
@@ -1116,13 +1155,13 @@
     }
 
     // Fire several series requests concurrently instead of waiting on each
-    // one fully before starting the next - with 20-40+ NFL prop series to
-    // pull, doing this one-at-a-time (especially with the Worker's built-in
-    // retry-on-429 occasionally adding another ~600ms) made a normal load
-    // take a minute or more and look stuck. A small fixed-size pool (6 at a
-    // time) keeps Kalshi from seeing a slam of simultaneous requests while
-    // still cutting total wait time dramatically.
-    var CONCURRENCY = 6;
+    // one fully before starting the next - doing this one-at-a-time made a
+    // normal load take a minute or more and look stuck. Kept modest (3 at a
+    // time, down from an earlier 6) since a bigger burst made Kalshi's
+    // rate limiter kick in on more requests at once, which - combined with a
+    // now-fixed bug where a rate-limit error was silently treated as valid
+    // empty data - could end up losing real results rather than just being slower.
+    var CONCURRENCY = 3;
     var queue = relevantSeries.slice();
     async function worker(){
       while (queue.length){
@@ -1162,7 +1201,9 @@
     }
 
     kalshiProjectionsLoadedAt = Date.now();
-    setKalshiStatus(matched + ' players matched across ' + relevantSeries.length + ' Kalshi market group(s).');
+    setKalshiStatus(matched + ' players matched across ' + relevantSeries.length + ' Kalshi market group(s).' +
+      (failedSeries.length ? ' (' + failedSeries.length + ' group(s) failed - likely rate limited, see console - try reloading in a bit.)' : ''));
+    if (failedSeries.length) console.warn('Kalshi series that failed to load (see warnings above for why): ' + failedSeries.join(', '));
     console.log('Kalshi projections:', kalshiProjections);
     renderTable();
     renderTopPlayers();
