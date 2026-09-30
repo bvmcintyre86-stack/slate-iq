@@ -1008,7 +1008,22 @@
     { re: /RECTD/,       key: 'recTD',      kind: 'binary'  }  // tracked, not counted - no PROP_BET_TYPES slot, shown as "Other" only
   ];
 
+  // Kalshi runs several DIFFERENT market shapes under tickers that still
+  // contain a stat keyword like RECYDS or PASSYDS - a season total, a career
+  // total, a weekly "who gets the most" leaderboard/field bet, a
+  // player-vs-player head-to-head, and specialty ladder/escalator/record
+  // structures. None of those are "this player hits X+ yards THIS GAME",
+  // which is the only shape our title/threshold parsing (and the
+  // points-times-multiplier math) is built for - feeding a 4,000+ SEASON
+  // yardage threshold into that math would produce a nonsense single-game
+  // point total. Excluded before the stat keyword match even runs, and
+  // logged to console like any other skipped series.
+  var KALSHI_EXCLUDE_PATTERNS = [/SEASON/, /CAREER/, /WEEK/, /MOST/, /RECORD/, /LADDER/, /ESCALATOR/, /H2H/];
+
   function classifyKalshiSeries(ticker){
+    for (var e=0;e<KALSHI_EXCLUDE_PATTERNS.length;e++){
+      if (KALSHI_EXCLUDE_PATTERNS[e].test(ticker)) return null;
+    }
     for (var i=0;i<KALSHI_STAT_MATCHERS.length;i++){
       if (KALSHI_STAT_MATCHERS[i].re.test(ticker)) return KALSHI_STAT_MATCHERS[i];
     }
@@ -1071,10 +1086,9 @@
 
     setKalshiStatus('Loading ' + relevantSeries.length + ' Kalshi prop market group(s)...');
     var candidates = {}; // normalizedName -> {statKey: [{threshold, prob, kind}, ...]}
+    var completedCount = 0;
 
-    for (var i=0;i<relevantSeries.length;i++){
-      var rs = relevantSeries[i];
-      setKalshiStatus('Loading Kalshi markets... (' + (i+1) + ' of ' + relevantSeries.length + ')');
+    async function processSeries(rs){
       var eventPages = await kalshiFetchAllPages(workerUrl, '/events?series_ticker=' + rs.ticker + '&status=open&with_nested_markets=true&limit=200');
       eventPages.forEach(function(page){
         (page.events||[]).forEach(function(ev){
@@ -1097,7 +1111,26 @@
           });
         });
       });
+      completedCount++;
+      setKalshiStatus('Loading Kalshi markets... (' + completedCount + ' of ' + relevantSeries.length + ')');
     }
+
+    // Fire several series requests concurrently instead of waiting on each
+    // one fully before starting the next - with 20-40+ NFL prop series to
+    // pull, doing this one-at-a-time (especially with the Worker's built-in
+    // retry-on-429 occasionally adding another ~600ms) made a normal load
+    // take a minute or more and look stuck. A small fixed-size pool (6 at a
+    // time) keeps Kalshi from seeing a slam of simultaneous requests while
+    // still cutting total wait time dramatically.
+    var CONCURRENCY = 6;
+    var queue = relevantSeries.slice();
+    async function worker(){
+      while (queue.length){
+        var rs = queue.shift();
+        await processSeries(rs);
+      }
+    }
+    await Promise.all(Array.from({length: Math.min(CONCURRENCY, relevantSeries.length)}, worker));
 
     kalshiProjections = {};
     var matched = 0;
