@@ -966,12 +966,21 @@
     for (var sk2 in kp.breakdown){ if (!shown[sk2]) extras.push(sk2); }
     if (extras.length){
       lines.push('');
-      lines.push('Other (tracked, not counted toward the point total):');
+      // Every entry in kp.breakdown - bonuses included - is already summed
+      // into fp/kalshiDisplayTotal above, same as the main per-stat loop.
+      // This section used to say "not counted toward the point total" (true
+      // of recTD/rushTD, which ARE tracked-but-excluded to avoid double
+      // counting ATTD) and never printed a pts value at all, which made a
+      // real, counted bonus look uncounted and worthless. Mirrors Unabated's
+      // own "bonuses & extras, still counted above" wording.
+      lines.push('Other (bonuses & extras, still counted above unless noted):');
       extras.forEach(function(sk3){
         var b3 = kp.breakdown[sk3];
-        lines.push((STAT_LABELS[sk3]||sk3) + ': ' +
+        var notCounted = (sk3 === 'rushTD' || sk3 === 'recTD');
+        lines.push((STAT_LABELS[sk3]||sk3) + ': ' + (notCounted ? '' : b3.value.toFixed(1) + ' pts (') +
           (b3.threshold != null ? b3.threshold + '+ line, ' : '') + Math.round(b3.prob*100) + '% implied' +
-          (b3.candidateCount > 1 ? ' (best of ' + b3.candidateCount + ' thresholds)' : ''));
+          (b3.candidateCount > 1 ? ', best of ' + b3.candidateCount + ' thresholds' : '') +
+          (notCounted ? ' [tracked, not counted - overlaps ATTD]' : ')'));
       });
     }
     return lines.join('\n');
@@ -1028,7 +1037,15 @@
   // yardage threshold into that math would produce a nonsense single-game
   // point total. Excluded before the stat keyword match even runs, and
   // logged to console like any other skipped series.
-  var KALSHI_EXCLUDE_PATTERNS = [/SEASON/, /CAREER/, /WEEK/, /MOST/, /RECORD/, /LADDER/, /ESCALATOR/, /H2H/];
+  // LONG(EST) is its own trap: a "longest reception/rush/completion this
+  // game" market is a YARDAGE-on-a-single-play bet, not a season/career
+  // total, so it wasn't caught by any pattern above - and our receptions
+  // matcher (REC, with only YDS/TD excluded) is broad enough to swallow a
+  // "KXNFLRECLONG"-style ticker as if it were a reception-COUNT market.
+  // That's exactly what produced an absurd "16.5+ receptions, 49% implied"
+  // line (really "16.5+ yards on your longest catch", near a coinflip, then
+  // multiplied by the receptions point value instead of a yardage one).
+  var KALSHI_EXCLUDE_PATTERNS = [/SEASON/, /CAREER/, /WEEK/, /MOST/, /RECORD/, /LADDER/, /ESCALATOR/, /H2H/, /LONG/];
 
   function classifyKalshiSeries(ticker){
     for (var e=0;e<KALSHI_EXCLUDE_PATTERNS.length;e++){
@@ -1044,13 +1061,23 @@
   // "Josh Allen: 250+ passing yards" - the player's name is the text before
   // the first colon. Requires at least two words (first + last) so a
   // single-word team/segment label doesn't get mistaken for a player.
-  function kalshiPlayerNameFromTitle(title){
-    if (!title) return null;
+  var KALSHI_NAME_SHAPE = /^[A-Za-z.'\-]+(\s+[A-Za-z.'\-]+)+$/;
+  function kalshiPlayerNameFromTitle(mkt){
+    var title = mkt.title || '';
     var idx = title.indexOf(':');
-    if (idx === -1) return null;
-    var name = title.slice(0, idx).trim();
-    if (!/^[A-Za-z.'\-]+(\s+[A-Za-z.'\-]+)+$/.test(name)) return null;
-    return name;
+    if (idx !== -1){
+      var name = title.slice(0, idx).trim();
+      if (KALSHI_NAME_SHAPE.test(name)) return name;
+    }
+    // Yardage ladder markets ("Name: 250+ passing yards") use that colon
+    // format, but a plain yes/no market (anytime TD, say) often doesn't -
+    // the player's name instead sits alone in yes_sub_title (e.g.
+    // "Mike Evans"), with the question itself in the title. Falling back
+    // to title-only parsing was silently failing every one of these and
+    // showing as "not posted on Kalshi" even when the market existed.
+    var sub = (mkt.yes_sub_title || '').trim();
+    if (KALSHI_NAME_SHAPE.test(sub)) return sub;
+    return null;
   }
 
   // Walks a Kalshi list endpoint's cursor pagination, same shape Unabated's
@@ -1146,7 +1173,7 @@
           diag.events++;
           (ev.markets||[]).forEach(function(mkt){
             diag.markets++;
-            var name = kalshiPlayerNameFromTitle(mkt.title || mkt.yes_sub_title || '');
+            var name = kalshiPlayerNameFromTitle(mkt);
             if (!name){ diag.nameParseFail++; return; }
             var threshold = mkt.floor_strike;
             if (threshold === undefined || threshold === null){
