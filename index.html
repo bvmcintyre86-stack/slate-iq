@@ -1505,12 +1505,22 @@
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ events: { event_ids: eventIds, limit_per_event: 1000 }, combo_enabled_only: false })
+        // limit_per_event: a conservative 200 rather than 1000 - the one
+        // real capture we have used 8, and we don't yet know whether this
+        // internal endpoint enforces a smaller server-side max that would
+        // 400 a too-large request. If this turns out too low (this event
+        // alone has 286 total props), raise it once we've confirmed what
+        // the real ceiling is.
+        body: JSON.stringify({ events: { event_ids: eventIds, limit_per_event: 200 }, combo_enabled_only: false })
       });
-      body = await ppResp.json().catch(function(){ return null; });
+      var ppRespText = await ppResp.text();
+      body = (function(){ try { return JSON.parse(ppRespText); } catch(e){ return null; } })();
       if (!ppResp.ok || !body){
         setPolymarketStatus('Polymarket player-props request failed (HTTP ' + ppResp.status + ') - see console, then try again shortly.');
-        console.warn('Polymarket /player-props failed:', body);
+        // Log the raw response TEXT, not the parsed object - console.warn on
+        // an object often prints as a collapsed "Object" when copy-pasted
+        // out of the console, which hides the actual error message.
+        console.warn('Polymarket /player-props failed (HTTP ' + ppResp.status + '): ' + ppRespText);
         return;
       }
     } catch(e){
