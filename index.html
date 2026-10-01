@@ -955,7 +955,8 @@
       shown[sk] = true;
       var b = kp.breakdown && kp.breakdown[sk];
       if (b){
-        lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts (' + b.threshold + '+ line, ' + Math.round(b.prob*100) + '% implied' +
+        lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts (' +
+          (b.threshold != null ? b.threshold + '+ line, ' : '') + Math.round(b.prob*100) + '% implied' +
           (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')');
       } else {
         lines.push((STAT_LABELS[sk]||sk) + ': not posted on Kalshi');
@@ -968,7 +969,8 @@
       lines.push('Other (tracked, not counted toward the point total):');
       extras.forEach(function(sk3){
         var b3 = kp.breakdown[sk3];
-        lines.push((STAT_LABELS[sk3]||sk3) + ': ' + b3.threshold + '+ line, ' + Math.round(b3.prob*100) + '% implied' +
+        lines.push((STAT_LABELS[sk3]||sk3) + ': ' +
+          (b3.threshold != null ? b3.threshold + '+ line, ' : '') + Math.round(b3.prob*100) + '% implied' +
           (b3.candidateCount > 1 ? ' (best of ' + b3.candidateCount + ' thresholds)' : ''));
       });
     }
@@ -1005,7 +1007,12 @@
     { re: /PASSYDS/,        key: 'passYards',  kind: 'yardage' },
     { re: /R(U)?SHYDS/,     key: 'rushYards',  kind: 'yardage' },
     { re: /RECYDS/,         key: 'recYards',   kind: 'yardage' },
-    { re: /RECEPTIONS?/,    key: 'receptions', kind: 'yardage' },
+    // Kalshi's receptions series is ticker "KXNFLREC" - just "REC", not
+    // "RECEPTIONS" - confirmed by the user finding a live Receptions market
+    // on Kalshi's own site while our skip list showed "KXNFLREC" being
+    // dropped as unmatched. The lookahead excludes RECYDS/RECTD so this
+    // doesn't swallow those more specific tickers (order-independent).
+    { re: /REC(?!YDS|TD)/,  key: 'receptions', kind: 'yardage' },
     { re: /PASSTD/,         key: 'passTD',     kind: 'binary'  },
     { re: /R(U)?SHTD/,      key: 'rushTD',     kind: 'binary'  }, // tracked, not counted (overlaps attd) - mirrors Unabated's own rushTD handling
     { re: /RECTD/,          key: 'recTD',      kind: 'binary'  }  // tracked, not counted - no PROP_BET_TYPES slot, shown as "Other" only
@@ -1148,7 +1155,19 @@
             } else {
               threshold = parseFloat(threshold);
             }
-            if (threshold === null || isNaN(threshold)){ diag.thresholdFail++; return; }
+            if (threshold === null || isNaN(threshold)){
+              // A plain yes/no prop (anytime TD scorer, say) has no numeric
+              // line at all - no floor_strike, no "X+" in the title - so this
+              // isn't missing data, it's a market that was never going to have
+              // one. Only a 'yardage' market (a threshold ladder) actually
+              // needs a number for the points math (threshold * multiplier);
+              // a 'binary' market's points come from the price alone
+              // (prob * multiplier), so a missing threshold there is fine.
+              // Requiring one unconditionally was silently dropping every
+              // ANYTD market even though its price data was perfectly good.
+              if (rs.kind === 'yardage'){ diag.thresholdFail++; return; }
+              threshold = null;
+            }
             // Kalshi's dollar-amount fields come back as STRINGS (e.g. "0.47"),
             // not numbers. (bid + ask) on two strings is concatenation, not
             // addition - "0.47" + "0.53" -> "0.470.53" -> NaN after /2. That
@@ -1222,6 +1241,34 @@
         fp += contribution;
         breakdown[sk] = { value: contribution, threshold: best.threshold, prob: best.prob, candidateCount: list.length };
       }
+
+      // Same FanDuel milestone bonuses Unabated's own pipeline computes
+      // (+3 pts for 300+ pass yds, 100+ rush yds, 100+ rec yds) - Kalshi's
+      // yardage markets are already a ladder of thresholds per player/stat,
+      // so this reuses that same candidate list rather than needing a
+      // separate fetch: find whichever threshold sits closest to the real
+      // bonus cutoff (not closest to 50/50 like the main pick above - here
+      // we want the specific number), and convert its price straight into
+      // a probability of hitting it. Mirrors the Unabated bonus logic
+      // exactly, including the 15-yard trust radius.
+      for (var bk in BONUS_CONFIG){
+        var bonusCfg = BONUS_CONFIG[bk];
+        var bonusList = stats[bonusCfg.stat];
+        if (!bonusList || !bonusList.length) continue;
+        var bClosest = null, bClosestDist = Infinity;
+        bonusList.forEach(function(c){
+          var dist = Math.abs(c.threshold - bonusCfg.threshold);
+          if (dist < bClosestDist){ bClosestDist = dist; bClosest = c; }
+        });
+        if (!bClosest || bClosestDist > 15) continue;
+        var bonusContribution = bClosest.prob * bonusCfg.mult;
+        fp += bonusContribution;
+        breakdown[bk] = {
+          value: bonusContribution, prob: bClosest.prob, threshold: bClosest.threshold,
+          thresholdUsed: bClosest.threshold, realThreshold: bonusCfg.threshold, isBonus: true
+        };
+      }
+
       if (!Object.keys(breakdown).length) continue;
       kalshiProjections[normName] = { fp: fp, breakdown: breakdown };
       matched++;
