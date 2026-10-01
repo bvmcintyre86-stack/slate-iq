@@ -1121,7 +1121,21 @@
     { re: /REC(?!YDS|TD)/,  key: 'receptions', kind: 'yardage' },
     { re: /PASSTD/,         key: 'passTD',     kind: 'binary'  },
     { re: /R(U)?SHTD/,      key: 'rushTD',     kind: 'binary'  }, // tracked, not counted (overlaps attd) - mirrors Unabated's own rushTD handling
-    { re: /RECTD/,          key: 'recTD',      kind: 'binary'  }  // tracked, not counted - no PROP_BET_TYPES slot, shown as "Other" only
+    { re: /RECTD/,          key: 'recTD',      kind: 'binary'  }, // tracked, not counted - no PROP_BET_TYPES slot, shown as "Other" only
+    // These three are mult:0 (informational only, never contribute points) -
+    // same as on Unabated and Polymarket - but Unabated and Polymarket both
+    // track and display them as "Other" tooltip lines, while Kalshi had no
+    // matcher for them at all, so a player's Kalshi tooltip would silently
+    // never show Pass Att/Pass Comp/Rush Att even when Unabated/Polymarket's
+    // tooltips for the SAME player did - an inconsistency across the three
+    // sources with no scoring impact, but a confusing one to compare by eye.
+    // Exact tickers unconfirmed (no live sample seen yet for these three on
+    // Kalshi) - patterned after the confirmed PASSYDS/RSHYDS naming
+    // convention. Harmless if Kalshi doesn't actually offer these markets:
+    // the regex just never matches anything, same as before.
+    { re: /PASSATT/,        key: 'passAttempts', kind: 'yardage' },
+    { re: /PASSCOMP/,       key: 'passComp',     kind: 'yardage' },
+    { re: /R(U)?SHATT/,     key: 'rushAttempts', kind: 'yardage' }
   ];
 
   // Kalshi runs several DIFFERENT market shapes under tickers that still
