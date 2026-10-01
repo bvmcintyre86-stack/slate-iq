@@ -1125,24 +1125,32 @@
     var candidates = {}; // normalizedName -> {statKey: [{threshold, prob, kind}, ...]}
     var completedCount = 0;
     var failedSeries = [];
+    // Diagnostics only - lets us tell "nothing came back from Kalshi yet"
+    // (zero events - markets for the week aren't posted yet) apart from
+    // "events came back but parsing dropped them" without re-uploading
+    // console dumps every time.
+    var diag = { events: 0, markets: 0, nameParseFail: 0, thresholdFail: 0, probFail: 0, kept: 0 };
 
     async function processSeries(rs){
       var result = await kalshiFetchAllPages(workerUrl, '/events?series_ticker=' + rs.ticker + '&status=open&with_nested_markets=true&limit=200');
       if (result.failed) failedSeries.push(rs.ticker);
       result.pages.forEach(function(page){
         (page.events||[]).forEach(function(ev){
+          diag.events++;
           (ev.markets||[]).forEach(function(mkt){
+            diag.markets++;
             var name = kalshiPlayerNameFromTitle(mkt.title || mkt.yes_sub_title || '');
-            if (!name) return;
+            if (!name){ diag.nameParseFail++; return; }
             var threshold = mkt.floor_strike;
             if (threshold === undefined || threshold === null){
               var m2 = /(\d+(\.\d+)?)\+/.exec(mkt.title || '');
               threshold = m2 ? parseFloat(m2[1]) : null;
             }
-            if (threshold === null) return;
+            if (threshold === null){ diag.thresholdFail++; return; }
             var bid = mkt.yes_bid_dollars, ask = mkt.yes_ask_dollars, last = mkt.last_price_dollars;
             var prob = (bid != null && ask != null && (bid > 0 || ask > 0)) ? (bid + ask) / 2 : (last != null ? last : null);
-            if (prob === null) return;
+            if (prob === null){ diag.probFail++; return; }
+            diag.kept++;
             var norm = normalizeName(name);
             if (!candidates[norm]) candidates[norm] = {};
             if (!candidates[norm][rs.key]) candidates[norm][rs.key] = [];
@@ -1204,6 +1212,9 @@
     setKalshiStatus(matched + ' players matched across ' + relevantSeries.length + ' Kalshi market group(s).' +
       (failedSeries.length ? ' (' + failedSeries.length + ' group(s) failed - likely rate limited, see console - try reloading in a bit.)' : ''));
     if (failedSeries.length) console.warn('Kalshi series that failed to load (see warnings above for why): ' + failedSeries.join(', '));
+    console.log('Kalshi fetch diagnostics: ' + diag.events + ' events, ' + diag.markets + ' markets scanned across ' + relevantSeries.length + ' group(s) - ' +
+      diag.kept + ' kept, ' + diag.nameParseFail + ' dropped (name parse), ' + diag.thresholdFail + ' dropped (no threshold), ' + diag.probFail + ' dropped (no price). ' +
+      (diag.events === 0 ? 'Zero events means Kalshi has not posted markets for these series yet (check back closer to game day) - not a bug.' : ''));
     console.log('Kalshi projections:', kalshiProjections);
     renderTable();
     renderTopPlayers();
