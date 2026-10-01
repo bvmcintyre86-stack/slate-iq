@@ -444,10 +444,10 @@
       <button id="loadPropsBtn">Load Unabated props</button>
       <span style="color:var(--line);padding:0 4px;">|</span>
       <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Projection source</label>
-      <select id="projSourceSel" style="font-size:12px;">
+      <select id="projSourceSel" style="font-size:12px;" title="Market = average of whichever of Unabated/Kalshi/Polymarket are loaded for each player. Blend = 50/50 with FanDuel's own fppg.">
         <option value="fppg">FanDuel fppg</option>
-        <option value="market">Market (props)</option>
-        <option value="blend">Blend (50/50)</option>
+        <option value="market">Market (Unabated+Kalshi+Polymarket avg)</option>
+        <option value="blend">Blend (fppg + Market avg, 50/50)</option>
       </select>
       <span id="propsStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
     </div>
@@ -484,7 +484,7 @@
       <select id="teamFilter"><option value="">All teams</option></select>
       <select id="matchupFilter"><option value="">All matchups</option></select>
       <select id="tagFilter"><option value="">All script tags</option></select>
-      <label class="stack-chk"><input type="checkbox" id="mktOnlyFilter"> Has Mkt projection</label>
+      <label class="stack-chk" title="Shows players with at least one of Unabated/Kalshi/Polymarket loaded - the same condition effectiveFppg needs to produce a Market/Blend number instead of falling back to fppg."><input type="checkbox" id="mktOnlyFilter"> Has market data (any source)</label>
       <span class="row-count" id="rowCount"></span>
     </div>
 
@@ -500,7 +500,7 @@
             <th data-key="mkt">Mkt</th>
             <th data-key="kalshi" title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th>
             <th data-key="polymarket" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th>
-            <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their actual Mkt projection. Smaller or negative = closer to or past that target.">3x &Delta;</th>
+            <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their combined Unabated+Kalshi+Polymarket projection (average of whichever are loaded). Smaller or negative = closer to or past that target.">3x &Delta;</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="tag">Script</th>
             <th data-key="opp" title="Opponent's rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th>
@@ -876,11 +876,16 @@
 
   // Classic DFS "value" target, framed as a gap instead of a ratio: a good
   // play is roughly 3 projected points per $1,000 of salary. This is
-  // (salary/1000 * 3) minus the player's actual Mkt projection - a small or
-  // negative number means they're projected to hit or beat that 3x bar
-  // (the more interesting plays), a large positive number means they're
-  // projected well short of it. Returns null when there's no Mkt data yet,
-  // since there's nothing to compare against.
+  // (salary/1000 * 3) minus the player's combined-source market projection
+  // (the same Unabated+Kalshi+Polymarket average effectiveFppg's Market/Blend
+  // modes use - see combinedMarketProjection) - a small or negative number
+  // means they're projected to hit or beat that 3x bar (the more interesting
+  // plays), a large positive number means they're projected well short of
+  // it. Returns null when NONE of the 3 sources have this player loaded yet,
+  // since there's nothing to compare against. Previously this compared
+  // against Unabated's "Mkt" number alone, which meant a player with
+  // Kalshi/Polymarket data but no Unabated coverage showed no value signal
+  // at all even though two of your three sources had an opinion on them.
   // Single Game splits the same $60k cap across only 6 roster spots instead
   // of 9, so average salary per slot is naturally ~1.5x higher there before
   // MVP's own 1.5x multiplier even factors in. Scaling the classic 3x value
@@ -901,9 +906,9 @@
   }
 
   function mkt3xDelta(p){
-    var mp = marketProjections[normalizeName(p.name)];
-    if (!mp || !p.salary) return null;
-    return Math.round(((p.salary / 1000) * valueTargetMultiplier() - mktDisplayTotal(mp)) * 10) / 10;
+    var combined = combinedMarketProjection(p);
+    if (!combined || !p.salary) return null;
+    return Math.round(((p.salary / 1000) * valueTargetMultiplier() - combined.fp) * 10) / 10;
   }
 
   function mktCoverage(mp, position){
@@ -3731,14 +3736,58 @@
     return effectiveFppg(p) + tierBonus - (rank * 1.5) - exposurePenalty + scriptBonus;
   }
 
-  // Blends FanDuel's own fppg with the market-derived projection (if loaded),
-  // per the Projection Source dropdown. Falls back to fppg alone whenever a
-  // player has no market data yet (partial props coverage is expected/common).
+  // The "Market" number behind the Projection Source toggle - a simple
+  // average of whichever of the three prop sources (Unabated, Kalshi,
+  // Polymarket) actually have this player loaded, not just Unabated alone.
+  // Plain average, not a weighted one: each source already runs its own
+  // internal consensus/EV-proxy math before it ever gets here (Unabated's
+  // own cross-book consensus, Kalshi's and Polymarket's coinflip-closest
+  // threshold picks), so there's no default reason to trust one source's
+  // output over another's - weighting one heavier would need an actual
+  // track-record reason (e.g. backtested accuracy), not just a hunch.
+  // A player with only 1 of the 3 loaded still gets a number (that source's
+  // own fp, unchanged); a player with 0 loaded returns null so the caller
+  // can fall back to fppg, same as always.
+  function combinedMarketProjection(p){
+    var norm = normalizeName(p.name);
+    var parts = [];
+    var mp = marketProjections[norm];
+    var kp = kalshiProjections[norm];
+    var pp = polymarketProjections[norm];
+    if (mp) parts.push({ source: 'Unabated',  fp: mp.fp });
+    if (kp) parts.push({ source: 'Kalshi',    fp: kp.fp });
+    if (pp) parts.push({ source: 'Polymarket',fp: pp.fp });
+    if (!parts.length) return null;
+    var sum = parts.reduce(function(a,b){ return a + b.fp; }, 0);
+    return { fp: sum / parts.length, parts: parts, count: parts.length };
+  }
+
+  // Human-readable one-liner for what combinedMarketProjection actually
+  // averaged together, for the FPPG cell's tooltip (see renderTable) - so
+  // "why is this number what it is" is always one hover away rather than
+  // something you have to trust blindly.
+  function combinedMarketProjectionNote(cmp){
+    if (!cmp) return '';
+    if (cmp.count === 1) return cmp.parts[0].source + ' only: ' + cmp.parts[0].fp.toFixed(1) + ' pts';
+    return 'Average of ' + cmp.count + ' sources: ' +
+      cmp.parts.map(function(pt){ return pt.source + ' ' + pt.fp.toFixed(1); }).join(', ') +
+      ' = ' + cmp.fp.toFixed(1) + ' pts';
+  }
+
+  // Blends FanDuel's own fppg with the market-derived projection, per the
+  // Projection Source dropdown. "Market" and "Blend" both now pull from
+  // combinedMarketProjection (all 3 sources averaged, not Unabated alone) -
+  // this is the one function that actually drives lineup building (playerScore,
+  // projectedTotal, MVP scoring all run through this), so this is where
+  // Kalshi/Polymarket actually start influencing the optimizer, not just the
+  // display columns. Falls back to fppg alone whenever NONE of the 3 sources
+  // have this player yet (partial props coverage is expected/common).
   function effectiveFppg(p){
-    var mp = marketProjections[normalizeName(p.name)];
-    if (!mp || projSource === 'fppg') return p.fppg;
-    if (projSource === 'market') return mp.fp;
-    return (p.fppg + mp.fp) / 2; // blend
+    if (projSource === 'fppg') return p.fppg;
+    var combined = combinedMarketProjection(p);
+    if (!combined) return p.fppg;
+    if (projSource === 'market') return combined.fp;
+    return (p.fppg + combined.fp) / 2; // blend
   }
 
   // Nudges stack-slot picks toward pass catchers (WR/TE) over RBs, since a
@@ -4250,7 +4299,11 @@
       if (posF  && p.position !== posF)  return false;
       if (teamF && p.team     !== teamF) return false;
       if (tagF  && p.tag      !== tagF)  return false;
-      if (filterMktOnly && !marketProjections[normalizeName(p.name)]) return false;
+      // Broadened from "has Unabated data" to "has ANY of the 3 sources" -
+      // this is the same condition that lets effectiveFppg produce a real
+      // Market/Blend number instead of silently falling back to fppg, so the
+      // filter now matches what actually has market signal behind it.
+      if (filterMktOnly && !combinedMarketProjection(p)) return false;
       if (search && p.name.toLowerCase().indexOf(search) === -1 && p.team.toLowerCase().indexOf(search) === -1) return false;
       return true;
     });
@@ -4327,12 +4380,23 @@
       var mp = marketProjections[normalizeName(p.name)];
       var kp = kalshiProjections[normalizeName(p.name)];
       var pp = polymarketProjections[normalizeName(p.name)];
+      // FPPG cell always SHOWS FanDuel's raw number (for comparison against
+      // Mkt/Kalshi/Polymarket), but its tooltip reveals whatever number is
+      // actually driving the optimizer/lineup totals right now - the plain
+      // fppg, or the combined-source Market/Blend value - so "why did it
+      // rank this player here" is never a mystery one hover away.
+      var cmp = combinedMarketProjection(p);
+      var effFppgTitle = projSource === 'fppg'
+        ? 'Projection Source = FanDuel fppg - using this number directly for ranking/lineups.'
+        : 'Effective projection used for ranking/lineups: ' + effectiveFppg(p).toFixed(1) + ' pts' +
+          (projSource === 'blend' ? ' (50/50 blend of fppg ' + p.fppg.toFixed(1) + ' and market avg)' : '') +
+          ' - ' + (cmp ? combinedMarketProjectionNote(cmp) : 'no Unabated/Kalshi/Polymarket data yet for this player, falling back to fppg');
       return '<tr>'+
         '<td style="text-align:left;">'+p.name+'</td>'+
         '<td class="pos-pill">'+p.position+'</td>'+
         '<td class="mono">'+p.team+'</td>'+
         '<td class="num">'+money(p.salary)+'</td>'+
-        '<td class="num">'+p.fppg.toFixed(1)+'</td>'+
+        '<td class="num" style="cursor:help;" title="'+effFppgTitle.replace(/"/g,'&quot;')+'">'+p.fppg.toFixed(1)+'</td>'+
         '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : '—')+'</td>'+
         '<td class="num" style="color:'+(kp?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kp,p.position).replace(/"/g,'&quot;')+'">'+(kp ? kalshiDisplayTotal(kp).toFixed(1) : '—')+'</td>'+
         '<td class="num" style="color:'+(pp?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(pp,p.position).replace(/"/g,'&quot;')+'">'+(pp ? polymarketDisplayTotal(pp).toFixed(1) : '—')+'</td>'+
@@ -4349,10 +4413,15 @@
           '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">'+
             '<input type="number" step="0.1" class="row-result-input" data-actual-id="'+p.id+'" value="'+(p.actualPts!=null?p.actualPts:'')+'" style="width:64px;text-align:center;" placeholder="—">'+
             (function(){
-              if (p.actualPts == null || !mp) return '';
-              var d = Math.round((p.actualPts - mktDisplayTotal(mp)) * 10) / 10;
+              // How far off the combined (Unabated+Kalshi+Polymarket average)
+              // projection was from what actually happened - same number
+              // effectiveFppg's Market/Blend modes used to help build this
+              // lineup, so this is "was the number you actually played off
+              // of right," not just "was Unabated right."
+              if (p.actualPts == null || !cmp) return '';
+              var d = Math.round((p.actualPts - cmp.fp) * 10) / 10;
               var dColor = d >= 0 ? 'var(--teal)' : 'var(--brick)';
-              return '<span style="color:'+dColor+';font-size:11px;">'+(d>0?'+':'')+d.toFixed(1)+'</span>';
+              return '<span style="color:'+dColor+';font-size:11px;cursor:help;" title="Actual minus combined projection (' + cmp.fp.toFixed(1) + ' pts - ' + combinedMarketProjectionNote(cmp).replace(/"/g,'&quot;') + ')">'+(d>0?'+':'')+d.toFixed(1)+'</span>';
             })()+
           '</div>'+
         '</td>'+
@@ -4912,20 +4981,47 @@
     }
     if (summaryLine) summaryLine.textContent = resultsHistory.length + ' week' + (resultsHistory.length>1?'s':'') + ' saved.';
 
+    // Per-SOURCE average |error| and bias, not just Mkt - this is the actual
+    // evidence you'd need to eventually tell whether Unabated, Kalshi, or
+    // Polymarket is the sharper source for a given slate, rather than
+    // trusting the equal-weight average in combinedMarketProjection forever
+    // by default. Older saved weeks (before this field existed) simply have
+    // no kalshi/polymkt/combined values, so those averages gracefully show
+    // "no data" instead of breaking.
+    function sourceAccuracy(players, deltaKey){
+      var withDelta = players.filter(function(p){ return p[deltaKey] != null; });
+      if (!withDelta.length) return null;
+      var avgAbsErr = withDelta.reduce(function(s,p){return s+Math.abs(p[deltaKey]);},0)/withDelta.length;
+      var avgBias = withDelta.reduce(function(s,p){return s+p[deltaKey];},0)/withDelta.length;
+      return { avgAbsErr: avgAbsErr, avgBias: avgBias, n: withDelta.length };
+    }
+
     var html = resultsHistory.map(function(entry, idx){
-      var withDelta = entry.players.filter(function(p){ return p.mktDelta != null; });
-      var avgAbsErr = withDelta.length ? (withDelta.reduce(function(s,p){return s+Math.abs(p.mktDelta);},0)/withDelta.length) : null;
-      var avgBias = withDelta.length ? (withDelta.reduce(function(s,p){return s+p.mktDelta;},0)/withDelta.length) : null;
+      var acc = {
+        mkt: sourceAccuracy(entry.players, 'mktDelta'),
+        kalshi: sourceAccuracy(entry.players, 'kalshiDelta'),
+        polymkt: sourceAccuracy(entry.players, 'polymktDelta'),
+        combined: sourceAccuracy(entry.players, 'combinedDelta')
+      };
+      var accLabels = { mkt: 'Mkt', kalshi: 'Kalshi', polymkt: 'Polymkt', combined: 'Combined' };
+      var summarySpans = Object.keys(acc).filter(function(k){ return acc[k]; }).map(function(k){
+        return '<span class="sub" title="Bias: '+(acc[k].avgBias>0?'+':'')+acc[k].avgBias.toFixed(1)+' over '+acc[k].n+' players">'+accLabels[k]+' |err|: <strong>'+acc[k].avgAbsErr.toFixed(1)+'</strong></span>';
+      }).join('');
 
       var detailRows = entry.players.map(function(p){
         var dColor = p.mktDelta == null ? 'var(--muted)' : (p.mktDelta >= 0 ? 'var(--teal)' : 'var(--brick)');
+        var cColor = p.combinedDelta == null ? 'var(--muted)' : (p.combinedDelta >= 0 ? 'var(--teal)' : 'var(--brick)');
         return '<tr>' +
           '<td style="text-align:left;">'+p.name+'</td>' +
           '<td class="pos-pill">'+p.position+'</td>' +
           '<td class="mono">'+p.team+'</td>' +
-          '<td class="num">'+(p.mkt!=null?p.mkt.toFixed(1):'—')+'</td>' +
           '<td class="num">'+p.actualPts.toFixed(1)+'</td>' +
+          '<td class="num">'+(p.mkt!=null?p.mkt.toFixed(1):'—')+'</td>' +
+          '<td class="num">'+(p.kalshi!=null?p.kalshi.toFixed(1):'—')+'</td>' +
+          '<td class="num">'+(p.polymkt!=null?p.polymkt.toFixed(1):'—')+'</td>' +
+          '<td class="num">'+(p.combined!=null?p.combined.toFixed(1):'—')+'</td>' +
           '<td class="num" style="color:'+dColor+';">'+(p.mktDelta!=null?((p.mktDelta>0?'+':'')+p.mktDelta.toFixed(1)):'—')+'</td>' +
+          '<td class="num" style="color:'+cColor+';font-weight:700;">'+(p.combinedDelta!=null?((p.combinedDelta>0?'+':'')+p.combinedDelta.toFixed(1)):'—')+'</td>' +
           '<td class="num">'+(p.ownership!=null?p.ownership.toFixed(1)+'%':'—')+'</td>' +
           (entry.mode==='sg' ? '<td class="num">'+(p.mvpOwnership!=null?p.mvpOwnership.toFixed(1)+'%':'—')+'</td>' : '') +
         '</tr>';
@@ -4934,14 +5030,13 @@
       return '<div style="border:1px solid var(--line);border-radius:8px;margin-bottom:12px;overflow:hidden;">' +
         '<div data-rh-toggle="'+idx+'" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--panel-2);cursor:pointer;flex-wrap:wrap;gap:8px;">' +
           '<div><strong>'+entry.weekLabel+'</strong> <span class="sub" style="margin-left:8px;">'+new Date(entry.savedAt).toLocaleDateString()+' &middot; '+entry.platform.toUpperCase()+' '+(entry.mode==='sg'?'Single Game':'Main Slate')+' &middot; '+entry.players.length+' players</span></div>' +
-          '<div style="display:flex;align-items:center;gap:14px;">' +
-            (avgAbsErr!=null ? '<span class="sub">Avg |Mkt error|: <strong>'+avgAbsErr.toFixed(1)+'</strong></span>' : '') +
-            (avgBias!=null ? '<span class="sub">Bias: <strong style="color:'+(avgBias>=0?'var(--teal)':'var(--brick)')+';">'+(avgBias>0?'+':'')+avgBias.toFixed(1)+'</strong></span>' : '') +
+          '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">' +
+            summarySpans +
             '<button data-rh-delete="'+idx+'" style="color:#c00;padding:4px 10px;">Delete</button>' +
           '</div>' +
         '</div>' +
-        '<div id="rh-body-'+idx+'" style="display:none;padding:10px 14px;">' +
-          '<table style="width:100%;"><thead><tr><th style="text-align:left;">Player</th><th>Pos</th><th>Team</th><th>Mkt</th><th>Actual</th><th>Mkt &Delta;</th><th>Own %</th>'+(entry.mode==='sg'?'<th>MVP Own %</th>':'')+'</tr></thead><tbody>'+detailRows+'</tbody></table>' +
+        '<div id="rh-body-'+idx+'" style="display:none;padding:10px 14px;overflow-x:auto;">' +
+          '<table style="width:100%;"><thead><tr><th style="text-align:left;">Player</th><th>Pos</th><th>Team</th><th>Actual</th><th>Mkt</th><th>Kalshi</th><th>Polymkt</th><th>Combined</th><th>Mkt &Delta;</th><th>Combined &Delta;</th><th>Own %</th>'+(entry.mode==='sg'?'<th>MVP Own %</th>':'')+'</tr></thead><tbody>'+detailRows+'</tbody></table>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -5046,14 +5141,15 @@
     var sep = ',';
     var dq = String.fromCharCode(34);
     function q(v){ var s=String(v==null?'':v).replace(new RegExp(dq,'g'),dq+dq); return dq+s+dq; }
-    var rows = [['Week','Date','Platform','Mode','Player','Position','Team','Salary','FPPG','Mkt','Actual','Mkt Delta','Ownership %','MVP Ownership %'].map(q).join(sep)];
+    var rows = [['Week','Date','Platform','Mode','Player','Position','Team','Salary','FPPG','Mkt','Kalshi','Polymkt','Combined','Actual','Mkt Delta','Kalshi Delta','Polymkt Delta','Combined Delta','Ownership %','MVP Ownership %'].map(q).join(sep)];
     resultsHistory.forEach(function(entry){
       entry.players.forEach(function(p){
         rows.push([
           entry.weekLabel, new Date(entry.savedAt).toLocaleDateString(), entry.platform.toUpperCase(),
           entry.mode==='sg'?'Single Game':'Main Slate',
           p.name, p.position, p.team, p.salary, p.fppg,
-          p.mkt!=null?p.mkt:'', p.actualPts, p.mktDelta!=null?p.mktDelta:'',
+          p.mkt!=null?p.mkt:'', p.kalshi!=null?p.kalshi:'', p.polymkt!=null?p.polymkt:'', p.combined!=null?p.combined:'',
+          p.actualPts, p.mktDelta!=null?p.mktDelta:'', p.kalshiDelta!=null?p.kalshiDelta:'', p.polymktDelta!=null?p.polymktDelta:'', p.combinedDelta!=null?p.combinedDelta:'',
           p.ownership!=null?p.ownership:'', p.mvpOwnership!=null?p.mvpOwnership:''
         ].map(q).join(sep));
       });
@@ -5340,14 +5436,33 @@
       platform: platform,
       mode: slateMode,
       players: tracked.map(function(p){
+        // Track EACH source's own error separately, not just the combined
+        // number - this is the actual data you'd need to eventually answer
+        // "is one of these three sources more accurate than the others?"
+        // and weight the blend accordingly, instead of treating all three as
+        // equally trustworthy by default forever. combined/combinedDelta is
+        // the number that actually drove Market/Blend lineup-building that
+        // week, kept alongside (not instead of) the per-source breakdown.
         var mp = marketProjections[normalizeName(p.name)];
+        var kp = kalshiProjections[normalizeName(p.name)];
+        var pp = polymarketProjections[normalizeName(p.name)];
+        var combined = combinedMarketProjection(p);
         var mktVal = mp ? mktDisplayTotal(mp) : null;
+        var kalshiVal = kp ? kalshiDisplayTotal(kp) : null;
+        var polymktVal = pp ? polymarketDisplayTotal(pp) : null;
+        var combinedVal = combined ? Math.round(combined.fp * 10) / 10 : null;
         return {
           name: p.name, position: p.position, team: p.team, salary: p.salary,
           fppg: p.fppg, mkt: mktVal, actualPts: p.actualPts,
           ownership: p.ownership != null ? p.ownership : null,
           mvpOwnership: p.mvpOwnership != null ? p.mvpOwnership : null,
-          mktDelta: mktVal != null ? Math.round((p.actualPts - mktVal)*10)/10 : null
+          mktDelta: mktVal != null ? Math.round((p.actualPts - mktVal)*10)/10 : null,
+          kalshi: kalshiVal,
+          kalshiDelta: kalshiVal != null ? Math.round((p.actualPts - kalshiVal)*10)/10 : null,
+          polymkt: polymktVal,
+          polymktDelta: polymktVal != null ? Math.round((p.actualPts - polymktVal)*10)/10 : null,
+          combined: combinedVal,
+          combinedDelta: combinedVal != null ? Math.round((p.actualPts - combinedVal)*10)/10 : null
         };
       })
     };
