@@ -693,6 +693,7 @@
   var polymarketProjections = {}; // normalized "first last" -> {fp, breakdown}
   var polymarketProjectionsLoadedAt = null;
   var lastRawPolymarketMarkets = []; // every market from the last fetch, unfiltered - see debugPolymarketPlayer()
+  var lastRawPolymarketEventProps = {}; // eventId -> {returned, total} - see debugPolymarketPlayer() and the per-event truncation warning in fetchPolymarketProjections
 
   // The one confirmed, meaningful scoring difference between the two
   // platforms: DraftKings uses full PPR (1.0 pt/reception), FanDuel uses
@@ -1504,6 +1505,7 @@
     var workerUrl = (document.getElementById('polymarketWorkerUrl').value||'').trim().replace(/\/+$/,'');
     if (!workerUrl){ setPolymarketStatus('Set your Polymarket Proxy URL above first.'); return; }
 
+    lastRawPolymarketEventProps = {};
     setPolymarketStatus('Finding NFL events on Polymarket...');
     var events;
     try {
@@ -1594,6 +1596,20 @@
         }
         var batchMarkets = (ppBody.bag && ppBody.bag.markets) || [];
         allMarkets = allMarkets.concat(batchMarkets);
+        // Each event in the response says how many props it ACTUALLY has
+        // (totalPropCount) vs how many it returned (props.length, capped by
+        // limit_per_event) - this is the direct way to confirm or rule out
+        // per-event truncation, instead of inferring it indirectly from the
+        // overall market count. Logged immediately (not just cached) so it's
+        // impossible to miss if a specific game got cut off.
+        (ppBody.events || []).forEach(function(ev){
+          var returned = (ev.props || []).length;
+          var total = ev.totalPropCount;
+          lastRawPolymarketEventProps[ev.eventId] = { returned: returned, total: total };
+          if (total != null && returned < total){
+            console.warn('Polymarket event ' + ev.eventId + ' returned only ' + returned + ' of ' + total + ' total props - limit_per_event is still too low for this game, raise it further.');
+          }
+        });
       } catch(e){
         batchFailures++;
         console.warn('Polymarket /player-props batch errored:', e);
@@ -1603,6 +1619,16 @@
       setPolymarketStatus('Polymarket player-props request failed for every batch - see console.');
       return;
     }
+    // Full per-event prop-count table, not just the truncation warnings
+    // above - lets you confirm a SPECIFIC game (by event id, matched against
+    // the "Polymarket discovered N NFL event(s)" list) was or wasn't
+    // truncated, even when it wasn't flagged. Plain joined string, not an
+    // object, so it pastes cleanly out of the console.
+    console.log('Polymarket per-event prop counts (returned/total):\n' +
+      Object.keys(lastRawPolymarketEventProps).map(function(eid){
+        var e = lastRawPolymarketEventProps[eid];
+        return '  eventId=' + eid + '  returned=' + e.returned + '  total=' + (e.total != null ? e.total : '(not reported)');
+      }).join('\n'));
 
     var markets = allMarkets;
     // Cache the raw, unfiltered market list for debugPolymarketPlayer() below -
