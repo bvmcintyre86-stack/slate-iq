@@ -1179,6 +1179,10 @@
     }
     await Promise.all(Array.from({length: Math.min(CONCURRENCY, relevantSeries.length)}, worker));
 
+    var candidateKeys = Object.keys(candidates);
+    console.log('Kalshi candidates object has ' + candidateKeys.length + ' player key(s) right after fetch completed.' +
+      (candidateKeys.length ? (' First key: "' + candidateKeys[0] + '" -> ' + JSON.stringify(candidates[candidateKeys[0]])) : ''));
+
     kalshiProjections = {};
     var matched = 0;
     for (var normName in candidates){
