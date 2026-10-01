@@ -350,84 +350,6 @@
     <div class="games-grid" id="gamesGrid"></div>
   </section>
 
-  <section id="lineupsSection">
-    <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-      <div>
-        <h2><span class="section-toggle" data-toggle-section="lineupsSection">&#9660;</span> Your lineups</h2>
-        <div class="sub" id="luSub">Build up to 200 lineups. Click a card below to edit it.</div>
-      </div>
-      <button id="exportCsvBtn" style="flex-shrink:0;">⬇ Export week to CSV</button>
-    </div>
-
-    <div class="lineup-bar">
-      <div class="lineup-stat"><span class="label">Salary used</span><span class="val" id="salaryUsedVal">$0</span></div>
-      <div class="lineup-stat"><span class="label">Remaining</span><span class="val" id="salaryLeftVal">$60,000</span></div>
-      <div class="lineup-stat"><span class="label">Projected pts</span><span class="val" id="projTotalVal">0.0</span></div>
-      <input id="capInput" type="number" step="100" value="60000" style="display:none;">
-
-      <div class="bar-divider"></div>
-
-      <div class="field-inline" id="stackSettings" style="align-self:center;margin-top:auto;margin-bottom:auto;">
-        <div class="field">
-          <label>Stack level</label>
-          <select id="stackLevelSel" style="width:23ch;">
-            <option value="0">No forced stack</option>
-            <option value="1">QB + 1</option>
-            <option value="2">QB + 2</option>
-            <option value="3">QB + 3</option>
-          </select>
-        </div>
-        <label class="stack-chk" title="Forces in your QB's opponent's alpha WR (their highest-salaried receiver) - a true same-game bring-back, matching what actually showed up in your tournament-winning-lineup study."><input type="checkbox" id="bringBackChk"> Bring-back</label>
-      </div>
-
-      <div class="field field-inline" id="mvpFilterWrap" style="display:none;align-self:center;">
-        <label id="mvpFilterLabel">MVP must be</label>
-        <select id="mvpFilterSel" style="width:20ch;">
-          <option value="any">Any position</option>
-          <option value="qb">QB only</option>
-          <option value="rb">RB only</option>
-          <option value="qbrb">QB or RB</option>
-        </select>
-      </div>
-
-      <div class="bar-divider"></div>
-
-      <div style="display:flex;flex-direction:column;gap:8px;align-self:center;margin-top:auto;margin-bottom:auto;">
-        <button id="optimizeBtn" class="primary">Optimize remaining</button>
-        <button id="clearLineupBtn">Clear lineup</button>
-      </div>
-
-      <div class="bar-divider"></div>
-
-      <div style="display:flex;align-items:center;gap:10px;align-self:center;margin-top:auto;margin-bottom:auto;">
-        <span class="bar-group-label">Bulk build</span>
-        <input id="bulkCountInput" type="number" min="1" max="200" value="5" style="width:46px;">
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <button id="bulkGenerateBtn">Generate lineups</button>
-          <button id="luDeleteAllBtn" style="color:#c00;">Delete all lineups</button>
-        </div>
-      </div>
-
-      <div class="bar-divider"></div>
-      <label class="stack-chk" title="When on, Optimize and Generate lineups only ever pick from Top Players - a slot with no eligible Top Players option is left unfilled rather than reaching into the rest of the pool.">
-        <input type="checkbox" id="restrictToTopPlayersChk"> Only use Top Players
-      </label>
-    </div>
-    <div class="construction-badge" id="constructionBadge"></div>
-    <div class="lineup-msg" id="lineupMsg"></div>
-    <div id="exposureTrackerView"></div>
-    <div id="lineupCompareView"></div>
-  </section>
-
-  <section class="tp-section" id="topPlayersSection">
-    <div class="section-head">
-      <h2><span class="section-toggle" data-toggle-section="topPlayersSection">&#9660;</span> Top Players</h2>
-      <div class="sub">Tag key plays by position before building lineups. Click a player in the pool to add them here.</div>
-    </div>
-    <div class="tp-tabs" id="tpTabs"></div>
-    <div class="tp-list" id="tpList"></div>
-  </section>
-
   <section id="playerPoolSection">
     <div class="section-head">
       <h2><span class="section-toggle" data-toggle-section="playerPoolSection">&#9660;</span> Player pool</h2>
@@ -515,6 +437,84 @@
       </table>
       <div class="empty" id="poolEmpty">Upload a player pool to see tagged players here.</div>
     </div>
+  </section>
+
+  <section class="tp-section" id="topPlayersSection">
+    <div class="section-head">
+      <h2><span class="section-toggle" data-toggle-section="topPlayersSection">&#9660;</span> Top Players</h2>
+      <div class="sub">Tag key plays by position before building lineups. Click a player in the pool to add them here.</div>
+    </div>
+    <div class="tp-tabs" id="tpTabs"></div>
+    <div class="tp-list" id="tpList"></div>
+  </section>
+
+  <section id="lineupsSection">
+    <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <div>
+        <h2><span class="section-toggle" data-toggle-section="lineupsSection">&#9660;</span> Your lineups</h2>
+        <div class="sub" id="luSub">Build up to 200 lineups. Click a card below to edit it.</div>
+      </div>
+      <button id="exportCsvBtn" style="flex-shrink:0;">⬇ Export week to CSV</button>
+    </div>
+
+    <div class="lineup-bar">
+      <div class="lineup-stat"><span class="label">Salary used</span><span class="val" id="salaryUsedVal">$0</span></div>
+      <div class="lineup-stat"><span class="label">Remaining</span><span class="val" id="salaryLeftVal">$60,000</span></div>
+      <div class="lineup-stat"><span class="label">Projected pts</span><span class="val" id="projTotalVal">0.0</span></div>
+      <input id="capInput" type="number" step="100" value="60000" style="display:none;">
+
+      <div class="bar-divider"></div>
+
+      <div class="field-inline" id="stackSettings" style="align-self:center;margin-top:auto;margin-bottom:auto;">
+        <div class="field">
+          <label>Stack level</label>
+          <select id="stackLevelSel" style="width:23ch;">
+            <option value="0">No forced stack</option>
+            <option value="1">QB + 1</option>
+            <option value="2">QB + 2</option>
+            <option value="3">QB + 3</option>
+          </select>
+        </div>
+        <label class="stack-chk" title="Forces in your QB's opponent's alpha WR (their highest-salaried receiver) - a true same-game bring-back, matching what actually showed up in your tournament-winning-lineup study."><input type="checkbox" id="bringBackChk"> Bring-back</label>
+      </div>
+
+      <div class="field field-inline" id="mvpFilterWrap" style="display:none;align-self:center;">
+        <label id="mvpFilterLabel">MVP must be</label>
+        <select id="mvpFilterSel" style="width:20ch;">
+          <option value="any">Any position</option>
+          <option value="qb">QB only</option>
+          <option value="rb">RB only</option>
+          <option value="qbrb">QB or RB</option>
+        </select>
+      </div>
+
+      <div class="bar-divider"></div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;align-self:center;margin-top:auto;margin-bottom:auto;">
+        <button id="optimizeBtn" class="primary">Optimize remaining</button>
+        <button id="clearLineupBtn">Clear lineup</button>
+      </div>
+
+      <div class="bar-divider"></div>
+
+      <div style="display:flex;align-items:center;gap:10px;align-self:center;margin-top:auto;margin-bottom:auto;">
+        <span class="bar-group-label">Bulk build</span>
+        <input id="bulkCountInput" type="number" min="1" max="200" value="5" style="width:46px;">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button id="bulkGenerateBtn">Generate lineups</button>
+          <button id="luDeleteAllBtn" style="color:#c00;">Delete all lineups</button>
+        </div>
+      </div>
+
+      <div class="bar-divider"></div>
+      <label class="stack-chk" title="When on, Optimize and Generate lineups only ever pick from Top Players - a slot with no eligible Top Players option is left unfilled rather than reaching into the rest of the pool.">
+        <input type="checkbox" id="restrictToTopPlayersChk"> Only use Top Players
+      </label>
+    </div>
+    <div class="construction-badge" id="constructionBadge"></div>
+    <div class="lineup-msg" id="lineupMsg"></div>
+    <div id="exposureTrackerView"></div>
+    <div id="lineupCompareView"></div>
   </section>
 
   <section id="resultsSection">
