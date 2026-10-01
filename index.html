@@ -399,6 +399,12 @@
       <button id="debugBookAvailabilityBtn">Check book availability</button>
       <span style="font-size:11px;color:var(--muted);">Shows every sportsbook actually posting data right now, from your last props load - results print to the console (F12)</span>
     </div>
+    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
+      <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Audit a Polymarket player</label>
+      <input id="debugPolymarketInput" type="text" placeholder="e.g. Pittman" style="flex:1;min-width:160px;font-size:12px;">
+      <button id="debugPolymarketBtn">Search</button>
+      <span style="font-size:11px;color:var(--muted);">Shows every raw Polymarket market for this player from your last Polymarket load, and why each was kept or dropped - results print to the console (F12)</span>
+    </div>
 
     <div class="filters">
       <input type="text" id="searchBox" placeholder="Search player or team">
@@ -686,6 +692,7 @@
   // ── Polymarket US (a second, independent cross-check) ─────────────────
   var polymarketProjections = {}; // normalized "first last" -> {fp, breakdown}
   var polymarketProjectionsLoadedAt = null;
+  var lastRawPolymarketMarkets = []; // every market from the last fetch, unfiltered - see debugPolymarketPlayer()
 
   // The one confirmed, meaningful scoring difference between the two
   // platforms: DraftKings uses full PPR (1.0 pt/reception), FanDuel uses
@@ -1539,12 +1546,20 @@
           method: 'POST',
           cache: 'no-store',
           headers: { 'Content-Type': 'application/json' },
-          // limit_per_event: a conservative 200 rather than 1000 - the one
-          // real capture we have used 8, and we don't yet know whether this
-          // internal endpoint enforces a smaller server-side max on this
-          // field too. If this turns out too low (one event alone had 286
-          // total props), raise it once we've confirmed the real ceiling.
-          body: JSON.stringify({ events: { event_ids: batch, limit_per_event: 200 }, combo_enabled_only: false })
+          // limit_per_event was 200, defensively, back when we didn't yet
+          // know what was causing the live 400 error - that turned out to be
+          // the 25-event-id cap (see EVENT_BATCH_SIZE above), NOT this field,
+          // so 200 was never actually a confirmed ceiling, just a guess that
+          // happened to still work. Raised to 500 since a single real game
+          // was already confirmed to carry 286+ total props - 200 was
+          // silently truncating a loaded game's less-marquee markets (a
+          // WR's Rec Yds/Receptions props, say) while keeping the
+          // higher-profile ones (ATTD) that presumably sort first, which
+          // looked exactly like "this player's props aren't posted" even
+          // though they were, just past the cutoff. If 500 ever turns out to
+          // be an actual server-side ceiling, a 400 here will say so
+          // directly (same way the 25-event-id limit surfaced).
+          body: JSON.stringify({ events: { event_ids: batch, limit_per_event: 500 }, combo_enabled_only: false })
         });
         var ppRespText = await ppResp.text();
         var ppBody = (function(){ try { return JSON.parse(ppRespText); } catch(e){ return null; } })();
@@ -1569,6 +1584,13 @@
     }
 
     var markets = allMarkets;
+    // Cache the raw, unfiltered market list for debugPolymarketPlayer() below -
+    // lets you audit any ONE player's actual raw Polymarket data after the
+    // fact (every market type Polymarket has for them, not just the ones we
+    // recognize/kept) without re-fetching. Same pattern as Unabated's
+    // lastRawPregame/lastRawPeople cache.
+    lastRawPolymarketMarkets = markets;
+    window.lastRawPolymarketMarkets = markets;
     var diag = { total: markets.length, unmatchedType: 0, noName: 0, noPrice: 0, kept: 0 };
     var unmatchedTypes = {};
     var candidates = {}; // normalizedName -> {statKey: [{threshold, prob, kind}, ...]}
@@ -1677,6 +1699,60 @@
     saveState();
   }
   document.getElementById('loadPolymarketBtn').addEventListener('click', fetchPolymarketProjections);
+
+  // Console debug helper (type debugPolymarketPlayer('pittman') in the
+  // browser console after a Polymarket load) - shows EVERY raw market
+  // Polymarket actually returned for a player whose name contains the given
+  // text, regardless of whether our pipeline recognized/kept it, and says
+  // exactly why each one was or wasn't counted. For when the site clearly
+  // has a market posted but the player's row shows "not posted" - same
+  // "show me the raw truth" approach that found the Kalshi ATTD bug and the
+  // Polymarket 25-event-id limit earlier, now reusable without a new fetch.
+  function debugPolymarketPlayer(query){
+    query = (query || '').toLowerCase();
+    if (!query){ console.log('debugPolymarketPlayer: give it a name to search for, e.g. debugPolymarketPlayer("pittman")'); return; }
+    if (!lastRawPolymarketMarkets.length){
+      console.log('No Polymarket data pulled yet - click "Load Polymarket props" first, then try again.');
+      return;
+    }
+    var matches = lastRawPolymarketMarkets.filter(function(mkt){
+      var name = (mkt.metadata && mkt.metadata.playerName) || '';
+      return name.toLowerCase().indexOf(query) !== -1;
+    });
+    if (!matches.length){
+      console.log('No raw Polymarket markets found with a playerName containing "' + query + '" in the last pull (' +
+        lastRawPolymarketMarkets.length + ' markets scanned). Either the name is spelled/formatted differently in ' +
+        'Polymarket\'s own data, or Polymarket genuinely has nothing posted for them in this pull - try a shorter ' +
+        'fragment of the name (last name only) in case of a formatting difference.');
+      return;
+    }
+    console.log('Found ' + matches.length + ' raw Polymarket market(s) with playerName containing "' + query + '":');
+    matches.forEach(function(mkt){
+      var name = mkt.metadata && mkt.metadata.playerName;
+      var norm = normalizeName(name);
+      var matcher = POLYMARKET_STAT_MATCHERS[mkt.sportsMarketType];
+      var bidRaw = mkt.bestBidQuote && mkt.bestBidQuote.value;
+      var askRaw = mkt.bestAskQuote && mkt.bestAskQuote.value;
+      var bid = (bidRaw != null) ? parseFloat(bidRaw) : null;
+      var ask = (askRaw != null) ? parseFloat(askRaw) : null;
+      var hasPrice = (bid != null && !isNaN(bid) && ask != null && !isNaN(ask)) ||
+        (function(){ try { var o=JSON.parse(mkt.outcomes||'[]'), op=JSON.parse(mkt.outcomePrices||'[]'); return o.indexOf('Yes')!==-1 && op[o.indexOf('Yes')]!=null; } catch(e){ return false; } })();
+      var verdict = !matcher ? ('DROPPED - sportsMarketType "' + mkt.sportsMarketType + '" is not one we map to a stat (see POLYMARKET_STAT_MATCHERS)')
+        : !name ? 'DROPPED - no metadata.playerName on this market at all'
+        : !hasPrice ? 'DROPPED - no usable bid/ask or outcome price found'
+        : 'KEPT - mapped to "' + matcher.key + '", normalized name "' + norm + '"' +
+          (candidatesHadDataFor(norm) ? '' : ' (but normalizeName("' + name + '") doesn\'t match this player elsewhere in the pool - check for a suffix/spelling mismatch)');
+      console.log('  ' + name + ' - ' + mkt.sportsMarketType + ' - line ' + mkt.line + ' - ' + verdict, mkt);
+    });
+  }
+  // Rough sanity check used only by debugPolymarketPlayer's verdict text
+  // above - true if this exact normalized name made it into the final
+  // polymarketProjections object (helps distinguish "this market itself was
+  // fine" from "the name just doesn't match the player pool's spelling").
+  function candidatesHadDataFor(norm){
+    return !!polymarketProjections[norm];
+  }
+  window.debugPolymarketPlayer = debugPolymarketPlayer;
 
   function americanToProb(price){
     price = Number(price);
@@ -5357,6 +5433,12 @@
     if (e.key === 'Enter') debugPlayerProps(this.value);
   });
   document.getElementById('debugBookAvailabilityBtn').addEventListener('click', debugBookAvailability);
+  document.getElementById('debugPolymarketBtn').addEventListener('click', function(){
+    debugPolymarketPlayer(document.getElementById('debugPolymarketInput').value);
+  });
+  document.getElementById('debugPolymarketInput').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') debugPolymarketPlayer(this.value);
+  });
 
   document.getElementById('addGameBtn').addEventListener('click', addGame);
   document.getElementById('thBlowout').addEventListener('change', function(){renderGames(); if(players.length) tagPlayers(); saveState();});
