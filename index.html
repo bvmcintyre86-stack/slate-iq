@@ -1163,18 +1163,30 @@
     // (zero events - markets for the week aren't posted yet) apart from
     // "events came back but parsing dropped them" without re-uploading
     // console dumps every time.
-    var diag = { events: 0, markets: 0, nameParseFail: 0, thresholdFail: 0, probFail: 0, kept: 0 };
+    var diag = { events: 0, markets: 0, nameParseFail: 0, thresholdFail: 0, probFail: 0, kept: 0, byKey: {} };
+    // ATTD-specific sample capture: logs the first few raw ANYTD markets
+    // UNCONDITIONALLY (title/yes_sub_title/ticker/floor_strike), regardless
+    // of whether our parsing accepts or drops them. The per-key drop
+    // counters below tell us WHICH step is failing; this shows us the
+    // actual shape of the payload so a fix (if still needed) can target the
+    // real field names instead of guessing again.
+    var attdSamples = [];
 
     async function processSeries(rs){
+      if (!diag.byKey[rs.key]) diag.byKey[rs.key] = { events: 0, markets: 0, nameParseFail: 0, thresholdFail: 0, probFail: 0, kept: 0 };
+      var kd = diag.byKey[rs.key];
       var result = await kalshiFetchAllPages(workerUrl, '/events?series_ticker=' + rs.ticker + '&status=open&with_nested_markets=true&limit=200');
       if (result.failed) failedSeries.push(rs.ticker);
       result.pages.forEach(function(page){
         (page.events||[]).forEach(function(ev){
-          diag.events++;
+          diag.events++; kd.events++;
           (ev.markets||[]).forEach(function(mkt){
-            diag.markets++;
+            diag.markets++; kd.markets++;
+            if (rs.key === 'attd' && attdSamples.length < 5){
+              attdSamples.push({ ticker: mkt.ticker, title: mkt.title, yes_sub_title: mkt.yes_sub_title, floor_strike: mkt.floor_strike, yes_bid_dollars: mkt.yes_bid_dollars, yes_ask_dollars: mkt.yes_ask_dollars, last_price_dollars: mkt.last_price_dollars });
+            }
             var name = kalshiPlayerNameFromTitle(mkt);
-            if (!name){ diag.nameParseFail++; return; }
+            if (!name){ diag.nameParseFail++; kd.nameParseFail++; return; }
             var threshold = mkt.floor_strike;
             if (threshold === undefined || threshold === null){
               var m2 = /(\d+(\.\d+)?)\+/.exec(mkt.title || '');
@@ -1192,7 +1204,7 @@
               // (prob * multiplier), so a missing threshold there is fine.
               // Requiring one unconditionally was silently dropping every
               // ANYTD market even though its price data was perfectly good.
-              if (rs.kind === 'yardage'){ diag.thresholdFail++; return; }
+              if (rs.kind === 'yardage'){ diag.thresholdFail++; kd.thresholdFail++; return; }
               threshold = null;
             }
             // Kalshi's dollar-amount fields come back as STRINGS (e.g. "0.47"),
@@ -1210,8 +1222,8 @@
             var prob = (bid != null && !isNaN(bid) && ask != null && !isNaN(ask) && (bid > 0 || ask > 0))
               ? (bid + ask) / 2
               : (last != null && !isNaN(last) ? last : null);
-            if (prob === null || isNaN(prob)){ diag.probFail++; return; }
-            diag.kept++;
+            if (prob === null || isNaN(prob)){ diag.probFail++; kd.probFail++; return; }
+            diag.kept++; kd.kept++;
             var norm = normalizeName(name);
             if (!candidates[norm]) candidates[norm] = {};
             if (!candidates[norm][rs.key]) candidates[norm][rs.key] = [];
@@ -1309,6 +1321,14 @@
       diag.kept + ' kept, ' + diag.nameParseFail + ' dropped (name parse), ' + diag.thresholdFail + ' dropped (no threshold), ' + diag.probFail + ' dropped (no price). ' +
       (diag.events === 0 ? 'Zero events means Kalshi has not posted markets for these series yet (check back closer to game day) - not a bug.' : ''));
     console.log('Kalshi projections:', kalshiProjections);
+    if (diag.byKey.attd){
+      var ak = diag.byKey.attd;
+      console.log('Kalshi ATTD (ANYTD) breakdown: ' + ak.events + ' events, ' + ak.markets + ' markets - ' +
+        ak.kept + ' kept, ' + ak.nameParseFail + ' dropped (name parse), ' + ak.thresholdFail + ' dropped (threshold), ' + ak.probFail + ' dropped (no price).');
+      if (attdSamples.length) console.log('Kalshi ATTD raw market samples (first ' + attdSamples.length + '):', attdSamples);
+    } else {
+      console.log('Kalshi ATTD (ANYTD): no series matched at all - either the ANYTD ticker format changed, or it is not among this slate\'s discovered series. Check the "series skipped" list above for anything ANYTD-shaped.');
+    }
     renderTable();
     renderTopPlayers();
     saveState();
