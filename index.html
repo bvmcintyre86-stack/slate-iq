@@ -492,12 +492,12 @@
             <th data-key="salary">Salary</th>
             <th data-key="fppg">FPPG</th>
             <th data-key="mkt">Mkt</th>
-            <th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th>
+            <th data-key="kalshi" title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th>
             <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their actual Mkt projection. Smaller or negative = closer to or past that target.">3x &Delta;</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="tag">Script</th>
-            <th title="Opponent's rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th>
-            <th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>
+            <th data-key="opp" title="Opponent's rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th>
+            <th data-key="role" title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>
             <th data-key="actualPts" title="Enter after the games are final, to compare against your Mkt projection.">Actual</th>
             <th data-key="ownership" title="Enter from FanDuel/DraftKings' own post-contest ownership export.">Own %</th>
             <th data-key="mvpOwnership" id="mvpOwnHeader" title="Single Game only: what % of entries had this player specifically as MVP/Captain, not just anywhere in the roster.">MVP Own %</th>
@@ -741,6 +741,30 @@
       : null;
     if (!role && !oppRank) return null;
     return { role: role, oppRank: oppRank };
+  }
+
+  // Numeric sort values for the Opp and Role columns, used by the table
+  // sort - mirrors the exact same "prefer last 2 games, fall back to
+  // season" rule renderMatchupCells uses for the displayed cell, so a sort
+  // always agrees with what's shown.
+  function oppRankSortValue(p){
+    var info = getMatchupInfo(p);
+    var oppRank = info && info.oppRank;
+    return oppRank ? oppRank.rank : null;
+  }
+  function roleSortValue(p){
+    var info = getMatchupInfo(p);
+    var role = info && info.role;
+    if (!role) return null;
+    var l2 = role.last2 || {}, std = role.seasonToDate || {};
+    if (p.position === 'WR' || p.position === 'TE'){
+      return l2.wopr != null ? l2.wopr : std.wopr;
+    } else if (p.position === 'RB'){
+      return l2.carriesPerGame != null ? l2.carriesPerGame : std.carriesPerGame;
+    } else if (p.position === 'QB'){
+      return l2.attemptsPerGame != null ? l2.attemptsPerGame : std.attemptsPerGame;
+    }
+    return null;
   }
 
   async function loadMatchupData(){
@@ -3878,6 +3902,23 @@
         var bmp = marketProjections[normalizeName(b.name)];
         av = amp ? amp.fp : -Infinity;
         bv = bmp ? bmp.fp : -Infinity;
+      } else if (sortKey === 'kalshi'){
+        var akp = kalshiProjections[normalizeName(a.name)];
+        var bkp = kalshiProjections[normalizeName(b.name)];
+        av = akp ? akp.fp : -Infinity;
+        bv = bkp ? bkp.fp : -Infinity;
+      } else if (sortKey === 'opp'){
+        // Rank 1 = allows the MOST fantasy points at this position (the best
+        // matchup to attack), so this sorts like any other numeric column -
+        // missing data (-Infinity) always lands at the bottom of the
+        // default desc sort rather than looking like the juiciest matchup.
+        av = oppRankSortValue(a); bv = oppRankSortValue(b);
+        if (av === null) av = -Infinity;
+        if (bv === null) bv = -Infinity;
+      } else if (sortKey === 'role'){
+        av = roleSortValue(a); bv = roleSortValue(b);
+        if (av === null) av = -Infinity;
+        if (bv === null) bv = -Infinity;
       } else if (sortKey === 'mkt3x'){
         // Smaller/negative = better here, so missing data (null) should sort
         // as the WORST case, not the best - opposite of the usual -Infinity
