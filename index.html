@@ -1555,13 +1555,25 @@
 
     setPolymarketStatus('Loading player props for ' + eventIds.length + ' Polymarket NFL event(s)...');
     // The endpoint caps requests at 25 event ids ("At most 25 event IDs are
-    // allowed" - confirmed from a live 400 response), and a full NFL week
-    // can run past that, so this chunks into batches of 25 and merges the
-    // markets from each. Sequential (not parallel) to stay gentle on an
-    // undocumented internal endpoint we don't know the rate limits for.
-    var EVENT_BATCH_SIZE = 25;
+    // allowed" - confirmed from a live 400 response). But live diagnostics
+    // (paste from 2026-10-01) proved a SECOND, separate cap sits on top of
+    // that: no matter what limit_per_event asks for, every event in a batch
+    // came back with exactly 50 props each - until the running total hit
+    // 800 markets for the whole HTTP response, at which point every
+    // remaining event in that batch got 0 props (not an error, just empty).
+    // 16 events x 50 = 800 exactly, which is why 16 events got data and the
+    // other 9 (in a 25-event batch) got nothing. Shrinking the batch size so
+    // that batch_size * 50 stays comfortably under 800 means no event gets
+    // zeroed out by that aggregate cap - every event should get its (still
+    // 50-capped) share. This does NOT fix the separate 50-per-event cap
+    // itself (a game with 296 total props will still only report 50 of
+    // them per batch) - see the pagination-probe logging below, which is
+    // there to find out whether that 50-per-event ceiling can be paged past
+    // at all.
+    var EVENT_BATCH_SIZE = 8;
     var allMarkets = [];
     var batchFailures = 0;
+    var loggedShape = false;
     for (var bi = 0; bi < eventIds.length; bi += EVENT_BATCH_SIZE){
       var batch = eventIds.slice(bi, bi + EVENT_BATCH_SIZE);
       try {
@@ -1596,6 +1608,24 @@
         }
         var batchMarkets = (ppBody.bag && ppBody.bag.markets) || [];
         allMarkets = allMarkets.concat(batchMarkets);
+        // One-time shape probe: dump every top-level key on the response
+        // body and on one event object (props array excluded - it's huge)
+        // so we can see whether there's an offset/cursor/pageToken field
+        // we're not using yet. If the 50-per-event number really is a hard
+        // ceiling with no pagination handle, these key lists will show
+        // nothing useful; if Polymarket's client paginates some other way,
+        // this is where the field name would show up.
+        if (!loggedShape){
+          loggedShape = true;
+          console.log('Polymarket /player-props response top-level keys: ' + Object.keys(ppBody).join(', '));
+          if (ppBody.bag) console.log('Polymarket response "bag" keys: ' + Object.keys(ppBody.bag).join(', '));
+          var firstEv = (ppBody.events || [])[0];
+          if (firstEv){
+            var evKeysNoProps = {};
+            Object.keys(firstEv).forEach(function(k){ evKeysNoProps[k] = (k === 'props') ? ('[array of ' + (firstEv.props||[]).length + ']') : firstEv[k]; });
+            console.log('Polymarket first event object shape (props array collapsed): ' + JSON.stringify(evKeysNoProps));
+          }
+        }
         // Each event in the response says how many props it ACTUALLY has
         // (totalPropCount) vs how many it returned (props.length, capped by
         // limit_per_event) - this is the direct way to confirm or rule out
