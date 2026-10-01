@@ -1533,7 +1533,13 @@
       // Polymarket event record (e.g. split by prop category) - if so, one
       // of them could be getting missed by a too-low limit above, or simply
       // never requested. Search this for a team name/date to check.
-      console.log('Polymarket discovered ' + events.length + ' NFL event(s):', events.map(function(e){ return { id: e.id, slug: e.slug, title: e.title }; }));
+      // Logged as one joined STRING, not an object/array - console.log on an
+      // array of objects prints as collapsed "{...}" entries when copied out
+      // of the console (same issue that hid the real Kalshi 400 error
+      // earlier), which is useless for pasting back. This pastes as plain
+      // readable text instead.
+      console.log('Polymarket discovered ' + events.length + ' NFL event(s):\n' +
+        events.map(function(e){ return '  id=' + e.id + '  slug=' + e.slug + '  title=' + e.title; }).join('\n'));
     } catch(e){
       setPolymarketStatus('Polymarket event discovery errored - see console.');
       console.warn('Polymarket event discovery error:', e);
@@ -1757,7 +1763,11 @@
         : !hasPrice ? 'DROPPED - no usable bid/ask or outcome price found'
         : 'KEPT - mapped to "' + matcher.key + '", normalized name "' + norm + '"' +
           (candidatesHadDataFor(norm) ? '' : ' (but normalizeName("' + name + '") doesn\'t match this player elsewhere in the pool - check for a suffix/spelling mismatch)');
-      console.log('  ' + name + ' - ' + mkt.sportsMarketType + ' - line ' + mkt.line + ' - ' + verdict, mkt);
+      // Prints the full market as a JSON STRING, not as a live object - a
+      // live object passed to console.log prints as collapsed "{...}" when
+      // copied out of devtools, which hides exactly the fields (like a
+      // possible eventId) you'd need to paste back for further diagnosis.
+      console.log('  ' + name + ' - ' + mkt.sportsMarketType + ' - line ' + mkt.line + ' - ' + verdict + '\n' + JSON.stringify(mkt, null, 2));
     });
   }
   // Rough sanity check used only by debugPolymarketPlayer's verdict text
