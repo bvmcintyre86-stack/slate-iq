@@ -1499,37 +1499,51 @@
     var eventIds = events.map(function(e){ return parseInt(e.id, 10); }).filter(function(n){ return !isNaN(n); });
 
     setPolymarketStatus('Loading player props for ' + eventIds.length + ' Polymarket NFL event(s)...');
-    var body;
-    try {
-      var ppResp = await fetch(workerUrl + '/player-props', {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-        // limit_per_event: a conservative 200 rather than 1000 - the one
-        // real capture we have used 8, and we don't yet know whether this
-        // internal endpoint enforces a smaller server-side max that would
-        // 400 a too-large request. If this turns out too low (this event
-        // alone has 286 total props), raise it once we've confirmed what
-        // the real ceiling is.
-        body: JSON.stringify({ events: { event_ids: eventIds, limit_per_event: 200 }, combo_enabled_only: false })
-      });
-      var ppRespText = await ppResp.text();
-      body = (function(){ try { return JSON.parse(ppRespText); } catch(e){ return null; } })();
-      if (!ppResp.ok || !body){
-        setPolymarketStatus('Polymarket player-props request failed (HTTP ' + ppResp.status + ') - see console, then try again shortly.');
-        // Log the raw response TEXT, not the parsed object - console.warn on
-        // an object often prints as a collapsed "Object" when copy-pasted
-        // out of the console, which hides the actual error message.
-        console.warn('Polymarket /player-props failed (HTTP ' + ppResp.status + '): ' + ppRespText);
-        return;
+    // The endpoint caps requests at 25 event ids ("At most 25 event IDs are
+    // allowed" - confirmed from a live 400 response), and a full NFL week
+    // can run past that, so this chunks into batches of 25 and merges the
+    // markets from each. Sequential (not parallel) to stay gentle on an
+    // undocumented internal endpoint we don't know the rate limits for.
+    var EVENT_BATCH_SIZE = 25;
+    var allMarkets = [];
+    var batchFailures = 0;
+    for (var bi = 0; bi < eventIds.length; bi += EVENT_BATCH_SIZE){
+      var batch = eventIds.slice(bi, bi + EVENT_BATCH_SIZE);
+      try {
+        var ppResp = await fetch(workerUrl + '/player-props', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          // limit_per_event: a conservative 200 rather than 1000 - the one
+          // real capture we have used 8, and we don't yet know whether this
+          // internal endpoint enforces a smaller server-side max on this
+          // field too. If this turns out too low (one event alone had 286
+          // total props), raise it once we've confirmed the real ceiling.
+          body: JSON.stringify({ events: { event_ids: batch, limit_per_event: 200 }, combo_enabled_only: false })
+        });
+        var ppRespText = await ppResp.text();
+        var ppBody = (function(){ try { return JSON.parse(ppRespText); } catch(e){ return null; } })();
+        if (!ppResp.ok || !ppBody){
+          batchFailures++;
+          // Log the raw response TEXT, not the parsed object - console.warn
+          // on an object often prints as a collapsed "Object" when copied
+          // out of the console, which hides the actual error message.
+          console.warn('Polymarket /player-props batch failed (HTTP ' + ppResp.status + '): ' + ppRespText);
+          continue;
+        }
+        var batchMarkets = (ppBody.bag && ppBody.bag.markets) || [];
+        allMarkets = allMarkets.concat(batchMarkets);
+      } catch(e){
+        batchFailures++;
+        console.warn('Polymarket /player-props batch errored:', e);
       }
-    } catch(e){
-      setPolymarketStatus('Polymarket player-props request errored - see console.');
-      console.warn('Polymarket player-props error:', e);
+    }
+    if (!allMarkets.length){
+      setPolymarketStatus('Polymarket player-props request failed for every batch - see console.');
       return;
     }
 
-    var markets = (body.bag && body.bag.markets) || [];
+    var markets = allMarkets;
     var diag = { total: markets.length, unmatchedType: 0, noName: 0, noPrice: 0, kept: 0 };
     var unmatchedTypes = {};
     var candidates = {}; // normalizedName -> {statKey: [{threshold, prob, kind}, ...]}
@@ -1626,7 +1640,8 @@
     }
 
     polymarketProjectionsLoadedAt = Date.now();
-    setPolymarketStatus(matched + ' players matched across ' + eventIds.length + ' Polymarket NFL event(s).');
+    setPolymarketStatus(matched + ' players matched across ' + eventIds.length + ' Polymarket NFL event(s).' +
+      (batchFailures ? ' (' + batchFailures + ' batch(es) failed - see console.)' : ''));
     console.log('Polymarket fetch diagnostics: ' + diag.total + ' markets scanned - ' +
       diag.kept + ' kept, ' + diag.unmatchedType + ' dropped (unrecognized sportsMarketType), ' +
       diag.noName + ' dropped (no player name), ' + diag.noPrice + ' dropped (no price).');
