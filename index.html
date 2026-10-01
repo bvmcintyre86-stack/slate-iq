@@ -1012,6 +1012,14 @@
   // KXNFLRSHTD, KXNFLRSHATT) - confirmed from a real skipped-series dump.
   // Both spellings are matched in case that ever changes.
   var KALSHI_STAT_MATCHERS = [
+    // The series our /ANYTD/ matcher was catching exists but has 0 open
+    // events (confirmed via the ATTD diagnostic breakdown) - it's a stale/
+    // unused ticker. The real live anytime-TD-scorer series is the bare
+    // "KXNFLTD" ticker, sitting unmatched in the skip list the whole time -
+    // same bare-naming pattern as receptions (KXNFLREC, not RECEPTIONS).
+    // Exact-match (not substring) so it can't accidentally swallow
+    // KXNFLTOTALTD, KXNFLGAMETD, KXNFLTEAMTD, etc.
+    { re: /^KXNFLTD$/,      key: 'attd',       kind: 'binary'  },
     { re: /ANYTD/,          key: 'attd',       kind: 'binary'  },
     { re: /PASSYDS/,        key: 'passYards',  kind: 'yardage' },
     { re: /R(U)?SHYDS/,     key: 'rushYards',  kind: 'yardage' },
