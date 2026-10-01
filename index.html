@@ -1145,11 +1145,26 @@
             if (threshold === undefined || threshold === null){
               var m2 = /(\d+(\.\d+)?)\+/.exec(mkt.title || '');
               threshold = m2 ? parseFloat(m2[1]) : null;
+            } else {
+              threshold = parseFloat(threshold);
             }
-            if (threshold === null){ diag.thresholdFail++; return; }
-            var bid = mkt.yes_bid_dollars, ask = mkt.yes_ask_dollars, last = mkt.last_price_dollars;
-            var prob = (bid != null && ask != null && (bid > 0 || ask > 0)) ? (bid + ask) / 2 : (last != null ? last : null);
-            if (prob === null){ diag.probFail++; return; }
+            if (threshold === null || isNaN(threshold)){ diag.thresholdFail++; return; }
+            // Kalshi's dollar-amount fields come back as STRINGS (e.g. "0.47"),
+            // not numbers. (bid + ask) on two strings is concatenation, not
+            // addition - "0.47" + "0.53" -> "0.470.53" -> NaN after /2. That
+            // NaN silently fails to equal null, so it slipped past the old
+            // "no price" check, got stored, and then broke the closest-to-50%
+            // comparison for every candidate (NaN < x is always false), which
+            // is why fully-populated candidates still produced zero matched
+            // players. parseFloat coerces each field to a real number first.
+            var bidRaw = mkt.yes_bid_dollars, askRaw = mkt.yes_ask_dollars, lastRaw = mkt.last_price_dollars;
+            var bid = (bidRaw != null) ? parseFloat(bidRaw) : null;
+            var ask = (askRaw != null) ? parseFloat(askRaw) : null;
+            var last = (lastRaw != null) ? parseFloat(lastRaw) : null;
+            var prob = (bid != null && !isNaN(bid) && ask != null && !isNaN(ask) && (bid > 0 || ask > 0))
+              ? (bid + ask) / 2
+              : (last != null && !isNaN(last) ? last : null);
+            if (prob === null || isNaN(prob)){ diag.probFail++; return; }
             diag.kept++;
             var norm = normalizeName(name);
             if (!candidates[norm]) candidates[norm] = {};
