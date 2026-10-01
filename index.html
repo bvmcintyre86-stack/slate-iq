@@ -942,7 +942,12 @@
         var altCountNote = (b.isAlt && b.altCandidateCount > 1) ? (' (best of ' + b.altCandidateCount + ' alt lines)') : '';
         var altNote = b.isAlt ? (b.value === 0 ? ' [alt line' + altCountNote + ' - not counted, still too lopsided to trust]' : ' [from an alt line' + altCountNote + ' - approximate]') : '';
         var bonusNote = b.isBonus ? (b.thresholdUsed === b.realThreshold ? ' [exact ' + b.realThreshold + '+ line]' : ' [via ' + b.thresholdUsed + '+ line, closest available to ' + b.realThreshold + '+]') : '';
-        lines.push(STAT_LABELS[sk] + ': ' + b.value.toFixed(1) + ' pts (' + book + ')' + altNote + bonusNote);
+        // Same "N books went into this number" transparency Kalshi/Polymarket
+        // already show as "best of N thresholds" - here it means the main
+        // line is a consensus across that many approved books, not one book's
+        // solo number.
+        var consensusNote = (!b.isAlt && b.consensusCount > 1) ? (' [consensus of ' + b.consensusCount + ' books]') : '';
+        lines.push(STAT_LABELS[sk] + ': ' + b.value.toFixed(1) + ' pts (' + book + ')' + consensusNote + altNote + bonusNote);
       } else {
         lines.push(STAT_LABELS[sk] + ': not posted yet');
       }
@@ -964,7 +969,8 @@
         var altCountNote3 = (b3.isAlt && b3.altCandidateCount > 1) ? (' (best of ' + b3.altCandidateCount + ' alt lines)') : '';
         var altNote3 = b3.isAlt ? (b3.value === 0 ? ' [alt line' + altCountNote3 + ' - not counted, still too lopsided to trust]' : ' [from an alt line' + altCountNote3 + ' - approximate]') : '';
         var bonusNote3 = b3.isBonus ? (b3.thresholdUsed === b3.realThreshold ? ' [exact ' + b3.realThreshold + '+ line]' : ' [via ' + b3.thresholdUsed + '+ line, closest available to ' + b3.realThreshold + '+]') : '';
-        lines.push(STAT_LABELS[sk3] + ': ' + b3.value.toFixed(1) + ' pts (' + book3 + ')' + altNote3 + bonusNote3);
+        var consensusNote3 = (!b3.isAlt && b3.consensusCount > 1) ? (' [consensus of ' + b3.consensusCount + ' books]') : '';
+        lines.push(STAT_LABELS[sk3] + ': ' + b3.value.toFixed(1) + ' pts (' + book3 + ')' + consensusNote3 + altNote3 + bonusNote3);
       });
     }
     return lines.join('\n');
@@ -1700,21 +1706,62 @@
     return all;
   }
 
-  // Single "best" line for the normal (non-alt) case - first eligible
-  // sportsbook in priority order, its first/primary line. Alt-line handling
-  // in fetchMarketProjections uses pickAllLines() above instead, since it
-  // needs the full menu of thresholds, not just one.
-  function pickBestLine(marketSourceLines){
+  // "Best" line for the normal (non-alt) case - a CONSENSUS across every
+  // approved book that has posted a standard line, not just whichever book
+  // happens to rank first in SPORTSBOOK_PRIORITY. Two real problems with
+  // pure priority order: (1) it trusts one book's number over the other
+  // five without ever checking whether it's actually a good one - a single
+  // stale or mispriced book ranked #1 silently wins every single time, even
+  // when five sharper books disagree; (2) for binary (moneyline-style)
+  // stats, a lone book's price carries that book's own vig/hold baked in
+  // untouched, while Kalshi/Polymarket's numbers are already a market-wide
+  // consensus (many participants trading against each other), not one
+  // bookmaker's opinion - comparing "Mkt" against Kalshi/Polymarket was
+  // comparing a single vigged quote to two de-facto-consensus ones.
+  // Averaging several books' IMPLIED PROBABILITIES together cancels out a
+  // good chunk of any one book's idiosyncratic skew/vig, closing most of
+  // that gap without needing an opposing "No" price we don't actually have
+  // in this data (there's no paired field for it - this only uses the same
+  // per-book quotes already captured, so nothing here is guessed).
+  // kind: 'yardage' -> median POINTS across books (robust to one outlier
+  // book's stale number; the points value is what actually drives the
+  // yardage point math, not price). 'binary' -> average PROBABILITY across
+  // books, re-encoded into a synthetic American price so every downstream
+  // caller (americanToProb, etc.) keeps working unchanged.
+  // Falls back to the plain first-available pick whenever there's only one
+  // book, or kind is omitted (e.g. the debug console tools below, which
+  // just want to show "what would we actually use" for a specific book's
+  // own number) - identical behavior to before in that case.
+  function pickBestLine(marketSourceLines, kind){
     if (!marketSourceLines) return null;
+    var quotes = [];
     for (var i=0;i<SPORTSBOOK_PRIORITY.length;i++){
       var srcId = String(SPORTSBOOK_PRIORITY[i]);
       var line = marketSourceLines[srcId];
       if (!line || line.statusId === 3) continue; // 3 = suspended/unavailable
       var alt = (line.alternateLines && line.alternateLines.length) ? line.alternateLines[0] : line;
       if (alt.price === undefined || alt.price === null) continue;
-      return { price: alt.price, points: (alt.points !== undefined ? alt.points : line.points), sourceId: srcId };
+      quotes.push({ price: alt.price, points: (alt.points !== undefined ? alt.points : line.points), sourceId: srcId });
     }
-    return null;
+    if (!quotes.length) return null;
+    if (!kind || quotes.length === 1) return quotes[0];
+
+    if (kind === 'yardage'){
+      var sorted = quotes.slice().sort(function(a,b){ return a.points - b.points; });
+      var mid = sorted[Math.floor((sorted.length - 1) / 2)]; // lower-median, deterministic for even counts
+      return { price: mid.price, points: mid.points, sourceId: mid.sourceId, consensusCount: quotes.length };
+    }
+
+    // Binary: you can't average American odds directly (they're not on a
+    // linear scale), so convert each book's price to an implied probability
+    // first, average those, then convert back.
+    var probs = quotes.map(function(q){ return americanToProb(q.price); }).filter(function(p){ return p !== null; });
+    if (!probs.length) return quotes[0];
+    var avgProb = probs.reduce(function(a,b){ return a+b; }, 0) / probs.length;
+    var syntheticPrice = avgProb >= 0.5
+      ? -Math.round((avgProb/(1-avgProb)) * 100)
+      : Math.round(((1-avgProb)/avgProb) * 100);
+    return { price: syntheticPrice, points: quotes[0].points, sourceId: quotes[0].sourceId, consensusCount: quotes.length, consensusProb: avgProb };
   }
 
   async function fetchMarketProjections(){
@@ -1814,9 +1861,10 @@
             continue;
           }
 
-          var best = pickBestLine(side.marketSourceLines);
+          var best = pickBestLine(side.marketSourceLines, PROP_BET_TYPES[thisKey] && PROP_BET_TYPES[thisKey].kind);
           if (!best) continue;
           s.approvedBookMatched++;
+          if (best.consensusCount > 1) s.consensusBooks = (s.consensusBooks || 0) + 1;
           if (!accum[personId]) accum[personId] = {};
           accum[personId][thisKey] = best;
         }
@@ -1852,7 +1900,9 @@
 
       for (var dk in statsByKey){
         var d = statsByKey[dk];
-        diag.push(dk + ': ' + d.entriesSeen + ' lines, ' + d.sidesSeen + ' sides, ' + d.anyBookMatched + ' with any book, ' + d.approvedBookMatched + ' with an approved book' + (d.altUsedAsFallback ? ', +' + d.altUsedAsFallback + ' more via alt-line fallback' : ''));
+        diag.push(dk + ': ' + d.entriesSeen + ' lines, ' + d.sidesSeen + ' sides, ' + d.anyBookMatched + ' with any book, ' + d.approvedBookMatched + ' with an approved book' +
+          (d.consensusBooks ? ' (' + d.consensusBooks + ' of those averaged across 2+ books)' : '') +
+          (d.altUsedAsFallback ? ', +' + d.altUsedAsFallback + ' more via alt-line fallback' : ''));
       }
     }
 
@@ -1900,7 +1950,7 @@
           contribution = prob === null ? 0 : prob * cfg.mult;
         }
         fp += contribution;
-        breakdown[sk] = { value: contribution, sourceId: line.sourceId, isAlt: !!line.isAlt, altCandidateCount: line.altCandidateCount };
+        breakdown[sk] = { value: contribution, sourceId: line.sourceId, isAlt: !!line.isAlt, altCandidateCount: line.altCandidateCount, consensusCount: line.consensusCount };
       }
 
       // FanDuel milestone bonuses: +3 pts for 300+ passing yards, +3 for
@@ -2089,8 +2139,9 @@
           var suspended = lines[srcId].statusId === 3 ? ' (suspended)' : '';
           return book + suspended;
         });
-        var best = pickBestLine(lines);
-        var bestDesc = best ? (SPORTSBOOK_NAMES[best.sourceId] || ('src'+best.sourceId)) + ' @ ' + best.points + '/' + best.price
+        var best = pickBestLine(lines, cfg && cfg.kind);
+        var bestDesc = best ? (SPORTSBOOK_NAMES[best.sourceId] || ('src'+best.sourceId)) + ' @ ' + best.points + '/' + best.price +
+                               (best.consensusCount > 1 ? ' [consensus of ' + best.consensusCount + ' books' + (best.consensusProb != null ? ', avg prob ' + Math.round(best.consensusProb*100) + '%' : '') + ']' : '')
                              : 'none of our approved books (' + SPORTSBOOK_PRIORITY.map(function(id){return SPORTSBOOK_NAMES[id];}).join(', ') + ') have posted this yet';
         // For alt lines specifically, note whether THIS one's price is close
         // enough to even odds to actually be usable as an EV proxy, mirroring
