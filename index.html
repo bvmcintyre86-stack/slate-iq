@@ -17,6 +17,7 @@
     --gold:#C9A227;
     --green:#4F9D6E;
     --teal:#3E8E93;
+    --violet:#8A7FD6;
     --blue:#4A7FBF;
     --amber:#D3A23F;
     --brick:#B5533C;
@@ -456,6 +457,11 @@
       <span id="kalshiStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
     </div>
     <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
+      <button id="loadPolymarketBtn">Load Polymarket props</button>
+      <input id="polymarketWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="" placeholder="https://your-polymarket-proxy.deno.dev">
+      <span id="polymarketStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+    </div>
+    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
       <button id="loadMatchupBtn">Load matchup data</button>
       <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Proxy URL</label>
       <input id="matchupWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://matchup-proxy-worker.bvmcintyre86.workers.dev" placeholder="https://your-matchup-proxy.workers.dev">
@@ -493,6 +499,7 @@
             <th data-key="fppg">FPPG</th>
             <th data-key="mkt">Mkt</th>
             <th data-key="kalshi" title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th>
+            <th data-key="polymarket" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th>
             <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their actual Mkt projection. Smaller or negative = closer to or past that target.">3x &Delta;</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="tag">Script</th>
@@ -675,6 +682,10 @@
   // ── Kalshi (alongside Unabated's props, as a cross-check) ────────────────
   var kalshiProjections = {}; // normalized "first last" -> {fp, breakdown}
   var kalshiProjectionsLoadedAt = null;
+
+  // ── Polymarket US (a second, independent cross-check) ─────────────────
+  var polymarketProjections = {}; // normalized "first last" -> {fp, breakdown}
+  var polymarketProjectionsLoadedAt = null;
 
   // The one confirmed, meaningful scoring difference between the two
   // platforms: DraftKings uses full PPR (1.0 pt/reception), FanDuel uses
@@ -1008,6 +1019,60 @@
       });
     }
     return lines.join('\n');
+  }
+
+  // Same "already-rounded-per-line" display logic as mktDisplayTotal/
+  // kalshiDisplayTotal, for Polymarket's breakdown.
+  function polymarketDisplayTotal(pp){
+    if (!pp || !pp.breakdown) return 0;
+    var sum = 0;
+    for (var k in pp.breakdown){
+      sum += Math.round(pp.breakdown[k].value * 10) / 10;
+    }
+    return Math.round(sum * 10) / 10;
+  }
+
+  function polymarketTooltip(pp, position){
+    if (!pp) return 'No Polymarket data loaded for this player yet.';
+    var lines = ['Polymarket-implied projection: ' + polymarketDisplayTotal(pp).toFixed(1) + ' pts', ''];
+    var relevant = POSITION_RELEVANT_STATS[position] || Object.keys(STAT_LABELS);
+    var shown = {};
+    relevant.forEach(function(sk){
+      shown[sk] = true;
+      var b = pp.breakdown && pp.breakdown[sk];
+      if (b){
+        lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts (' +
+          (b.threshold != null ? b.threshold + '+ line, ' : '') + Math.round(b.prob*100) + '% implied' +
+          (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')');
+      } else {
+        lines.push((STAT_LABELS[sk]||sk) + ': not posted on Polymarket');
+      }
+    });
+    var extras = [];
+    for (var sk2 in pp.breakdown){ if (!shown[sk2]) extras.push(sk2); }
+    if (extras.length){
+      lines.push('');
+      lines.push('Other (bonuses & extras, still counted above):');
+      extras.forEach(function(sk3){
+        var b3 = pp.breakdown[sk3];
+        lines.push((STAT_LABELS[sk3]||sk3) + ': ' + b3.value.toFixed(1) + ' pts (' +
+          (b3.threshold != null ? b3.threshold + '+ line, ' : '') + Math.round(b3.prob*100) + '% implied' +
+          (b3.candidateCount > 1 ? ', best of ' + b3.candidateCount + ' thresholds' : '') + ')');
+      });
+    }
+    return lines.join('\n');
+  }
+
+  function polymarketFreshnessMsg(){
+    if (!polymarketProjectionsLoadedAt) return '';
+    var mins = Math.round((Date.now() - polymarketProjectionsLoadedAt) / 60000);
+    var when = mins < 1 ? 'just now' : mins < 60 ? (mins + ' min ago') : (Math.round(mins/60) + ' hr ago');
+    return Object.keys(polymarketProjections).length + ' players with Polymarket data (loaded ' + when + ' - click "Load Polymarket props" to refresh).';
+  }
+
+  function setPolymarketStatus(msg){
+    var el = document.getElementById('polymarketStatus');
+    if (el) el.textContent = msg;
   }
 
   function kalshiFreshnessMsg(){
@@ -1366,6 +1431,202 @@
     saveState();
   }
   document.getElementById('loadKalshiBtn').addEventListener('click', fetchKalshiProjections);
+
+  // ── Polymarket US ──────────────────────────────────────────────────────
+  // Two upstreams behind the one proxy URL (see the proxy script's own
+  // comments for why): GET /public/... hits Polymarket US's documented,
+  // public gateway.polymarket.us API (used here only to discover this
+  // week's NFL event ids). POST /player-props hits web.polymarket.us's own
+  // internal client gateway - undocumented, found via the site's own
+  // DevTools Network tab - which is the only place that surfaces Anytime
+  // Touchdowns, Fantasy Points, receptions, etc. with real prices; the
+  // public API's own /events and /markets endpoints only ever returned
+  // passing/receiving yardage props for a game, nothing else.
+  //
+  // Polymarket's player prop markets come back MUCH cleaner than Kalshi's:
+  // the player's name is a real field (metadata.playerName), not something
+  // to regex out of a title, and "line" is already the literal displayed
+  // threshold (no floor_strike-minus-0.5 adjustment needed). The one
+  // carried-over lesson from Kalshi: bestBidQuote.value/bestAskQuote.value
+  // come back as STRINGS ("0.4700"), so this parses them with the same
+  // parseFloat/isNaN guards that fixed the Kalshi NaN bug, rather than
+  // risking the same silent string-concatenation failure again.
+  var POLYMARKET_STAT_MATCHERS = {
+    football_player_passing_yards:      { key: 'passYards',    kind: 'yardage' },
+    football_player_passing_completions:{ key: 'passComp',     kind: 'yardage' },
+    football_player_passing_attempts:   { key: 'passAttempts', kind: 'yardage' },
+    football_player_passing_touchdowns: { key: 'passTD',       kind: 'binary'  },
+    football_player_rushing_yards:      { key: 'rushYards',    kind: 'yardage' },
+    football_player_rushing_attempts:   { key: 'rushAttempts', kind: 'yardage' },
+    football_player_receiving_yards:    { key: 'recYards',     kind: 'yardage' },
+    football_player_receptions:         { key: 'receptions',   kind: 'yardage' },
+    // Polymarket's "touchdowns" market is explicitly ALL non-passing TDs
+    // (rushing/receiving/return/fumble-recovery) in one market - exactly
+    // our ATTD definition, no separate rush-only/rec-only TD market exists
+    // here the way Kalshi has KXNFLRSHTD/KXNFLRECTD, so there's no
+    // rushTD/recTD-overlap case to handle for this source.
+    football_player_touchdowns:         { key: 'attd',         kind: 'binary'  }
+  };
+
+  async function fetchPolymarketProjections(){
+    var workerUrl = (document.getElementById('polymarketWorkerUrl').value||'').trim().replace(/\/+$/,'');
+    if (!workerUrl){ setPolymarketStatus('Set your Polymarket Proxy URL above first.'); return; }
+
+    setPolymarketStatus('Finding NFL events on Polymarket...');
+    var events;
+    try {
+      // /events-list (not /public/v2/...) - the raw endpoint embeds each
+      // event's full markets array and runs 30+ MB for a week's worth of
+      // NFL games; the proxy strips that down server-side so the browser
+      // only ever downloads id/slug/title/startDate.
+      var evResp = await fetch(workerUrl + '/events-list?league=nfl&limit=50&_cb=' + Date.now(), {cache:'no-store'});
+      var evBody = await evResp.json().catch(function(){ return null; });
+      if (!evResp.ok || !evBody){
+        setPolymarketStatus('Polymarket event discovery failed (HTTP ' + evResp.status + ') - see console, then try again shortly.');
+        console.warn('Polymarket /events-list failed:', evBody);
+        return;
+      }
+      events = evBody.events || [];
+    } catch(e){
+      setPolymarketStatus('Polymarket event discovery errored - see console.');
+      console.warn('Polymarket event discovery error:', e);
+      return;
+    }
+    if (!events.length){
+      setPolymarketStatus('No NFL events found on Polymarket right now (props may not be posted yet this far out from kickoff).');
+      return;
+    }
+    var eventIds = events.map(function(e){ return parseInt(e.id, 10); }).filter(function(n){ return !isNaN(n); });
+
+    setPolymarketStatus('Loading player props for ' + eventIds.length + ' Polymarket NFL event(s)...');
+    var body;
+    try {
+      var ppResp = await fetch(workerUrl + '/player-props', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events: { event_ids: eventIds, limit_per_event: 1000 }, combo_enabled_only: false })
+      });
+      body = await ppResp.json().catch(function(){ return null; });
+      if (!ppResp.ok || !body){
+        setPolymarketStatus('Polymarket player-props request failed (HTTP ' + ppResp.status + ') - see console, then try again shortly.');
+        console.warn('Polymarket /player-props failed:', body);
+        return;
+      }
+    } catch(e){
+      setPolymarketStatus('Polymarket player-props request errored - see console.');
+      console.warn('Polymarket player-props error:', e);
+      return;
+    }
+
+    var markets = (body.bag && body.bag.markets) || [];
+    var diag = { total: markets.length, unmatchedType: 0, noName: 0, noPrice: 0, kept: 0 };
+    var unmatchedTypes = {};
+    var candidates = {}; // normalizedName -> {statKey: [{threshold, prob, kind}, ...]}
+
+    markets.forEach(function(mkt){
+      var matcher = POLYMARKET_STAT_MATCHERS[mkt.sportsMarketType];
+      if (!matcher){ diag.unmatchedType++; unmatchedTypes[mkt.sportsMarketType] = (unmatchedTypes[mkt.sportsMarketType]||0) + 1; return; }
+      var name = mkt.metadata && mkt.metadata.playerName;
+      if (!name){ diag.noName++; return; }
+
+      var threshold = parseFloat(mkt.line);
+      if (isNaN(threshold)) threshold = null;
+
+      // bestBidQuote/bestAskQuote come back as STRINGS - see the comment
+      // above fetchPolymarketProjections for why this is parsed explicitly
+      // rather than added/averaged directly the way the Kalshi bug did.
+      var bidRaw = mkt.bestBidQuote && mkt.bestBidQuote.value;
+      var askRaw = mkt.bestAskQuote && mkt.bestAskQuote.value;
+      var bid = (bidRaw != null) ? parseFloat(bidRaw) : null;
+      var ask = (askRaw != null) ? parseFloat(askRaw) : null;
+      var prob = (bid != null && !isNaN(bid) && ask != null && !isNaN(ask)) ? (bid + ask) / 2 : null;
+      if (prob === null || isNaN(prob)){
+        // Fall back to outcomePrices (a stringified JSON array matching
+        // the stringified "outcomes" array) if bid/ask are missing - same
+        // double-stringification Gamma/CLOB use, so this is parsed rather
+        // than indexed into as if it were already an array.
+        try {
+          var outcomes = JSON.parse(mkt.outcomes || '[]');
+          var outcomePrices = JSON.parse(mkt.outcomePrices || '[]');
+          var yesIdx = outcomes.indexOf('Yes');
+          if (yesIdx !== -1 && outcomePrices[yesIdx] != null){
+            var p2 = parseFloat(outcomePrices[yesIdx]);
+            if (!isNaN(p2)) prob = p2;
+          }
+        } catch(e){ /* leave prob null */ }
+      }
+      if (prob === null || isNaN(prob)){ diag.noPrice++; return; }
+
+      diag.kept++;
+      var norm = normalizeName(name);
+      if (!candidates[norm]) candidates[norm] = {};
+      if (!candidates[norm][matcher.key]) candidates[norm][matcher.key] = [];
+      candidates[norm][matcher.key].push({ threshold: threshold, prob: prob, kind: matcher.kind });
+    });
+
+    polymarketProjections = {};
+    var matched = 0;
+    for (var normName in candidates){
+      var fp = 0;
+      var breakdown = {};
+      var stats = candidates[normName];
+      for (var sk in stats){
+        // Same EV-proxy pick as Kalshi/Unabated: whichever threshold is
+        // priced closest to a coinflip is the best available expected-value
+        // stand-in for that player/stat.
+        var list = stats[sk];
+        var best = null, bestDist = Infinity;
+        list.forEach(function(c){
+          var dist = Math.abs(c.prob - 0.5);
+          if (dist < bestDist){ bestDist = dist; best = c; }
+        });
+        if (!best) continue;
+        var cfg = PROP_BET_TYPES[sk];
+        var mult = cfg ? cfg.mult : 0;
+        var contribution = best.kind === 'yardage' ? best.threshold * mult : best.prob * mult;
+        fp += contribution;
+        breakdown[sk] = { value: contribution, threshold: best.threshold, prob: best.prob, candidateCount: list.length };
+      }
+
+      // Same FanDuel milestone bonuses as Unabated/Kalshi (+3 pts each for
+      // 300+ pass yds, 100+ rush yds, 100+ rec yds), reusing the same
+      // candidate lists rather than a separate fetch.
+      for (var bk in BONUS_CONFIG){
+        var bonusCfg = BONUS_CONFIG[bk];
+        var bonusList = stats[bonusCfg.stat];
+        if (!bonusList || !bonusList.length) continue;
+        var bClosest = null, bClosestDist = Infinity;
+        bonusList.forEach(function(c){
+          var dist = Math.abs(c.threshold - bonusCfg.threshold);
+          if (dist < bClosestDist){ bClosestDist = dist; bClosest = c; }
+        });
+        if (!bClosest || bClosestDist > 15) continue;
+        var bonusContribution = bClosest.prob * bonusCfg.mult;
+        fp += bonusContribution;
+        breakdown[bk] = {
+          value: bonusContribution, prob: bClosest.prob, threshold: bClosest.threshold,
+          thresholdUsed: bClosest.threshold, realThreshold: bonusCfg.threshold, isBonus: true
+        };
+      }
+
+      if (!Object.keys(breakdown).length) continue;
+      polymarketProjections[normName] = { fp: fp, breakdown: breakdown };
+      matched++;
+    }
+
+    polymarketProjectionsLoadedAt = Date.now();
+    setPolymarketStatus(matched + ' players matched across ' + eventIds.length + ' Polymarket NFL event(s).');
+    console.log('Polymarket fetch diagnostics: ' + diag.total + ' markets scanned - ' +
+      diag.kept + ' kept, ' + diag.unmatchedType + ' dropped (unrecognized sportsMarketType), ' +
+      diag.noName + ' dropped (no player name), ' + diag.noPrice + ' dropped (no price).');
+    if (diag.unmatchedType) console.log('Polymarket unrecognized sportsMarketType counts:', unmatchedTypes);
+    console.log('Polymarket projections:', polymarketProjections);
+    renderTable();
+    renderTopPlayers();
+    saveState();
+  }
+  document.getElementById('loadPolymarketBtn').addEventListener('click', fetchPolymarketProjections);
 
   function americanToProb(price){
     price = Number(price);
@@ -2285,6 +2546,9 @@
         kalshiWorkerUrl: document.getElementById('kalshiWorkerUrl') ? document.getElementById('kalshiWorkerUrl').value : '',
         kalshiProjections: kalshiProjections,
         kalshiProjectionsLoadedAt: kalshiProjectionsLoadedAt,
+        polymarketWorkerUrl: document.getElementById('polymarketWorkerUrl') ? document.getElementById('polymarketWorkerUrl').value : '',
+        polymarketProjections: polymarketProjections,
+        polymarketProjectionsLoadedAt: polymarketProjectionsLoadedAt,
         thresholds: {
           blowout: document.getElementById('thBlowout').value,
           highTotal: document.getElementById('thHighTotal').value,
@@ -2378,6 +2642,12 @@
         kalshiProjections = state.kalshiProjections;
         kalshiProjectionsLoadedAt = state.kalshiProjectionsLoadedAt || null;
         if (Object.keys(kalshiProjections).length) setKalshiStatus(kalshiFreshnessMsg());
+      }
+      if (state.polymarketWorkerUrl && document.getElementById('polymarketWorkerUrl')) document.getElementById('polymarketWorkerUrl').value = state.polymarketWorkerUrl;
+      if (state.polymarketProjections){
+        polymarketProjections = state.polymarketProjections;
+        polymarketProjectionsLoadedAt = state.polymarketProjectionsLoadedAt || null;
+        if (Object.keys(polymarketProjections).length) setPolymarketStatus(polymarketFreshnessMsg());
       }
       if (state.matchupData){
         matchupData = state.matchupData;
@@ -3907,6 +4177,11 @@
         var bkp = kalshiProjections[normalizeName(b.name)];
         av = akp ? akp.fp : -Infinity;
         bv = bkp ? bkp.fp : -Infinity;
+      } else if (sortKey === 'polymarket'){
+        var app = polymarketProjections[normalizeName(a.name)];
+        var bpp = polymarketProjections[normalizeName(b.name)];
+        av = app ? app.fp : -Infinity;
+        bv = bpp ? bpp.fp : -Infinity;
       } else if (sortKey === 'opp'){
         // Rank 1 = allows the MOST fantasy points at this position (the best
         // matchup to attack), so this sorts like any other numeric column -
@@ -3961,6 +4236,7 @@
       }
       var mp = marketProjections[normalizeName(p.name)];
       var kp = kalshiProjections[normalizeName(p.name)];
+      var pp = polymarketProjections[normalizeName(p.name)];
       return '<tr>'+
         '<td style="text-align:left;">'+p.name+'</td>'+
         '<td class="pos-pill">'+p.position+'</td>'+
@@ -3969,6 +4245,7 @@
         '<td class="num">'+p.fppg.toFixed(1)+'</td>'+
         '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : '—')+'</td>'+
         '<td class="num" style="color:'+(kp?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kp,p.position).replace(/"/g,'&quot;')+'">'+(kp ? kalshiDisplayTotal(kp).toFixed(1) : '—')+'</td>'+
+        '<td class="num" style="color:'+(pp?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(pp,p.position).replace(/"/g,'&quot;')+'">'+(pp ? polymarketDisplayTotal(pp).toFixed(1) : '—')+'</td>'+
         (function(){
           var delta = mkt3xDelta(p);
           if (delta === null) return '<td class="num" style="color:var(--muted);">—</td>';
@@ -4079,6 +4356,8 @@
     var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mkt,p.position).replace(/"/g,'&quot;')+'">'+(mkt ? mktDisplayTotal(mkt).toFixed(1)+(mktCoverage(mkt,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mkt,p.position).matched+'/'+mktCoverage(mkt,p.position).total+')</span>':'') : '—')+'</td>';
     var kalshi = kalshiProjections[normalizeName(p.name)];
     var kalshiCell = '<td class="mono" style="color:'+(kalshi?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kalshi,p.position).replace(/"/g,'&quot;')+'">'+(kalshi ? kalshiDisplayTotal(kalshi).toFixed(1) : '—')+'</td>';
+    var polymkt = polymarketProjections[normalizeName(p.name)];
+    var polymktCell = '<td class="mono" style="color:'+(polymkt?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(polymkt,p.position).replace(/"/g,'&quot;')+'">'+(polymkt ? polymarketDisplayTotal(polymkt).toFixed(1) : '—')+'</td>';
     var valueDelta = mkt3xDelta(p);
     var valueCell = (function(){
       if (valueDelta === null) return '<td class="mono" style="color:var(--muted);">—</td>';
@@ -4086,7 +4365,7 @@
       return '<td class="mono" style="color:'+color+';font-weight:'+(valueDelta<=0?'700':'400')+';">'+(valueDelta > 0 ? '+' : '')+valueDelta.toFixed(1)+'</td>';
     })();
     var matchupCells = renderMatchupCells(p);
-    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+kalshiCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+matchupCells+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
+    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+kalshiCell+polymktCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+matchupCells+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
   }
 
   // The two "extra separator" columns from nflverse matchup data: how the
@@ -4176,12 +4455,12 @@
       var allRows = '';
       [1,2,3,0].forEach(function(tier){
         if (!byTier[tier].length) return;
-        allRows += '<tr class="tp-tier-hdr-row"><td colspan="14"><span class="tp-tier-badge '+tc2[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl[tier]+' ('+byTier[tier].length+')</td></tr>';
+        allRows += '<tr class="tp-tier-hdr-row"><td colspan="15"><span class="tp-tier-badge '+tc2[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl[tier]+' ('+byTier[tier].length+')</td></tr>';
         allRows += byTier[tier].map(function(p){return renderTPCard(p,false);}).join('');
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
-        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
+        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
         +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>'
         +'<th></th><th></th></tr></thead><tbody>'+allRows+'</tbody></table>';
     } else {
@@ -4193,12 +4472,12 @@
       var posRows = '';
       [1,2,3,0].forEach(function(tier){
         if (!byTier2[tier].length) return;
-        posRows += '<tr class="tp-tier-hdr-row"><td colspan="16"><span class="tp-tier-badge '+tc3[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl2[tier]+' ('+byTier2[tier].length+')</td></tr>';
+        posRows += '<tr class="tp-tier-hdr-row"><td colspan="17"><span class="tp-tier-badge '+tc3[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl2[tier]+' ('+byTier2[tier].length+')</td></tr>';
         posRows += byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('');
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
-        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
+        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
         +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>'
         +'<th>Rank</th><th>Tier</th><th></th><th></th></tr></thead><tbody>'+posRows+'</tbody></table>';
     }
