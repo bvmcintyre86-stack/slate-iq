@@ -1511,7 +1511,16 @@
       // event's full markets array and runs 30+ MB for a week's worth of
       // NFL games; the proxy strips that down server-side so the browser
       // only ever downloads id/slug/title/startDate.
-      var evResp = await fetch(workerUrl + '/events-list?league=nfl&limit=50&_cb=' + Date.now(), {cache:'no-store'});
+      // limit bumped 50 -> 200: this response is already slimmed server-side
+      // to just {id,slug,title,startDate,live} per event, so raising it
+      // costs almost nothing, unlike limit_per_event below. Doing this
+      // because a single real game's props apparently split across more
+      // than one Polymarket "event" record (see the slug-inspection log
+      // right below) - if the one that actually holds a player's receiving
+      // props sorts past position 50, it'd be silently missed entirely even
+      // though a DIFFERENT event for that same game (e.g. its anytime-TD
+      // bucket) made the cut.
+      var evResp = await fetch(workerUrl + '/events-list?league=nfl&limit=200&_cb=' + Date.now(), {cache:'no-store'});
       var evBody = await evResp.json().catch(function(){ return null; });
       if (!evResp.ok || !evBody){
         setPolymarketStatus('Polymarket event discovery failed (HTTP ' + evResp.status + ') - see console, then try again shortly.');
@@ -1519,6 +1528,12 @@
         return;
       }
       events = evBody.events || [];
+      // Prints every discovered event's id/slug/title so you can check
+      // whether the SAME real-world game shows up as more than one
+      // Polymarket event record (e.g. split by prop category) - if so, one
+      // of them could be getting missed by a too-low limit above, or simply
+      // never requested. Search this for a team name/date to check.
+      console.log('Polymarket discovered ' + events.length + ' NFL event(s):', events.map(function(e){ return { id: e.id, slug: e.slug, title: e.title }; }));
     } catch(e){
       setPolymarketStatus('Polymarket event discovery errored - see console.');
       console.warn('Polymarket event discovery error:', e);
