@@ -140,10 +140,15 @@
     padding:10px 0;border-top:1px solid var(--line);
   }
   .src-row:first-of-type{border-top:1px solid var(--line);}
+  .src-row-pair{
+    display:flex;align-items:flex-start;gap:24px;flex-wrap:wrap;
+    padding:10px 0;border-top:1px solid var(--line);
+  }
+  .src-row-half{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1 1 260px;min-width:220px;}
   .src-row-label{font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;min-width:0;}
-  .src-row input[type=text]{flex:1;min-width:140px;font-size:12px;}
-  .src-row .src-status{font-size:12px;color:var(--muted);white-space:nowrap;}
-  .src-row .src-hint{font-size:11px;color:var(--muted);flex-basis:100%;}
+  .src-row input[type=text],.src-row-half input[type=text]{flex:1;min-width:140px;font-size:12px;}
+  .src-row .src-status,.src-row-half .src-status{font-size:12px;color:var(--muted);white-space:nowrap;}
+  .src-row .src-hint,.src-row-half .src-hint{font-size:11px;color:var(--muted);flex-basis:100%;}
   .src-gear{
     cursor:pointer;color:var(--muted);font-size:13px;background:none;border:1px solid var(--line);
     border-radius:6px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;
@@ -406,38 +411,40 @@
         <span class="src-panel-meta" id="dataSourcesMeta"></span>
       </summary>
 
-      <div class="src-row">
-        <button id="loadPropsBtn">Load Unabated props</button>
-        <span id="propsStatus" class="src-status"></span>
-      </div>
-
-      <div class="src-row">
-        <button id="loadKalshiBtn">Load Kalshi props</button>
-        <button type="button" class="src-gear" data-src-toggle="kalshiUrlWrap" title="Show/edit proxy URL">&#9881;</button>
-        <span id="kalshiStatus" class="src-status"></span>
-        <div class="src-url-wrap" id="kalshiUrlWrap">
-          <label class="src-row-label">Proxy URL</label>
-          <input id="kalshiWorkerUrl" type="text" value="https://kalshi-proxy-deno.bvmcintyre86-stack.deno.net" placeholder="https://your-kalshi-proxy.deno.dev">
+      <div class="src-row-pair">
+        <div class="src-row-half">
+          <button id="loadPropsBtn">Load Unabated props</button>
+          <span id="propsStatus" class="src-status"></span>
+        </div>
+        <div class="src-row-half">
+          <button id="loadMatchupBtn">Load matchup data</button>
+          <button type="button" class="src-gear" data-src-toggle="matchupUrlWrap" title="Show/edit proxy URL">&#9881;</button>
+          <span id="matchupStatus" class="src-status"></span>
+          <div class="src-url-wrap" id="matchupUrlWrap">
+            <label class="src-row-label">Proxy URL</label>
+            <input id="matchupWorkerUrl" type="text" value="https://matchup-proxy-worker.bvmcintyre86.workers.dev" placeholder="https://your-matchup-proxy.workers.dev">
+          </div>
         </div>
       </div>
 
-      <div class="src-row">
-        <button id="loadPolymarketBtn">Load Polymarket props</button>
-        <button type="button" class="src-gear" data-src-toggle="polymarketUrlWrap" title="Show/edit proxy URL">&#9881;</button>
-        <span id="polymarketStatus" class="src-status"></span>
-        <div class="src-url-wrap" id="polymarketUrlWrap">
-          <label class="src-row-label">Proxy URL</label>
-          <input id="polymarketWorkerUrl" type="text" value="" placeholder="https://your-polymarket-proxy.deno.dev">
+      <div class="src-row-pair">
+        <div class="src-row-half">
+          <button id="loadKalshiBtn">Load Kalshi props</button>
+          <button type="button" class="src-gear" data-src-toggle="kalshiUrlWrap" title="Show/edit proxy URL">&#9881;</button>
+          <span id="kalshiStatus" class="src-status"></span>
+          <div class="src-url-wrap" id="kalshiUrlWrap">
+            <label class="src-row-label">Proxy URL</label>
+            <input id="kalshiWorkerUrl" type="text" value="https://kalshi-proxy-deno.bvmcintyre86-stack.deno.net" placeholder="https://your-kalshi-proxy.deno.dev">
+          </div>
         </div>
-      </div>
-
-      <div class="src-row">
-        <button id="loadMatchupBtn">Load matchup data</button>
-        <button type="button" class="src-gear" data-src-toggle="matchupUrlWrap" title="Show/edit proxy URL">&#9881;</button>
-        <span id="matchupStatus" class="src-status"></span>
-        <div class="src-url-wrap" id="matchupUrlWrap">
-          <label class="src-row-label">Proxy URL</label>
-          <input id="matchupWorkerUrl" type="text" value="https://matchup-proxy-worker.bvmcintyre86.workers.dev" placeholder="https://your-matchup-proxy.workers.dev">
+        <div class="src-row-half">
+          <button id="loadPolymarketBtn">Load Polymarket props</button>
+          <button type="button" class="src-gear" data-src-toggle="polymarketUrlWrap" title="Show/edit proxy URL">&#9881;</button>
+          <span id="polymarketStatus" class="src-status"></span>
+          <div class="src-url-wrap" id="polymarketUrlWrap">
+            <label class="src-row-label">Proxy URL</label>
+            <input id="polymarketWorkerUrl" type="text" value="" placeholder="https://your-polymarket-proxy.deno.dev">
+          </div>
         </div>
       </div>
     </details>
