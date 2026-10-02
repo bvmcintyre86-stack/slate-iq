@@ -395,16 +395,19 @@
     <input type="file" id="csvFile" accept=".csv" style="display:none;">
 
     <details class="src-panel" id="dataSourcesPanel" open>
-      <summary>Data sources <span class="src-panel-meta" id="dataSourcesMeta"></span></summary>
-
-      <div class="src-row">
-        <button id="loadPropsBtn">Load Unabated props</button>
-        <label class="src-row-label">Projection source</label>
+      <summary>
+        Data sources
+        <label class="src-row-label" id="projSourceLabel" style="margin-left:auto;">Projection source</label>
         <select id="projSourceSel" style="font-size:12px;" title="Market = average of whichever of Unabated/Kalshi/Polymarket are loaded for each player. Blend = 50/50 with FanDuel's own fppg.">
           <option value="fppg">FanDuel fppg</option>
           <option value="market">Market (Unabated+Kalshi+Polymarket avg)</option>
           <option value="blend">Blend (fppg + Market avg, 50/50)</option>
         </select>
+        <span class="src-panel-meta" id="dataSourcesMeta"></span>
+      </summary>
+
+      <div class="src-row">
+        <button id="loadPropsBtn">Load Unabated props</button>
         <span id="propsStatus" class="src-status"></span>
       </div>
 
@@ -1857,6 +1860,15 @@
     });
     syncMeta();
   })();
+
+  // Projection source now lives inside the "Data sources" <summary> row (so
+  // it's visible whether that panel is expanded or collapsed) - without
+  // this, clicking it would also toggle the details panel open/closed,
+  // since browsers treat the whole <summary> as a click target.
+  ['projSourceLabel','projSourceSel'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) ['click','mousedown'].forEach(function(evt){ el.addEventListener(evt, function(e){ e.stopPropagation(); }); });
+  });
 
   // Console debug helper (type debugPolymarketPlayer('pittman') in the
   // browser console after a Polymarket load) - shows EVERY raw market
