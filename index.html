@@ -1812,20 +1812,23 @@
           method: 'POST',
           cache: 'no-store',
           headers: { 'Content-Type': 'application/json' },
-          // Investigated (2026-10-01, round 3): limit_per_event was raised to
-          // 500 on the theory that a bigger number means "give me more
-          // markets" - but the live polymarket.us site itself (captured
-          // straight from its own Network tab for this exact event batch)
-          // sends limit_per_event: 8 with combo_enabled_only: true, and the
-          // SITE shows the full threshold ladder (1+/2+/3+/4+ passing TDs,
-          // etc.) with nothing missing. So limit_per_event clearly isn't
-          // "max markets returned per event" the way it was assumed to be -
-          // whatever it actually controls, 500 + combo_enabled_only:false
-          // was the wrong shape, not a generous one, and was quietly
-          // capping each event to the first ~50 markets the server happened
-          // to return in that mode. Matching the real site's own request
-          // exactly, rather than guessing at bigger numbers.
-          body: JSON.stringify({ events: { event_ids: batch, limit_per_event: 8 }, combo_enabled_only: true })
+          // Investigated (2026-10-01, round 3): tried matching a request
+          // payload captured from polymarket.us's own Network tab -
+          // limit_per_event: 8, combo_enabled_only: true - on the theory
+          // that it was the call behind the site's full threshold-ladder
+          // display. REVERTED: confirmed via this app's own per-event
+          // returned/total diagnostics that limit_per_event IS a literal
+          // per-event cap after all (dropped actual returned-markets-per-
+          // event from 50 to exactly 8, worse not better). The captured
+          // payload was very likely a DIFFERENT call than the one that
+          // renders the main Player Props list - combo_enabled_only: true
+          // reads like a parlay/combo-builder widget's request (e.g. "top 8
+          // combo-eligible markets per game" for a trending-parlays panel),
+          // not the full per-stat threshold ladder. Back to 500/false (the
+          // best-performing setting confirmed so far) until the actual
+          // list-rendering request is captured and verified by checking
+          // this app's own returned/total diagnostics match or exceed it.
+          body: JSON.stringify({ events: { event_ids: batch, limit_per_event: 500 }, combo_enabled_only: false })
         });
         var ppRespText = await ppResp.text();
         var ppBody = (function(){ try { return JSON.parse(ppRespText); } catch(e){ return null; } })();
@@ -1868,17 +1871,20 @@
     // then found for players whose props HAD posted - Josh Allen's Pass TD
     // market came back with only ONE threshold (3+) when the live
     // polymarket.us site itself shows a full ladder (1+/2+/3+/4+) for the
-    // same player/game. Root cause: this request was sending
-    // limit_per_event: 500 with combo_enabled_only: false, which is NOT
-    // what the real site sends (confirmed via its own Network tab:
-    // limit_per_event: 8, combo_enabled_only: true) - whatever
-    // limit_per_event actually controls, it isn't "max markets returned,"
-    // and the wrong combo_enabled_only value was silently capping each
-    // event's response to ~50 markets. Now matches the site's real request
-    // shape exactly. If a specific player's market still looks missing
-    // after reloading, check debugPolymarketPlayer() for the real reason
-    // (type unmapped, name mismatch, or genuinely not posted yet) before
-    // assuming truncation again.
+    // same player/game. Tried matching a request payload captured from the
+    // site's own Network tab (limit_per_event: 8, combo_enabled_only: true)
+    // - REVERTED after this app's own returned/total diagnostics showed
+    // that setting actually returns FEWER markets per event (8, down from
+    // 50), confirming limit_per_event genuinely is a literal per-event cap
+    // and that captured payload was very likely a different call (a combo/
+    // parlay-widget request, going by combo_enabled_only: true) than the
+    // one that renders the main Player Props list. Still on 500/false - the
+    // best-performing setting confirmed so far - until the actual
+    // list-rendering request is captured and verified to return MORE
+    // markets per event than 50 before adopting it. If a specific player's
+    // market still looks missing after reloading, check
+    // debugPolymarketPlayer() for the real reason (type unmapped, name
+    // mismatch, or genuinely not posted yet) before assuming truncation.
 
     // Full per-event prop-count table, not just the truncation warnings
     // above - lets you confirm a SPECIFIC game (by event id, matched against
