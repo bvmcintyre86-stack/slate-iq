@@ -737,11 +737,8 @@
   var SPORTSBOOK_PRIORITY = [1, 2, 86, 4, 20, 36]; // DK, FanDuel, Fanatics, BetMGM, Caesars, theScore Bet
   var PROP_BET_TYPES = {
     passYards:    { id: 14,  kind: 'yardage', mult: 0.04 },
-    passAttempts: { id: 61,  kind: 'yardage', mult: 0 },     // informational only, no direct point value
-    passComp:     { id: 13,  kind: 'yardage', mult: 0 },
     passTD:       { id: 65,  kind: 'binary',  mult: 4 },
     rushYards:    { id: 12,  kind: 'yardage', mult: 0.1 },
-    rushAttempts: { id: 11,  kind: 'yardage', mult: 0 },
     rushTD:       { id: 102, kind: 'binary',  mult: 0 }, // overlaps with ATTD (which already covers rushing TDs) - kept fetched for reference/debugging, but not counted toward points to avoid double-counting the same touchdown equity twice
     recYards:     { id: 16,  kind: 'yardage', mult: 0.1 },
     receptions:   { id: 15,  kind: 'yardage', mult: 0.5 },   // FanDuel standard (0.5 PPR) - flipped to 1.0 for DraftKings (full PPR) by applyPlatformScoring()
@@ -913,7 +910,15 @@
   // single-game spreads, not fit to any specific dataset - if bonus
   // estimates look consistently too aggressive or too conservative, these
   // are the numbers to adjust.
-  var BONUS_STAT_STDEV = { passYards: 65, rushYards: 28, recYards: 28 };
+  // Single-game standard deviations used both for the milestone-bonus
+  // estimate (estimateMilestoneProb) and for backing out an implied mean on
+  // the main stat projection (impliedStatMean) whenever a source's only
+  // posted line sits far from a coinflip. receptions is the one point-
+  // scoring stat (0.5-1.0 mult) besides the three FanDuel bonus stats, so it
+  // needs a calibrated figure too, or a pass-catching RB/WR/TE whose only
+  // Polymarket reception line is a high-probability "floor" number (e.g.
+  // "2+ receptions" at 90%) would hit the exact same lowball bug Rush Yds had.
+  var BONUS_STAT_STDEV = { passYards: 65, rushYards: 28, recYards: 28, receptions: 2.5 };
 
   // Inverse standard normal CDF (the probit function), Peter Acklam's
   // rational approximation - accurate to ~1.15e-9. Used to back out an
@@ -972,6 +977,29 @@
     return 1 - normalCdf(zMilestone);
   }
 
+  // Backs out an implied mean from a single line/probability pair, the same
+  // way estimateMilestoneProb() does for bonus thresholds - used for the
+  // MAIN yardage projection too now. Taking a threshold at face value as
+  // "the yardage estimate" only works when that threshold is itself close to
+  // a coinflip (then threshold ~= median ~= mean for a roughly symmetric
+  // distribution). When a source posts just one off-center line (e.g.
+  // Polymarket's single "10+ rush yards" line at 88% for a mobile QB), using
+  // the raw threshold badly lowballs the true mean - exactly the mismatch
+  // that made a player's main Rush Yds line and their 100+ Rush Bonus
+  // contradict each other in the tooltip (one implying ~10 yards, the other,
+  // via estimateMilestoneProb, implying ~43). This keeps both numbers
+  // consistent with the same underlying mean. Falls back to the raw
+  // threshold when there's no calibrated stdev for the stat or the inputs
+  // aren't usable (not an error - just means "can't improve on the raw
+  // number here").
+  function impliedStatMean(stat, threshold, prob){
+    var sigma = BONUS_STAT_STDEV[stat];
+    if (!sigma || threshold == null || prob == null || prob <= 0.01 || prob >= 0.99) return threshold;
+    var z = invNormCdf(1 - prob);
+    if (!isFinite(z)) return threshold;
+    return threshold - z * sigma;
+  }
+
   var projSource = 'fppg';    // 'fppg' | 'market' | 'blend'
 
   function normalizeName(n){
@@ -986,8 +1014,8 @@
 
   var SPORTSBOOK_NAMES = {1:'DK', 2:'FD', 86:'Fanatics', 4:'BetMGM', 20:'Caesars', 36:'theScore Bet'};
   var STAT_LABELS = {
-    passYards:'Pass Yds', passAttempts:'Pass Att', passComp:'Pass Comp', passTD:'Pass TD',
-    rushYards:'Rush Yds', rushAttempts:'Rush Att', rushTD:'Rush TD',
+    passYards:'Pass Yds', passTD:'Pass TD',
+    rushYards:'Rush Yds', rushTD:'Rush TD',
     recYards:'Rec Yds', receptions:'Rec', attd:'ATTD',
     passYardsBonus:'300+ Pass Bonus', rushYardsBonus:'100+ Rush Bonus', recYardsBonus:'100+ Rec Bonus'
   };
@@ -1153,7 +1181,8 @@
       if (b){
         lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts (' +
           (b.threshold != null ? b.threshold + '+ line, ' : '') + Math.round(b.prob*100) + '% implied' +
-          (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')');
+          (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')' +
+          (b.impliedMean != null ? ' [implied mean ~' + Math.round(b.impliedMean) + ' - line is far from a coinflip]' : ''));
       } else {
         lines.push((STAT_LABELS[sk]||sk) + ': not posted on Kalshi');
       }
@@ -1205,7 +1234,8 @@
       if (b){
         lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts (' +
           (b.threshold != null ? b.threshold + '+ line, ' : '') + Math.round(b.prob*100) + '% implied' +
-          (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')');
+          (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')' +
+          (b.impliedMean != null ? ' [implied mean ~' + Math.round(b.impliedMean) + ' - line is far from a coinflip]' : ''));
       } else {
         lines.push((STAT_LABELS[sk]||sk) + ': not posted on Polymarket');
       }
@@ -1280,21 +1310,7 @@
     { re: /REC(?!YDS|TD)/,  key: 'receptions', kind: 'yardage' },
     { re: /PASSTD/,         key: 'passTD',     kind: 'binary'  },
     { re: /R(U)?SHTD/,      key: 'rushTD',     kind: 'binary'  }, // tracked, not counted (overlaps attd) - mirrors Unabated's own rushTD handling
-    { re: /RECTD/,          key: 'recTD',      kind: 'binary'  }, // tracked, not counted - no PROP_BET_TYPES slot, shown as "Other" only
-    // These three are mult:0 (informational only, never contribute points) -
-    // same as on Unabated and Polymarket - but Unabated and Polymarket both
-    // track and display them as "Other" tooltip lines, while Kalshi had no
-    // matcher for them at all, so a player's Kalshi tooltip would silently
-    // never show Pass Att/Pass Comp/Rush Att even when Unabated/Polymarket's
-    // tooltips for the SAME player did - an inconsistency across the three
-    // sources with no scoring impact, but a confusing one to compare by eye.
-    // Exact tickers unconfirmed (no live sample seen yet for these three on
-    // Kalshi) - patterned after the confirmed PASSYDS/RSHYDS naming
-    // convention. Harmless if Kalshi doesn't actually offer these markets:
-    // the regex just never matches anything, same as before.
-    { re: /PASSATT/,        key: 'passAttempts', kind: 'yardage' },
-    { re: /PASSCOMP/,       key: 'passComp',     kind: 'yardage' },
-    { re: /R(U)?SHATT/,     key: 'rushAttempts', kind: 'yardage' }
+    { re: /RECTD/,          key: 'recTD',      kind: 'binary'  } // tracked, not counted - no PROP_BET_TYPES slot, shown as "Other" only
   ];
 
   // Kalshi runs several DIFFERENT market shapes under tickers that still
@@ -1546,9 +1562,20 @@
         if (!best) continue;
         var cfg = PROP_BET_TYPES[sk];
         var mult = cfg ? cfg.mult : 0;
-        var contribution = best.kind === 'yardage' ? best.threshold * mult : best.prob * mult;
+        // For a yardage stat, don't just take the closest-to-coinflip
+        // threshold at face value - back out its implied mean first (see
+        // impliedStatMean). A threshold priced right at 50% needs no
+        // correction (mean ~= threshold already), but a single off-center
+        // line (e.g. one 10+-yard rushing line at 88%, the only one posted)
+        // would otherwise lowball the projection far below what that same
+        // line implies once you work the normal-distribution math backward -
+        // the same math already used for the milestone bonuses below, so the
+        // two numbers in the tooltip stop contradicting each other.
+        var statMean = best.kind === 'yardage' ? impliedStatMean(sk, best.threshold, best.prob) : null;
+        var contribution = best.kind === 'yardage' ? statMean * mult : best.prob * mult;
         fp += contribution;
         breakdown[sk] = { value: contribution, threshold: best.threshold, prob: best.prob, candidateCount: list.length };
+        if (best.kind === 'yardage' && statMean !== best.threshold) breakdown[sk].impliedMean = statMean;
       }
 
       // Same FanDuel milestone bonuses Unabated's own pipeline computes
@@ -1645,11 +1672,8 @@
   // risking the same silent string-concatenation failure again.
   var POLYMARKET_STAT_MATCHERS = {
     football_player_passing_yards:      { key: 'passYards',    kind: 'yardage' },
-    football_player_passing_completions:{ key: 'passComp',     kind: 'yardage' },
-    football_player_passing_attempts:   { key: 'passAttempts', kind: 'yardage' },
     football_player_passing_touchdowns: { key: 'passTD',       kind: 'binary'  },
     football_player_rushing_yards:      { key: 'rushYards',    kind: 'yardage' },
-    football_player_rushing_attempts:   { key: 'rushAttempts', kind: 'yardage' },
     football_player_receiving_yards:    { key: 'recYards',     kind: 'yardage' },
     football_player_receptions:         { key: 'receptions',   kind: 'yardage' },
     // Polymarket's "touchdowns" market is explicitly ALL non-passing TDs
@@ -1885,9 +1909,20 @@
         if (!best) continue;
         var cfg = PROP_BET_TYPES[sk];
         var mult = cfg ? cfg.mult : 0;
-        var contribution = best.kind === 'yardage' ? best.threshold * mult : best.prob * mult;
+        // For a yardage stat, don't just take the closest-to-coinflip
+        // threshold at face value - back out its implied mean first (see
+        // impliedStatMean). A threshold priced right at 50% needs no
+        // correction (mean ~= threshold already), but a single off-center
+        // line (e.g. one 10+-yard rushing line at 88%, the only one posted)
+        // would otherwise lowball the projection far below what that same
+        // line implies once you work the normal-distribution math backward -
+        // the same math already used for the milestone bonuses below, so the
+        // two numbers in the tooltip stop contradicting each other.
+        var statMean = best.kind === 'yardage' ? impliedStatMean(sk, best.threshold, best.prob) : null;
+        var contribution = best.kind === 'yardage' ? statMean * mult : best.prob * mult;
         fp += contribution;
         breakdown[sk] = { value: contribution, threshold: best.threshold, prob: best.prob, candidateCount: list.length };
+        if (best.kind === 'yardage' && statMean !== best.threshold) breakdown[sk].impliedMean = statMean;
       }
 
       // Same FanDuel milestone bonuses as Unabated/Kalshi (+3 pts each for
