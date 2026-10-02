@@ -1664,6 +1664,67 @@
       setPolymarketStatus('Polymarket player-props request failed for every batch - see console.');
       return;
     }
+
+    // bag.players (new this round) turned out to be a dead end for the
+    // 50-per-event cap - it's just roster metadata (id/name/team/jersey
+    // image), not prop data, so there's nothing there to pull extra props
+    // from. Next experiment: is the 50-per-event number actually tied to
+    // how many events are IN the request (i.e. some shared per-request
+    // prop budget divided across events), or is it a flat per-event
+    // ceiling no matter what? Re-request the single most-truncated event
+    // ALONE (batch of 1) with and without a guessed "offset" field - if
+    // Polymarket's client paginates that way, offset:50 should return a
+    // DIFFERENT 50 (the next page); if the ceiling is hard and offset is
+    // ignored, we'll get either an error or the exact same 50 back twice.
+    try {
+      var worstEventId = null, worstGap = -1;
+      Object.keys(lastRawPolymarketEventProps).forEach(function(eid){
+        var e = lastRawPolymarketEventProps[eid];
+        if (e.total != null && (e.total - e.returned) > worstGap){ worstGap = e.total - e.returned; worstEventId = parseInt(eid, 10); }
+      });
+      if (worstEventId != null){
+        console.log('Polymarket pagination probe: re-requesting event ' + worstEventId + ' solo, with and without an offset field...');
+        var soloBase = await fetch(workerUrl + '/player-props', {
+          method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ events: { event_ids: [worstEventId], limit_per_event: 500 }, combo_enabled_only: false })
+        }).then(function(r){ return r.text(); }).then(function(t){ try { return JSON.parse(t); } catch(e){ return null; } });
+        var soloOffset = await fetch(workerUrl + '/player-props', {
+          method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ events: { event_ids: [worstEventId], limit_per_event: 500, offset: 50 }, combo_enabled_only: false })
+        }).then(function(r){ return r.text(); }).then(function(t){ try { return JSON.parse(t); } catch(e){ return null; } });
+        var soloBaseProps = (soloBase && soloBase.events && soloBase.events[0] && soloBase.events[0].props) || [];
+        var soloOffsetProps = (soloOffset && soloOffset.events && soloOffset.events[0] && soloOffset.events[0].props) || [];
+        console.log('Polymarket solo probe (no offset): returned=' + soloBaseProps.length + ' total=' + (soloBase && soloBase.events && soloBase.events[0] && soloBase.events[0].totalPropCount));
+        console.log('Polymarket solo probe (offset:50): returned=' + soloOffsetProps.length + ' total=' + (soloOffset && soloOffset.events && soloOffset.events[0] && soloOffset.events[0].totalPropCount));
+        var idsOf = function(props){ return props.map(function(p){ return p.id || p.marketId || p.conditionId || JSON.stringify(p).slice(0,40); }); };
+        var baseIds = idsOf(soloBaseProps), offsetIds = idsOf(soloOffsetProps);
+        var overlap = baseIds.filter(function(id){ return offsetIds.indexOf(id) !== -1; }).length;
+        console.log('Polymarket solo probe: ' + overlap + ' of ' + baseIds.length + ' prop ids overlap between the no-offset and offset:50 calls (0 overlap = offset works and pages forward; full overlap = offset is ignored).');
+
+        // Second probe: each "prop" is a full, standalone market (its own
+        // sportsMarketType/line/bid-ask) - not half of a two-sided market -
+        // and we only ever use 9 of the sportsMarketType values Polymarket
+        // posts (see POLYMARKET_STAT_MATCHERS). If this endpoint accepts a
+        // type filter, asking for ONLY those 9 types should shrink a
+        // 296-prop game to well under 50, sidestepping the cap entirely
+        // instead of fighting it. Guessing the field name since this is
+        // undocumented - if it's wrong, Polymarket should just ignore it
+        // and return the same unfiltered 50 as the base probe above.
+        var neededTypes = Object.keys(POLYMARKET_STAT_MATCHERS);
+        var soloFiltered = await fetch(workerUrl + '/player-props', {
+          method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ events: { event_ids: [worstEventId], limit_per_event: 500, sports_market_types: neededTypes }, sportsMarketTypes: neededTypes, combo_enabled_only: false })
+        }).then(function(r){ return r.text(); }).then(function(t){ try { return JSON.parse(t); } catch(e){ return null; } });
+        var soloFilteredProps = (soloFiltered && soloFiltered.events && soloFiltered.events[0] && soloFiltered.events[0].props) || [];
+        var filteredTypeCounts = {};
+        soloFilteredProps.forEach(function(p){ filteredTypeCounts[p.sportsMarketType] = (filteredTypeCounts[p.sportsMarketType]||0) + 1; });
+        console.log('Polymarket solo probe (type filter guess): returned=' + soloFilteredProps.length + ' total=' + (soloFiltered && soloFiltered.events && soloFiltered.events[0] && soloFiltered.events[0].totalPropCount) + ' typeCounts=' + JSON.stringify(filteredTypeCounts));
+        console.log('Polymarket solo probe (type filter guess): has Pittman receiving props? ' + soloFilteredProps.some(function(p){ return p.metadata && p.metadata.playerName && p.metadata.playerName.toLowerCase().indexOf('pittman') !== -1; }));
+      }
+    } catch(probeErr){
+      console.warn('Polymarket pagination probe errored (harmless, just a diagnostic):', probeErr);
+    }
+
     // Full per-event prop-count table, not just the truncation warnings
     // above - lets you confirm a SPECIFIC game (by event id, matched against
     // the "Polymarket discovered N NFL event(s)" list) was or wasn't
