@@ -871,7 +871,13 @@
   // matchup data source instead of a full sentence - Ben just wants the
   // count and when it last loaded, not the refresh instructions each time.
   function shortLoadStatus(count, loadedAtMs){
-    var ts = loadedAtMs ? new Date(loadedAtMs).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '';
+    var ts = '';
+    if (loadedAtMs){
+      var d = new Date(loadedAtMs);
+      var mm = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+      var hh = String(d.getHours()).padStart(2,'0'), min = String(d.getMinutes()).padStart(2,'0');
+      ts = mm + '/' + dd + ' ' + hh + ':' + min;
+    }
     return count + ' player' + (count === 1 ? '' : 's') + (ts ? ' · ' + ts : '');
   }
 
