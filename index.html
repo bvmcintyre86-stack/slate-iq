@@ -905,6 +905,73 @@
     rushYardsBonus: { stat: 'rushYards', threshold: 100, mult: 3 },
     recYardsBonus:  { stat: 'recYards',  threshold: 100, mult: 3 }
   };
+
+  // Assumed standard deviation (yards) for each stat's game-to-game spread -
+  // used only to ESTIMATE a milestone bonus's probability when no source
+  // posted an actual line within 15 yards of the milestone itself (see
+  // estimateMilestoneProb below). These are rough, commonly-cited NFL
+  // single-game spreads, not fit to any specific dataset - if bonus
+  // estimates look consistently too aggressive or too conservative, these
+  // are the numbers to adjust.
+  var BONUS_STAT_STDEV = { passYards: 65, rushYards: 28, recYards: 28 };
+
+  // Inverse standard normal CDF (the probit function), Peter Acklam's
+  // rational approximation - accurate to ~1.15e-9. Used to back out an
+  // implied mean yardage from a single posted line + its over-probability.
+  function invNormCdf(p){
+    if (p <= 0) return -Infinity;
+    if (p >= 1) return Infinity;
+    var a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+    var b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+    var c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+    var d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+    var plow = 0.02425, phigh = 1 - plow, q, r;
+    if (p < plow){
+      q = Math.sqrt(-2 * Math.log(p));
+      return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+    } else if (p <= phigh){
+      q = p - 0.5; r = q*q;
+      return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+    } else {
+      q = Math.sqrt(-2 * Math.log(1 - p));
+      return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+    }
+  }
+  // Abramowitz-Stegun 7.1.26 erf approximation (max error ~1.5e-7) and the
+  // standard-normal CDF built from it - both only needed by
+  // estimateMilestoneProb below.
+  function erf(x){
+    var sign = x < 0 ? -1 : 1;
+    x = Math.abs(x);
+    var a1=0.254829592, a2=-0.284496736, a3=1.421413741, a4=-1.453152027, a5=1.061405429, p=0.3275911;
+    var t = 1 / (1 + p*x);
+    var y = 1 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*Math.exp(-x*x);
+    return sign * y;
+  }
+  function normalCdf(x){ return 0.5 * (1 + erf(x / Math.SQRT2)); }
+
+  // Estimates P(stat > milestoneThreshold) from a single posted line/over-
+  // probability pair, by assuming the stat is roughly normally distributed
+  // with the stddev above. Solves for the implied mean from the one line we
+  // do have, then reads off the probability at the milestone instead.
+  // This exists because Polymarket typically posts only ONE line per player
+  // per stat (its own consensus line), unlike sportsbooks that often sell a
+  // milestone (e.g. "300+ passing yards") as its own standalone prop - so a
+  // mobile QB's rushing line (say 35.5) would otherwise never be within 15
+  // yards of the 100-yard bonus threshold and the bonus would silently never
+  // fire, even though a real (if imprecise) estimate is possible. Returns
+  // null if the input is unusable (missing stddev, or a probability too
+  // close to 0/1 to invert reliably).
+  function estimateMilestoneProb(stat, line, overProb, milestoneThreshold){
+    var sigma = BONUS_STAT_STDEV[stat];
+    if (!sigma || line == null || overProb == null || overProb <= 0.01 || overProb >= 0.99) return null;
+    var z = invNormCdf(1 - overProb);
+    if (!isFinite(z)) return null;
+    var mean = line - z * sigma;
+    var zMilestone = (milestoneThreshold - mean) / sigma;
+    return 1 - normalCdf(zMilestone);
+  }
+
   var projSource = 'fppg';    // 'fppg' | 'market' | 'blend'
 
   function normalizeName(n){
@@ -1029,7 +1096,7 @@
         var book = SPORTSBOOK_NAMES[b.sourceId] || ('src' + b.sourceId);
         var altCountNote = (b.isAlt && b.altCandidateCount > 1) ? (' (best of ' + b.altCandidateCount + ' alt lines)') : '';
         var altNote = b.isAlt ? (b.value === 0 ? ' [alt line' + altCountNote + ' - not counted, still too lopsided to trust]' : ' [from an alt line' + altCountNote + ' - approximate]') : '';
-        var bonusNote = b.isBonus ? (b.thresholdUsed === b.realThreshold ? ' [exact ' + b.realThreshold + '+ line]' : ' [via ' + b.thresholdUsed + '+ line, closest available to ' + b.realThreshold + '+]') : '';
+        var bonusNote = b.isBonus ? (b.isEstimated ? ' [estimated - no line posted near ' + b.realThreshold + '+]' : b.thresholdUsed === b.realThreshold ? ' [exact ' + b.realThreshold + '+ line]' : ' [via ' + b.thresholdUsed + '+ line, closest available to ' + b.realThreshold + '+]') : '';
         // Same "N books went into this number" transparency Kalshi/Polymarket
         // already show as "best of N thresholds" - here it means the main
         // line is a consensus across that many approved books, not one book's
@@ -1056,7 +1123,7 @@
         var book3 = SPORTSBOOK_NAMES[b3.sourceId] || ('src' + b3.sourceId);
         var altCountNote3 = (b3.isAlt && b3.altCandidateCount > 1) ? (' (best of ' + b3.altCandidateCount + ' alt lines)') : '';
         var altNote3 = b3.isAlt ? (b3.value === 0 ? ' [alt line' + altCountNote3 + ' - not counted, still too lopsided to trust]' : ' [from an alt line' + altCountNote3 + ' - approximate]') : '';
-        var bonusNote3 = b3.isBonus ? (b3.thresholdUsed === b3.realThreshold ? ' [exact ' + b3.realThreshold + '+ line]' : ' [via ' + b3.thresholdUsed + '+ line, closest available to ' + b3.realThreshold + '+]') : '';
+        var bonusNote3 = b3.isBonus ? (b3.isEstimated ? ' [estimated - no line posted near ' + b3.realThreshold + '+]' : b3.thresholdUsed === b3.realThreshold ? ' [exact ' + b3.realThreshold + '+ line]' : ' [via ' + b3.thresholdUsed + '+ line, closest available to ' + b3.realThreshold + '+]') : '';
         var consensusNote3 = (!b3.isAlt && b3.consensusCount > 1) ? (' [consensus of ' + b3.consensusCount + ' books]') : '';
         lines.push(STAT_LABELS[sk3] + ': ' + b3.value.toFixed(1) + ' pts (' + book3 + ')' + consensusNote3 + altNote3 + bonusNote3);
       });
@@ -1109,7 +1176,8 @@
         lines.push((STAT_LABELS[sk3]||sk3) + ': ' + (notCounted ? '' : b3.value.toFixed(1) + ' pts (') +
           (b3.threshold != null ? b3.threshold + '+ line, ' : '') + Math.round(b3.prob*100) + '% implied' +
           (b3.candidateCount > 1 ? ', best of ' + b3.candidateCount + ' thresholds' : '') +
-          (notCounted ? ' [tracked, not counted - overlaps ATTD]' : ')'));
+          (notCounted ? ' [tracked, not counted - overlaps ATTD]' : ')') +
+          (b3.isEstimated ? ' [estimated - no line posted near ' + b3.realThreshold + '+]' : ''));
       });
     }
     return lines.join('\n');
@@ -1151,7 +1219,8 @@
         var b3 = pp.breakdown[sk3];
         lines.push((STAT_LABELS[sk3]||sk3) + ': ' + b3.value.toFixed(1) + ' pts (' +
           (b3.threshold != null ? b3.threshold + '+ line, ' : '') + Math.round(b3.prob*100) + '% implied' +
-          (b3.candidateCount > 1 ? ', best of ' + b3.candidateCount + ' thresholds' : '') + ')');
+          (b3.candidateCount > 1 ? ', best of ' + b3.candidateCount + ' thresholds' : '') + ')' +
+          (b3.isEstimated ? ' [estimated - no line posted near ' + b3.realThreshold + '+]' : ''));
       });
     }
     return lines.join('\n');
@@ -1489,8 +1558,12 @@
       // separate fetch: find whichever threshold sits closest to the real
       // bonus cutoff (not closest to 50/50 like the main pick above - here
       // we want the specific number), and convert its price straight into
-      // a probability of hitting it. Mirrors the Unabated bonus logic
-      // exactly, including the 15-yard trust radius.
+      // a probability of hitting it.
+      // If nothing was posted within 15 yards of the milestone (common for
+      // a stat where the whole ladder sits far from it, not just Kalshi),
+      // fall back to estimateMilestoneProb() using whichever line IS
+      // closest to a coinflip - a real, if approximate, number instead of
+      // silently showing no bonus at all.
       for (var bk in BONUS_CONFIG){
         var bonusCfg = BONUS_CONFIG[bk];
         var bonusList = stats[bonusCfg.stat];
@@ -1500,13 +1573,28 @@
           var dist = Math.abs(c.threshold - bonusCfg.threshold);
           if (dist < bClosestDist){ bClosestDist = dist; bClosest = c; }
         });
-        if (!bClosest || bClosestDist > 15) continue;
-        var bonusContribution = bClosest.prob * bonusCfg.mult;
-        fp += bonusContribution;
-        breakdown[bk] = {
-          value: bonusContribution, prob: bClosest.prob, threshold: bClosest.threshold,
-          thresholdUsed: bClosest.threshold, realThreshold: bonusCfg.threshold, isBonus: true
-        };
+        if (bClosest && bClosestDist <= 15){
+          var bonusContribution = bClosest.prob * bonusCfg.mult;
+          fp += bonusContribution;
+          breakdown[bk] = {
+            value: bonusContribution, prob: bClosest.prob, threshold: bClosest.threshold,
+            thresholdUsed: bClosest.threshold, realThreshold: bonusCfg.threshold, isBonus: true
+          };
+        } else {
+          var bFair = null, bFairDist = Infinity;
+          bonusList.forEach(function(c){
+            var dist = Math.abs(c.prob - 0.5);
+            if (dist < bFairDist){ bFairDist = dist; bFair = c; }
+          });
+          var estProb = bFair ? estimateMilestoneProb(bonusCfg.stat, bFair.threshold, bFair.prob, bonusCfg.threshold) : null;
+          if (estProb === null) continue;
+          var estContribution = estProb * bonusCfg.mult;
+          fp += estContribution;
+          breakdown[bk] = {
+            value: estContribution, prob: estProb, threshold: bFair.threshold,
+            thresholdUsed: bFair.threshold, realThreshold: bonusCfg.threshold, isBonus: true, isEstimated: true
+          };
+        }
       }
 
       if (!Object.keys(breakdown).length) continue;
@@ -1805,6 +1893,13 @@
       // Same FanDuel milestone bonuses as Unabated/Kalshi (+3 pts each for
       // 300+ pass yds, 100+ rush yds, 100+ rec yds), reusing the same
       // candidate lists rather than a separate fetch.
+      // Polymarket typically posts just ONE line per player per stat (its
+      // own consensus line), so a mobile QB's rushing line (say 35.5) is
+      // almost never within 15 yards of the 100-yard bonus cutoff - without
+      // a fallback, the bonus would silently never fire for exactly the
+      // players (Lamar Jackson, Josh Allen, etc.) it matters most for. When
+      // no line is close enough to trust directly, estimateMilestoneProb()
+      // backs out an estimate from whichever line IS closest to a coinflip.
       for (var bk in BONUS_CONFIG){
         var bonusCfg = BONUS_CONFIG[bk];
         var bonusList = stats[bonusCfg.stat];
@@ -1814,13 +1909,28 @@
           var dist = Math.abs(c.threshold - bonusCfg.threshold);
           if (dist < bClosestDist){ bClosestDist = dist; bClosest = c; }
         });
-        if (!bClosest || bClosestDist > 15) continue;
-        var bonusContribution = bClosest.prob * bonusCfg.mult;
-        fp += bonusContribution;
-        breakdown[bk] = {
-          value: bonusContribution, prob: bClosest.prob, threshold: bClosest.threshold,
-          thresholdUsed: bClosest.threshold, realThreshold: bonusCfg.threshold, isBonus: true
-        };
+        if (bClosest && bClosestDist <= 15){
+          var bonusContribution = bClosest.prob * bonusCfg.mult;
+          fp += bonusContribution;
+          breakdown[bk] = {
+            value: bonusContribution, prob: bClosest.prob, threshold: bClosest.threshold,
+            thresholdUsed: bClosest.threshold, realThreshold: bonusCfg.threshold, isBonus: true
+          };
+        } else {
+          var bFair = null, bFairDist = Infinity;
+          bonusList.forEach(function(c){
+            var dist = Math.abs(c.prob - 0.5);
+            if (dist < bFairDist){ bFairDist = dist; bFair = c; }
+          });
+          var estProb = bFair ? estimateMilestoneProb(bonusCfg.stat, bFair.threshold, bFair.prob, bonusCfg.threshold) : null;
+          if (estProb === null) continue;
+          var estContribution = estProb * bonusCfg.mult;
+          fp += estContribution;
+          breakdown[bk] = {
+            value: estContribution, prob: estProb, threshold: bFair.threshold,
+            thresholdUsed: bFair.threshold, realThreshold: bonusCfg.threshold, isBonus: true, isEstimated: true
+          };
+        }
       }
 
       if (!Object.keys(breakdown).length) continue;
@@ -2230,6 +2340,10 @@
       // (not closest to 50/50 like the normal yardage fallback - here we
       // want the specific number, 300 or 100, not just any fair line), then
       // convert that line's price straight into a probability of hitting it.
+      // If nothing was posted within 15 yards (e.g. a mobile QB's rushing
+      // yards ladder tops out well under 100), fall back to
+      // estimateMilestoneProb() using whichever alt line IS closest to a
+      // coinflip, rather than silently showing no bonus at all.
       for (var bk in BONUS_CONFIG){
         var bonusCfg = BONUS_CONFIG[bk];
         var candidates = (altAccum[pid] && altAccum[pid][bonusCfg.stat]) || [];
@@ -2241,20 +2355,33 @@
           var dist = Math.abs(c.points - bonusCfg.threshold);
           if (dist < closestDist){ closestDist = dist; closest = c; }
         });
-        // Only trust it if some book actually posted a line within 15 yards
-        // of the real cutoff - otherwise we'd be estimating "300+" from a
-        // line that's really asking about 250+ or 350+, which isn't the
-        // same probability at all.
-        if (!closest || closestDist > 15) continue;
-
-        var bonusProb = americanToProb(closest.price);
-        if (bonusProb === null) continue;
-        var bonusContribution = bonusProb * bonusCfg.mult;
-        fp += bonusContribution;
-        breakdown[bk] = {
-          value: bonusContribution, sourceId: closest.sourceId, isBonus: true,
-          thresholdUsed: closest.points, realThreshold: bonusCfg.threshold
-        };
+        if (closest && closestDist <= 15){
+          var bonusProb = americanToProb(closest.price);
+          if (bonusProb === null) continue;
+          var bonusContribution = bonusProb * bonusCfg.mult;
+          fp += bonusContribution;
+          breakdown[bk] = {
+            value: bonusContribution, sourceId: closest.sourceId, isBonus: true,
+            thresholdUsed: closest.points, realThreshold: bonusCfg.threshold
+          };
+        } else {
+          var fair = null, fairDist = Infinity;
+          candidates.forEach(function(c){
+            if (c.points === null || c.points === undefined) return;
+            var p = americanToProb(c.price);
+            if (p === null) return;
+            var dist = Math.abs(p - 0.5);
+            if (dist < fairDist){ fairDist = dist; fair = { points: c.points, prob: p, sourceId: c.sourceId }; }
+          });
+          var estProb = fair ? estimateMilestoneProb(bonusCfg.stat, fair.points, fair.prob, bonusCfg.threshold) : null;
+          if (estProb === null) continue;
+          var estContribution = estProb * bonusCfg.mult;
+          fp += estContribution;
+          breakdown[bk] = {
+            value: estContribution, sourceId: fair.sourceId, isBonus: true, isEstimated: true,
+            thresholdUsed: fair.points, realThreshold: bonusCfg.threshold
+          };
+        }
       }
       var name = normalizeName(person.firstName + ' ' + person.lastName);
       marketProjections[name] = { fp: fp, breakdown: breakdown, personId: pid };
