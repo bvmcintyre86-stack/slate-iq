@@ -1156,14 +1156,16 @@
   // from) and what's still missing - for use as a hover tooltip on the Mkt column.
   function mktTooltip(mp, position){
     if (!mp) return 'No market data loaded for this player yet.';
-    var cov = mktCoverage(mp, position);
-    var lines = ['Market projection: ' + mktDisplayTotal(mp).toFixed(1) + ' pts'];
-    if (cov) lines.push('Coverage: ' + cov.matched + ' of ' + cov.total + ' relevant props posted for ' + position);
-    lines.push('');
-    // Only list props relevant to this position (RB gets 5 pathways, WR/TE get
-    // 3, QB gets its own set) - no point showing "Pass Yds: not posted yet"
-    // on a WR. Falls back to the full list for positions without a defined
-    // set (DEF, K), since those don't have props tracked at all yet anyway.
+    var lines = ['Market projection: ' + mktDisplayTotal(mp).toFixed(1) + ' pts', ''];
+    // Trimmed down to just "stat: pts (book)" per stat - all the alt-line/
+    // bonus/consensus/implied-mean detail that used to print here is still
+    // computed (see the breakdown object itself, and the fuller history in
+    // git-blame-equivalent comments elsewhere in this file) but is no longer
+    // shown, since once a source is trusted the per-line caveats were just
+    // noise. Only list props relevant to this position (RB gets 4 pathways,
+    // WR/TE get 3, QB gets its own set) - no point showing "Pass Yds: not
+    // posted yet" on a WR. Falls back to the full list for positions without
+    // a defined set (DEF, K), since those don't have props tracked at all yet.
     var relevant = POSITION_RELEVANT_STATS[position] || Object.keys(STAT_LABELS);
     var shown = {};
     relevant.forEach(function(sk){
@@ -1171,39 +1173,24 @@
       var b = mp.breakdown && mp.breakdown[sk];
       if (b){
         var book = SPORTSBOOK_NAMES[b.sourceId] || ('src' + b.sourceId);
-        var altCountNote = (b.isAlt && b.altCandidateCount > 1) ? (' (best of ' + b.altCandidateCount + ' alt lines)') : '';
-        var altNote = b.isAlt ? (b.value === 0 ? ' [alt line' + altCountNote + ' - not counted, still too lopsided to trust]' : ' [from an alt line' + altCountNote + ' - approximate]') : '';
-        var bonusNote = b.isBonus ? (b.isEstimated ? ' [estimated - no line posted near ' + b.realThreshold + '+]' : b.thresholdUsed === b.realThreshold ? ' [exact ' + b.realThreshold + '+ line]' : ' [via ' + b.thresholdUsed + '+ line, closest available to ' + b.realThreshold + '+]') : '';
-        // Same "N books went into this number" transparency Kalshi/Polymarket
-        // already show as "best of N thresholds" - here it means the main
-        // line is a consensus across that many approved books, not one book's
-        // solo number.
-        var consensusNote = (!b.isAlt && b.consensusCount > 1) ? (' [consensus of ' + b.consensusCount + ' books]') : '';
-        var impliedNote = (b.impliedMean != null) ? (' [implied mean ~' + b.impliedMean.toFixed(1) + ' TDs - line is far from a coinflip]') : '';
-        lines.push(STAT_LABELS[sk] + ': ' + b.value.toFixed(1) + ' pts (' + book + ')' + consensusNote + altNote + bonusNote + impliedNote);
-      } else {
-        lines.push(STAT_LABELS[sk] + ': not posted yet');
+        lines.push(STAT_LABELS[sk] + ': ' + b.value.toFixed(1) + ' pts (' + book + ')');
       }
     });
     // Rare edge case: a stat outside the normal set for this position still
     // matched (e.g. a novelty QB receiving prop) - and this is also where
-    // FanDuel milestone bonuses (300+ pass, 100+ rush/rec) show up, since
-    // they're not part of the core per-position pathway list above.
+    // FanDuel milestone bonuses (300+ pass, 100+ rush/rec) show up. Skips
+    // zero-value entries (rushTD/recTD, tracked but excluded to avoid
+    // double-counting ATTD) since they contribute nothing worth showing.
     var extras = [];
     for (var sk2 in mp.breakdown){
-      if (!shown[sk2]) extras.push(sk2);
+      if (!shown[sk2] && mp.breakdown[sk2].value > 0) extras.push(sk2);
     }
     if (extras.length){
       lines.push('');
-      lines.push('Other (bonuses & extras, still counted above):');
       extras.forEach(function(sk3){
         var b3 = mp.breakdown[sk3];
         var book3 = SPORTSBOOK_NAMES[b3.sourceId] || ('src' + b3.sourceId);
-        var altCountNote3 = (b3.isAlt && b3.altCandidateCount > 1) ? (' (best of ' + b3.altCandidateCount + ' alt lines)') : '';
-        var altNote3 = b3.isAlt ? (b3.value === 0 ? ' [alt line' + altCountNote3 + ' - not counted, still too lopsided to trust]' : ' [from an alt line' + altCountNote3 + ' - approximate]') : '';
-        var bonusNote3 = b3.isBonus ? (b3.isEstimated ? ' [estimated - no line posted near ' + b3.realThreshold + '+]' : b3.thresholdUsed === b3.realThreshold ? ' [exact ' + b3.realThreshold + '+ line]' : ' [via ' + b3.thresholdUsed + '+ line, closest available to ' + b3.realThreshold + '+]') : '';
-        var consensusNote3 = (!b3.isAlt && b3.consensusCount > 1) ? (' [consensus of ' + b3.consensusCount + ' books]') : '';
-        lines.push(STAT_LABELS[sk3] + ': ' + b3.value.toFixed(1) + ' pts (' + book3 + ')' + consensusNote3 + altNote3 + bonusNote3);
+        lines.push(STAT_LABELS[sk3] + ': ' + b3.value.toFixed(1) + ' pts (' + book3 + ')');
       });
     }
     return lines.join('\n');
@@ -1222,41 +1209,26 @@
 
   function kalshiTooltip(kp, position){
     if (!kp) return 'No Kalshi data loaded for this player yet.';
+    // Trimmed down to just "stat: pts" per stat - the threshold/probability/
+    // best-of-N/implied-mean detail that used to print here is still in the
+    // breakdown object (see debugPlayerBtn-style console tools if you ever
+    // need to dig back into it), just not shown once the source is trusted.
     var lines = ['Kalshi-implied projection: ' + kalshiDisplayTotal(kp).toFixed(1) + ' pts', ''];
     var relevant = POSITION_RELEVANT_STATS[position] || Object.keys(STAT_LABELS);
     var shown = {};
     relevant.forEach(function(sk){
       shown[sk] = true;
       var b = kp.breakdown && kp.breakdown[sk];
-      if (b){
-        lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts (' +
-          (b.threshold != null ? b.threshold + '+ line, ' : '') + Math.round(b.prob*100) + '% implied' +
-          (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')' +
-          (b.impliedMean != null ? ' [implied mean ~' + b.impliedMean.toFixed(1) + ' - line is far from a coinflip]' : ''));
-      } else {
-        lines.push((STAT_LABELS[sk]||sk) + ': not posted on Kalshi');
-      }
+      if (b) lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts');
     });
+    // rushTD/recTD are tracked but excluded (mult 0, overlaps ATTD) so they
+    // always show 0.0 pts - skip them here, same as the main stat list above.
     var extras = [];
-    for (var sk2 in kp.breakdown){ if (!shown[sk2]) extras.push(sk2); }
+    for (var sk2 in kp.breakdown){ if (!shown[sk2] && kp.breakdown[sk2].value > 0) extras.push(sk2); }
     if (extras.length){
       lines.push('');
-      // Every entry in kp.breakdown - bonuses included - is already summed
-      // into fp/kalshiDisplayTotal above, same as the main per-stat loop.
-      // This section used to say "not counted toward the point total" (true
-      // of recTD/rushTD, which ARE tracked-but-excluded to avoid double
-      // counting ATTD) and never printed a pts value at all, which made a
-      // real, counted bonus look uncounted and worthless. Mirrors Unabated's
-      // own "bonuses & extras, still counted above" wording.
-      lines.push('Other (bonuses & extras, still counted above unless noted):');
       extras.forEach(function(sk3){
-        var b3 = kp.breakdown[sk3];
-        var notCounted = (sk3 === 'rushTD' || sk3 === 'recTD');
-        lines.push((STAT_LABELS[sk3]||sk3) + ': ' + (notCounted ? '' : b3.value.toFixed(1) + ' pts (') +
-          (b3.threshold != null ? b3.threshold + '+ line, ' : '') + Math.round(b3.prob*100) + '% implied' +
-          (b3.candidateCount > 1 ? ', best of ' + b3.candidateCount + ' thresholds' : '') +
-          (notCounted ? ' [tracked, not counted - overlaps ATTD]' : ')') +
-          (b3.isEstimated ? ' [estimated - no line posted near ' + b3.realThreshold + '+]' : ''));
+        lines.push((STAT_LABELS[sk3]||sk3) + ': ' + kp.breakdown[sk3].value.toFixed(1) + ' pts');
       });
     }
     return lines.join('\n');
@@ -1275,32 +1247,23 @@
 
   function polymarketTooltip(pp, position){
     if (!pp) return 'No Polymarket data loaded for this player yet.';
+    // Trimmed down to just "stat: pts" per stat, same as Kalshi's tooltip -
+    // the threshold/probability/implied-mean detail is still in the
+    // breakdown object, just not shown once the source is trusted.
     var lines = ['Polymarket-implied projection: ' + polymarketDisplayTotal(pp).toFixed(1) + ' pts', ''];
     var relevant = POSITION_RELEVANT_STATS[position] || Object.keys(STAT_LABELS);
     var shown = {};
     relevant.forEach(function(sk){
       shown[sk] = true;
       var b = pp.breakdown && pp.breakdown[sk];
-      if (b){
-        lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts (' +
-          (b.threshold != null ? b.threshold + '+ line, ' : '') + Math.round(b.prob*100) + '% implied' +
-          (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')' +
-          (b.impliedMean != null ? ' [implied mean ~' + b.impliedMean.toFixed(1) + ' - line is far from a coinflip]' : ''));
-      } else {
-        lines.push((STAT_LABELS[sk]||sk) + ': not posted on Polymarket');
-      }
+      if (b) lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts');
     });
     var extras = [];
-    for (var sk2 in pp.breakdown){ if (!shown[sk2]) extras.push(sk2); }
+    for (var sk2 in pp.breakdown){ if (!shown[sk2] && pp.breakdown[sk2].value > 0) extras.push(sk2); }
     if (extras.length){
       lines.push('');
-      lines.push('Other (bonuses & extras, still counted above):');
       extras.forEach(function(sk3){
-        var b3 = pp.breakdown[sk3];
-        lines.push((STAT_LABELS[sk3]||sk3) + ': ' + b3.value.toFixed(1) + ' pts (' +
-          (b3.threshold != null ? b3.threshold + '+ line, ' : '') + Math.round(b3.prob*100) + '% implied' +
-          (b3.candidateCount > 1 ? ', best of ' + b3.candidateCount + ' thresholds' : '') + ')' +
-          (b3.isEstimated ? ' [estimated - no line posted near ' + b3.realThreshold + '+]' : ''));
+        lines.push((STAT_LABELS[sk3]||sk3) + ': ' + pp.breakdown[sk3].value.toFixed(1) + ' pts');
       });
     }
     return lines.join('\n');
