@@ -1696,6 +1696,17 @@
         var soloOffsetProps = (soloOffset && soloOffset.events && soloOffset.events[0] && soloOffset.events[0].props) || [];
         console.log('Polymarket solo probe (no offset): returned=' + soloBaseProps.length + ' total=' + (soloBase && soloBase.events && soloBase.events[0] && soloBase.events[0].totalPropCount));
         console.log('Polymarket solo probe (offset:50): returned=' + soloOffsetProps.length + ' total=' + (soloOffset && soloOffset.events && soloOffset.events[0] && soloOffset.events[0].totalPropCount));
+        // Shape check: events[].props and bag.markets were assumed to be the
+        // same kind of object, but they're built/read in different places in
+        // this code and that assumption was never actually verified. Dump
+        // one real props[] entry (full, uncollapsed) plus bag.markets'
+        // length/first entry from this same solo response, so we know for
+        // sure whether sportsMarketType (and everything else we rely on)
+        // lives on the props entries themselves or only on bag.markets.
+        if (soloBaseProps[0]) console.log('Polymarket solo probe: sample events[0].props[0] entry: ' + JSON.stringify(soloBaseProps[0]));
+        var soloBaseBagMarkets = (soloBase && soloBase.bag && soloBase.bag.markets) || [];
+        console.log('Polymarket solo probe: solo response bag.markets length=' + soloBaseBagMarkets.length);
+        if (soloBaseBagMarkets[0]) console.log('Polymarket solo probe: sample bag.markets[0] entry: ' + JSON.stringify(soloBaseBagMarkets[0]));
         var idsOf = function(props){ return props.map(function(p){ return p.id || p.marketId || p.conditionId || JSON.stringify(p).slice(0,40); }); };
         var baseIds = idsOf(soloBaseProps), offsetIds = idsOf(soloOffsetProps);
         var overlap = baseIds.filter(function(id){ return offsetIds.indexOf(id) !== -1; }).length;
@@ -1716,10 +1727,15 @@
           body: JSON.stringify({ events: { event_ids: [worstEventId], limit_per_event: 500, sports_market_types: neededTypes }, sportsMarketTypes: neededTypes, combo_enabled_only: false })
         }).then(function(r){ return r.text(); }).then(function(t){ try { return JSON.parse(t); } catch(e){ return null; } });
         var soloFilteredProps = (soloFiltered && soloFiltered.events && soloFiltered.events[0] && soloFiltered.events[0].props) || [];
+        // Read sportsMarketType/metadata off bag.markets, not events[].props -
+        // the shape check above exists specifically to confirm which one
+        // actually carries those fields; this reads from whichever this
+        // solo-filtered response's bag.markets holds.
+        var soloFilteredMarkets = (soloFiltered && soloFiltered.bag && soloFiltered.bag.markets) || [];
         var filteredTypeCounts = {};
-        soloFilteredProps.forEach(function(p){ filteredTypeCounts[p.sportsMarketType] = (filteredTypeCounts[p.sportsMarketType]||0) + 1; });
-        console.log('Polymarket solo probe (type filter guess): returned=' + soloFilteredProps.length + ' total=' + (soloFiltered && soloFiltered.events && soloFiltered.events[0] && soloFiltered.events[0].totalPropCount) + ' typeCounts=' + JSON.stringify(filteredTypeCounts));
-        console.log('Polymarket solo probe (type filter guess): has Pittman receiving props? ' + soloFilteredProps.some(function(p){ return p.metadata && p.metadata.playerName && p.metadata.playerName.toLowerCase().indexOf('pittman') !== -1; }));
+        soloFilteredMarkets.forEach(function(m){ filteredTypeCounts[m.sportsMarketType] = (filteredTypeCounts[m.sportsMarketType]||0) + 1; });
+        console.log('Polymarket solo probe (type filter guess): props.length=' + soloFilteredProps.length + ' bag.markets.length=' + soloFilteredMarkets.length + ' total=' + (soloFiltered && soloFiltered.events && soloFiltered.events[0] && soloFiltered.events[0].totalPropCount) + ' typeCounts=' + JSON.stringify(filteredTypeCounts));
+        console.log('Polymarket solo probe (type filter guess): has Pittman receiving props? ' + soloFilteredMarkets.some(function(m){ return m.metadata && m.metadata.playerName && m.metadata.playerName.toLowerCase().indexOf('pittman') !== -1 && (m.sportsMarketType||'').indexOf('receiv') !== -1; }));
       }
     } catch(probeErr){
       console.warn('Polymarket pagination probe errored (harmless, just a diagnostic):', probeErr);
