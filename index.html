@@ -121,6 +121,38 @@
   .dropzone strong{color:var(--chalk);}
   .pool-status{font-size:13px;color:var(--muted);margin-top:8px;}
 
+  .src-panel{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:4px 16px;margin-top:12px;
+  }
+  .src-panel + .src-panel{margin-top:8px;}
+  .src-panel summary{
+    list-style:none;cursor:pointer;padding:10px 0;display:flex;align-items:center;gap:8px;
+    font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;user-select:none;
+  }
+  .src-panel summary::-webkit-details-marker{display:none;}
+  .src-panel summary::before{content:'\25B8';display:inline-block;transition:transform 0.15s;color:var(--muted);}
+  .src-panel[open] summary::before{transform:rotate(90deg);}
+  .src-panel summary .src-panel-meta{color:var(--chalk);font-size:12px;text-transform:none;letter-spacing:0;margin-left:auto;font-weight:400;}
+  .src-panel[open] summary .src-panel-meta{display:none;}
+  .src-row{
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:10px 0;border-top:1px solid var(--line);
+  }
+  .src-row:first-of-type{border-top:1px solid var(--line);}
+  .src-row-label{font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;min-width:0;}
+  .src-row input[type=text]{flex:1;min-width:140px;font-size:12px;}
+  .src-row .src-status{font-size:12px;color:var(--muted);white-space:nowrap;}
+  .src-row .src-hint{font-size:11px;color:var(--muted);flex-basis:100%;}
+  .src-gear{
+    cursor:pointer;color:var(--muted);font-size:13px;background:none;border:1px solid var(--line);
+    border-radius:6px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;
+    padding:0;flex-shrink:0;
+  }
+  .src-gear:hover{color:var(--chalk);}
+  .src-url-wrap{display:none;flex-basis:100%;gap:8px;align-items:center;padding-top:2px;}
+  .src-url-wrap.open{display:flex;}
+
   .lineup-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-bottom:10px;}
   .lineup-bar button{padding:8px 12px;}
   .bar-divider{width:1px;align-self:stretch;background:var(--line);}
@@ -362,49 +394,71 @@
     </div>
     <input type="file" id="csvFile" accept=".csv" style="display:none;">
 
-    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:12px;margin-top:8px;border-top:1px solid var(--line);">
-      <button id="loadPropsBtn">Load Unabated props</button>
-      <span style="color:var(--line);padding:0 4px;">|</span>
-      <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Projection source</label>
-      <select id="projSourceSel" style="font-size:12px;" title="Market = average of whichever of Unabated/Kalshi/Polymarket are loaded for each player. Blend = 50/50 with FanDuel's own fppg.">
-        <option value="fppg">FanDuel fppg</option>
-        <option value="market">Market (Unabated+Kalshi+Polymarket avg)</option>
-        <option value="blend">Blend (fppg + Market avg, 50/50)</option>
-      </select>
-      <span id="propsStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
-    </div>
-    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
-      <button id="loadKalshiBtn">Load Kalshi props</button>
-      <input id="kalshiWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://kalshi-proxy-deno.bvmcintyre86-stack.deno.net" placeholder="https://your-kalshi-proxy.deno.dev">
-      <span id="kalshiStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
-    </div>
-    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
-      <button id="loadPolymarketBtn">Load Polymarket props</button>
-      <input id="polymarketWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="" placeholder="https://your-polymarket-proxy.deno.dev">
-      <span id="polymarketStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
-    </div>
-    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
-      <button id="loadMatchupBtn">Load matchup data</button>
-      <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Proxy URL</label>
-      <input id="matchupWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://matchup-proxy-worker.bvmcintyre86.workers.dev" placeholder="https://your-matchup-proxy.workers.dev">
-      <span id="matchupStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
-    </div>
-    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
-      <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Audit a player</label>
-      <input id="debugPlayerInput" type="text" placeholder="e.g. Lamar Jackson" style="flex:1;min-width:160px;font-size:12px;">
-      <button id="debugPlayerBtn">Search</button>
-      <span style="font-size:11px;color:var(--muted);">Results print to the browser console (F12)</span>
-    </div>
-    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
-      <button id="debugBookAvailabilityBtn">Check book availability</button>
-      <span style="font-size:11px;color:var(--muted);">Shows every sportsbook actually posting data right now, from your last props load - results print to the console (F12)</span>
-    </div>
-    <div style="width:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;margin-top:4px;">
-      <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Audit a Polymarket player</label>
-      <input id="debugPolymarketInput" type="text" placeholder="e.g. Pittman" style="flex:1;min-width:160px;font-size:12px;">
-      <button id="debugPolymarketBtn">Search</button>
-      <span style="font-size:11px;color:var(--muted);">Shows every raw Polymarket market for this player from your last Polymarket load, and why each was kept or dropped - results print to the console (F12)</span>
-    </div>
+    <details class="src-panel" id="dataSourcesPanel" open>
+      <summary>Data sources <span class="src-panel-meta" id="dataSourcesMeta"></span></summary>
+
+      <div class="src-row">
+        <button id="loadPropsBtn">Load Unabated props</button>
+        <label class="src-row-label">Projection source</label>
+        <select id="projSourceSel" style="font-size:12px;" title="Market = average of whichever of Unabated/Kalshi/Polymarket are loaded for each player. Blend = 50/50 with FanDuel's own fppg.">
+          <option value="fppg">FanDuel fppg</option>
+          <option value="market">Market (Unabated+Kalshi+Polymarket avg)</option>
+          <option value="blend">Blend (fppg + Market avg, 50/50)</option>
+        </select>
+        <span id="propsStatus" class="src-status"></span>
+      </div>
+
+      <div class="src-row">
+        <button id="loadKalshiBtn">Load Kalshi props</button>
+        <button type="button" class="src-gear" data-src-toggle="kalshiUrlWrap" title="Show/edit proxy URL">&#9881;</button>
+        <span id="kalshiStatus" class="src-status"></span>
+        <div class="src-url-wrap" id="kalshiUrlWrap">
+          <label class="src-row-label">Proxy URL</label>
+          <input id="kalshiWorkerUrl" type="text" value="https://kalshi-proxy-deno.bvmcintyre86-stack.deno.net" placeholder="https://your-kalshi-proxy.deno.dev">
+        </div>
+      </div>
+
+      <div class="src-row">
+        <button id="loadPolymarketBtn">Load Polymarket props</button>
+        <button type="button" class="src-gear" data-src-toggle="polymarketUrlWrap" title="Show/edit proxy URL">&#9881;</button>
+        <span id="polymarketStatus" class="src-status"></span>
+        <div class="src-url-wrap" id="polymarketUrlWrap">
+          <label class="src-row-label">Proxy URL</label>
+          <input id="polymarketWorkerUrl" type="text" value="" placeholder="https://your-polymarket-proxy.deno.dev">
+        </div>
+      </div>
+
+      <div class="src-row">
+        <button id="loadMatchupBtn">Load matchup data</button>
+        <button type="button" class="src-gear" data-src-toggle="matchupUrlWrap" title="Show/edit proxy URL">&#9881;</button>
+        <span id="matchupStatus" class="src-status"></span>
+        <div class="src-url-wrap" id="matchupUrlWrap">
+          <label class="src-row-label">Proxy URL</label>
+          <input id="matchupWorkerUrl" type="text" value="https://matchup-proxy-worker.bvmcintyre86.workers.dev" placeholder="https://your-matchup-proxy.workers.dev">
+        </div>
+      </div>
+    </details>
+
+    <details class="src-panel" id="debugToolsPanel">
+      <summary>Debug tools</summary>
+
+      <div class="src-row">
+        <label class="src-row-label">Audit a player</label>
+        <input id="debugPlayerInput" type="text" placeholder="e.g. Lamar Jackson">
+        <button id="debugPlayerBtn">Search</button>
+        <span class="src-hint">Unabated raw props for this player, and why each was kept or dropped - results print to the console (F12)</span>
+      </div>
+      <div class="src-row">
+        <label class="src-row-label">Audit a Polymarket player</label>
+        <input id="debugPolymarketInput" type="text" placeholder="e.g. Pittman">
+        <button id="debugPolymarketBtn">Search</button>
+        <span class="src-hint">Every raw Polymarket market for this player, and why each was kept or dropped - results print to the console (F12)</span>
+      </div>
+      <div class="src-row">
+        <button id="debugBookAvailabilityBtn">Check book availability</button>
+        <span class="src-hint">Every sportsbook actually posting data right now, from your last props load - results print to the console (F12)</span>
+      </div>
+    </details>
 
     <div class="filters">
       <input type="text" id="searchBox" placeholder="Search player or team">
@@ -1770,6 +1824,39 @@
     saveState();
   }
   document.getElementById('loadPolymarketBtn').addEventListener('click', fetchPolymarketProjections);
+
+  // Gear buttons on each data-source row reveal/hide that source's proxy
+  // URL input - the URL is saved/restored automatically (see saveState's
+  // kalshiWorkerUrl/polymarketWorkerUrl/matchupWorkerUrl), so it's hidden by
+  // default to keep the Player Pool section from being a wall of URL boxes;
+  // clicking the gear is just for checking or changing it.
+  document.querySelectorAll('[data-src-toggle]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var wrap = document.getElementById(btn.getAttribute('data-src-toggle'));
+      if (wrap) wrap.classList.toggle('open');
+    });
+  });
+
+  // Mirrors the 4 individual status lines (props/kalshi/polymarket/matchup)
+  // into the "Data sources" summary row, so collapsing that panel still
+  // shows at a glance whether everything's loaded - without touching every
+  // place that sets those spans' text.
+  (function(){
+    var metaEl = document.getElementById('dataSourcesMeta');
+    var watched = ['propsStatus','kalshiStatus','polymarketStatus','matchupStatus'];
+    function syncMeta(){
+      var parts = watched.map(function(id){
+        var el = document.getElementById(id);
+        return el ? el.textContent.trim() : '';
+      }).filter(Boolean);
+      metaEl.textContent = parts.length ? parts.join(' · ') : '';
+    }
+    watched.forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) new MutationObserver(syncMeta).observe(el, {childList:true, characterData:true, subtree:true});
+    });
+    syncMeta();
+  })();
 
   // Console debug helper (type debugPolymarketPlayer('pittman') in the
   // browser console after a Polymarket load) - shows EVERY raw market
