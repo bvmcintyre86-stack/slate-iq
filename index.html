@@ -858,8 +858,7 @@
       }
       matchupData = data;
       matchupDataLoadedAt = Date.now();
-      if (status) status.textContent = 'Loaded ' + Object.keys(data.players).length + ' players, weeks ' +
-        (data.weeksSeen || []).join(',') + ' of ' + data.season + ' (' + new Date(matchupDataLoadedAt).toLocaleTimeString() + ').';
+      if (status) status.textContent = shortLoadStatus(Object.keys(data.players).length, matchupDataLoadedAt);
       saveState();
       renderTopPlayers();
     } catch(e){
@@ -868,13 +867,19 @@
   }
   document.getElementById('loadMatchupBtn').addEventListener('click', loadMatchupData);
 
+  // Short "N players · local time" status line, used for every props/
+  // matchup data source instead of a full sentence - Ben just wants the
+  // count and when it last loaded, not the refresh instructions each time.
+  function shortLoadStatus(count, loadedAtMs){
+    var ts = loadedAtMs ? new Date(loadedAtMs).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '';
+    return count + ' player' + (count === 1 ? '' : 's') + (ts ? ' · ' + ts : '');
+  }
+
   // Human-readable "last loaded" message, shown on page load if props were
   // restored from a previous session, and after any fresh load.
   function propsFreshnessMsg(){
     if (!marketProjectionsLoadedAt) return '';
-    var mins = Math.round((Date.now() - marketProjectionsLoadedAt) / 60000);
-    var when = mins < 1 ? 'just now' : mins < 60 ? (mins + ' min ago') : (Math.round(mins/60) + ' hr ago');
-    return Object.keys(marketProjections).length + ' players with market data (loaded ' + when + ' - click "Load Unabated props" to refresh).';
+    return shortLoadStatus(Object.keys(marketProjections).length, marketProjectionsLoadedAt);
   }
 
   // FanDuel's built-in yardage milestone bonuses: +3 pts each for 300+
@@ -1141,9 +1146,7 @@
 
   function polymarketFreshnessMsg(){
     if (!polymarketProjectionsLoadedAt) return '';
-    var mins = Math.round((Date.now() - polymarketProjectionsLoadedAt) / 60000);
-    var when = mins < 1 ? 'just now' : mins < 60 ? (mins + ' min ago') : (Math.round(mins/60) + ' hr ago');
-    return Object.keys(polymarketProjections).length + ' players with Polymarket data (loaded ' + when + ' - click "Load Polymarket props" to refresh).';
+    return shortLoadStatus(Object.keys(polymarketProjections).length, polymarketProjectionsLoadedAt);
   }
 
   function setPolymarketStatus(msg){
@@ -1153,9 +1156,7 @@
 
   function kalshiFreshnessMsg(){
     if (!kalshiProjectionsLoadedAt) return '';
-    var mins = Math.round((Date.now() - kalshiProjectionsLoadedAt) / 60000);
-    var when = mins < 1 ? 'just now' : mins < 60 ? (mins + ' min ago') : (Math.round(mins/60) + ' hr ago');
-    return Object.keys(kalshiProjections).length + ' players with Kalshi data (loaded ' + when + ' - click "Load Kalshi props" to refresh).';
+    return shortLoadStatus(Object.keys(kalshiProjections).length, kalshiProjectionsLoadedAt);
   }
 
   function setKalshiStatus(msg){
@@ -1501,8 +1502,8 @@
     }
 
     kalshiProjectionsLoadedAt = Date.now();
-    setKalshiStatus(matched + ' players matched across ' + relevantSeries.length + ' Kalshi market group(s).' +
-      (failedSeries.length ? ' (' + failedSeries.length + ' group(s) failed - likely rate limited, see console - try reloading in a bit.)' : ''));
+    setKalshiStatus(shortLoadStatus(matched, kalshiProjectionsLoadedAt) +
+      (failedSeries.length ? ' (' + failedSeries.length + ' group(s) failed - see console)' : ''));
     if (failedSeries.length) console.warn('Kalshi series that failed to load (see warnings above for why): ' + failedSeries.join(', '));
     console.log('Kalshi fetch diagnostics: ' + diag.events + ' events, ' + diag.markets + ' markets scanned across ' + relevantSeries.length + ' group(s) - ' +
       diag.kept + ' kept, ' + diag.nameParseFail + ' dropped (name parse), ' + diag.thresholdFail + ' dropped (no threshold), ' + diag.probFail + ' dropped (no price). ' +
@@ -1815,8 +1816,8 @@
     }
 
     polymarketProjectionsLoadedAt = Date.now();
-    setPolymarketStatus(matched + ' players matched across ' + eventIds.length + ' Polymarket NFL event(s).' +
-      (batchFailures ? ' (' + batchFailures + ' batch(es) failed - see console.)' : ''));
+    setPolymarketStatus(shortLoadStatus(matched, polymarketProjectionsLoadedAt) +
+      (batchFailures ? ' (' + batchFailures + ' batch(es) failed - see console)' : ''));
     console.log('Polymarket fetch diagnostics: ' + diag.total + ' markets scanned - ' +
       diag.kept + ' kept, ' + diag.unmatchedType + ' dropped (unrecognized sportsMarketType), ' +
       diag.noName + ' dropped (no player name), ' + diag.noPrice + ' dropped (no price).');
@@ -2256,8 +2257,8 @@
     }
     console.log('Matched players with an approved-book line:\n' + (matchedNames.length ? matchedNames.join('\n') : '(none)'));
 
-    setPropsStatus(matched + ' of ' + Object.keys(accum).length + ' players matched (' + Object.keys(people).length + ' names loaded). Open the browser console (F12) for names + a per-stat breakdown.');
     marketProjectionsLoadedAt = Date.now();
+    setPropsStatus(shortLoadStatus(matched, marketProjectionsLoadedAt));
     renderTable();
     saveState();
 
@@ -2999,9 +3000,7 @@
         matchupDataLoadedAt = state.matchupDataLoadedAt || null;
         var matchupStatusEl = document.getElementById('matchupStatus');
         if (matchupStatusEl && matchupDataLoadedAt) matchupStatusEl.textContent =
-          'Loaded ' + Object.keys(matchupData.players||{}).length + ' players, weeks ' +
-          (matchupData.weeksSeen||[]).join(',') + ' of ' + matchupData.season +
-          ' (' + new Date(matchupDataLoadedAt).toLocaleTimeString() + ').';
+          shortLoadStatus(Object.keys(matchupData.players||{}).length, matchupDataLoadedAt);
       }
       if (state.thresholds){
         document.getElementById('thBlowout').value = state.thresholds.blowout || 6.5;
@@ -5544,7 +5543,7 @@
     if (poolStatus) poolStatus.textContent = players.length ? players.length+' players loaded.' : 'No file loaded yet - upload your ' + platformName + ' player export.';
     var propsStatusEl = document.getElementById('propsStatus');
     if (propsStatusEl) propsStatusEl.textContent = Object.keys(marketProjections).length
-      ? Object.keys(marketProjections).length + ' players with market data (from this platform\'s last load).'
+      ? shortLoadStatus(Object.keys(marketProjections).length, marketProjectionsLoadedAt)
       : '';
 
     setMsg('');
