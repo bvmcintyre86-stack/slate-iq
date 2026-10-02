@@ -1000,6 +1000,50 @@
     return threshold - z * sigma;
   }
 
+  // Passing TDs (unlike ATTD, which is a one-time "did they score at all"
+  // bonus) stack every time they happen - FanDuel pays the full mult for
+  // EACH passing TD, not just the first. So "probability of crossing one
+  // threshold x mult" (the formula every other binary stat here correctly
+  // uses, since ATTD genuinely IS a one-shot event) understates true
+  // expected points for Pass TD specifically, UNLESS the threshold happens
+  // to be exactly the "1+" line - and the degree of understatement gets
+  // much worse the higher/lower the available threshold sits from 50/50.
+  // This showed up as Josh Allen's Pass TD value swinging from ~1.1 to ~2.6
+  // pts across sources depending only on which threshold each one happened
+  // to have on offer (Polymarket's lone "3+" line at 29% vs Kalshi's "1.5+"
+  // at 56%) - despite both implying the SAME expected TD count once solved
+  // properly (verified: both back out to ~1.88 expected TDs). The fix: model
+  // TD count as Poisson (the standard assumption for this kind of discrete,
+  // rare-event count stat) and solve for the implied mean (lambda) from
+  // whichever single threshold/probability pair is available, the same
+  // "back out the real distribution instead of trusting one raw number"
+  // approach already used for yardage stats above. Binary search since the
+  // Poisson CDF has no closed-form inverse.
+  function poissonCdf(k, lambda){
+    if (k < 0) return 0;
+    var sum = 0, term = Math.exp(-lambda);
+    for (var i = 0; i <= k; i++){
+      if (i > 0) term *= lambda / i;
+      sum += term;
+    }
+    return sum;
+  }
+  function impliedTdMean(threshold, prob){
+    if (threshold == null || prob == null || prob <= 0.005 || prob >= 0.995) return null;
+    // "X+ line" is already an at-least-X threshold. A whole number (3+)
+    // means >=3 as posted; a half-integer (1.5+, the standard sportsbook
+    // "Over 1.5" phrasing) means >=2 once you round up to a real TD count.
+    var k = Number.isInteger(threshold) ? threshold : Math.ceil(threshold);
+    if (k < 1) return null;
+    var lo = 0, hi = 15;
+    for (var iter = 0; iter < 60; iter++){
+      var mid = (lo + hi) / 2;
+      var p = 1 - poissonCdf(k - 1, mid);
+      if (p < prob) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
   var projSource = 'fppg';    // 'fppg' | 'market' | 'blend'
 
   function normalizeName(n){
@@ -1130,7 +1174,8 @@
         // line is a consensus across that many approved books, not one book's
         // solo number.
         var consensusNote = (!b.isAlt && b.consensusCount > 1) ? (' [consensus of ' + b.consensusCount + ' books]') : '';
-        lines.push(STAT_LABELS[sk] + ': ' + b.value.toFixed(1) + ' pts (' + book + ')' + consensusNote + altNote + bonusNote);
+        var impliedNote = (b.impliedMean != null) ? (' [implied mean ~' + b.impliedMean.toFixed(1) + ' TDs - line is far from a coinflip]') : '';
+        lines.push(STAT_LABELS[sk] + ': ' + b.value.toFixed(1) + ' pts (' + book + ')' + consensusNote + altNote + bonusNote + impliedNote);
       } else {
         lines.push(STAT_LABELS[sk] + ': not posted yet');
       }
@@ -1182,7 +1227,7 @@
         lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts (' +
           (b.threshold != null ? b.threshold + '+ line, ' : '') + Math.round(b.prob*100) + '% implied' +
           (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')' +
-          (b.impliedMean != null ? ' [implied mean ~' + Math.round(b.impliedMean) + ' - line is far from a coinflip]' : ''));
+          (b.impliedMean != null ? ' [implied mean ~' + b.impliedMean.toFixed(1) + ' - line is far from a coinflip]' : ''));
       } else {
         lines.push((STAT_LABELS[sk]||sk) + ': not posted on Kalshi');
       }
@@ -1235,7 +1280,7 @@
         lines.push((STAT_LABELS[sk]||sk) + ': ' + b.value.toFixed(1) + ' pts (' +
           (b.threshold != null ? b.threshold + '+ line, ' : '') + Math.round(b.prob*100) + '% implied' +
           (b.candidateCount > 1 ? ', best of ' + b.candidateCount + ' thresholds' : '') + ')' +
-          (b.impliedMean != null ? ' [implied mean ~' + Math.round(b.impliedMean) + ' - line is far from a coinflip]' : ''));
+          (b.impliedMean != null ? ' [implied mean ~' + b.impliedMean.toFixed(1) + ' - line is far from a coinflip]' : ''));
       } else {
         lines.push((STAT_LABELS[sk]||sk) + ': not posted on Polymarket');
       }
@@ -1572,10 +1617,15 @@
         // the same math already used for the milestone bonuses below, so the
         // two numbers in the tooltip stop contradicting each other.
         var statMean = best.kind === 'yardage' ? impliedStatMean(sk, best.threshold, best.prob) : null;
-        var contribution = best.kind === 'yardage' ? statMean * mult : best.prob * mult;
+        // passTD stacks (see impliedTdMean above) - every other binary stat
+        // (ATTD) is a genuine one-shot event where prob*mult IS the correct
+        // expected value, so this only touches passTD.
+        var tdMean = (sk === 'passTD') ? impliedTdMean(best.threshold, best.prob) : null;
+        var contribution = best.kind === 'yardage' ? statMean * mult : (tdMean !== null ? tdMean * mult : best.prob * mult);
         fp += contribution;
         breakdown[sk] = { value: contribution, threshold: best.threshold, prob: best.prob, candidateCount: list.length };
         if (best.kind === 'yardage' && statMean !== best.threshold) breakdown[sk].impliedMean = statMean;
+        if (tdMean !== null) breakdown[sk].impliedMean = tdMean;
       }
 
       // Same FanDuel milestone bonuses Unabated's own pipeline computes
@@ -1762,20 +1812,20 @@
           method: 'POST',
           cache: 'no-store',
           headers: { 'Content-Type': 'application/json' },
-          // limit_per_event was 200, defensively, back when we didn't yet
-          // know what was causing the live 400 error - that turned out to be
-          // the 25-event-id cap (see EVENT_BATCH_SIZE above), NOT this field,
-          // so 200 was never actually a confirmed ceiling, just a guess that
-          // happened to still work. Raised to 500 since a single real game
-          // was already confirmed to carry 286+ total props - 200 was
-          // silently truncating a loaded game's less-marquee markets (a
-          // WR's Rec Yds/Receptions props, say) while keeping the
-          // higher-profile ones (ATTD) that presumably sort first, which
-          // looked exactly like "this player's props aren't posted" even
-          // though they were, just past the cutoff. If 500 ever turns out to
-          // be an actual server-side ceiling, a 400 here will say so
-          // directly (same way the 25-event-id limit surfaced).
-          body: JSON.stringify({ events: { event_ids: batch, limit_per_event: 500 }, combo_enabled_only: false })
+          // Investigated (2026-10-01, round 3): limit_per_event was raised to
+          // 500 on the theory that a bigger number means "give me more
+          // markets" - but the live polymarket.us site itself (captured
+          // straight from its own Network tab for this exact event batch)
+          // sends limit_per_event: 8 with combo_enabled_only: true, and the
+          // SITE shows the full threshold ladder (1+/2+/3+/4+ passing TDs,
+          // etc.) with nothing missing. So limit_per_event clearly isn't
+          // "max markets returned per event" the way it was assumed to be -
+          // whatever it actually controls, 500 + combo_enabled_only:false
+          // was the wrong shape, not a generous one, and was quietly
+          // capping each event to the first ~50 markets the server happened
+          // to return in that mode. Matching the real site's own request
+          // exactly, rather than guessing at bigger numbers.
+          body: JSON.stringify({ events: { event_ids: batch, limit_per_event: 8 }, combo_enabled_only: true })
         });
         var ppRespText = await ppResp.text();
         var ppBody = (function(){ try { return JSON.parse(ppRespText); } catch(e){ return null; } })();
@@ -1790,14 +1840,10 @@
         var batchMarkets = (ppBody.bag && ppBody.bag.markets) || [];
         allMarkets = allMarkets.concat(batchMarkets);
         // Each event in the response says how many props it ACTUALLY has
-        // (totalPropCount) vs how many it returned (props.length, capped at
-        // ~50 per event server-side, confirmed un-configurable - see the
-        // investigation note below). Cached for debugPolymarketPlayer() and
-        // the per-event table logged after the loop - useful context if a
-        // specific player's market still looks missing, but NOT itself a
-        // sign of a bug: the markets we actually match on (passing/rushing/
-        // receiving yards, receptions, TDs) have consistently been inside
-        // that first ~50 for every game checked so far.
+        // (totalPropCount) vs how many it returned (props.length). Cached
+        // for debugPolymarketPlayer() and the per-event table logged after
+        // the loop - useful context if a specific player's market still
+        // looks missing.
         (ppBody.events || []).forEach(function(ev){
           var returned = (ev.props || []).length;
           var total = ev.totalPropCount;
@@ -1813,18 +1859,26 @@
       return;
     }
 
-    // Investigated (2026-10-01): a batch of solo-request probes confirmed
-    // the production batch-of-25 fetch already returns the same 50 markets
-    // per event as a solo (batch-of-1) request would, and that Pittman's
-    // receiving-yards market is INSIDE that 50 for PIT@CLE - so the
-    // 50-per-event cap was never actually hiding his props. The likely
-    // explanation for the original "not posted" report: PIT@CLE's props get
-    // added progressively as kickoff approaches (ATTD posts earliest), and
-    // his Rec Yds/Receptions markets simply hadn't gone up yet at that
-    // moment. Reload Polymarket props if a specific player's market still
-    // looks missing and check debugPolymarketPlayer() for the real reason
-    // (type unmapped, name mismatch, or genuinely not posted) rather than
-    // assuming truncation.
+    // Investigated (2026-10-01, round 2): the original "not posted" report
+    // for a specific player turned out to be explained by props posting
+    // progressively as kickoff approaches (ATTD posts earliest), not by
+    // truncation.
+    //
+    // Investigated (2026-10-01, round 3): a SEPARATE truncation issue was
+    // then found for players whose props HAD posted - Josh Allen's Pass TD
+    // market came back with only ONE threshold (3+) when the live
+    // polymarket.us site itself shows a full ladder (1+/2+/3+/4+) for the
+    // same player/game. Root cause: this request was sending
+    // limit_per_event: 500 with combo_enabled_only: false, which is NOT
+    // what the real site sends (confirmed via its own Network tab:
+    // limit_per_event: 8, combo_enabled_only: true) - whatever
+    // limit_per_event actually controls, it isn't "max markets returned,"
+    // and the wrong combo_enabled_only value was silently capping each
+    // event's response to ~50 markets. Now matches the site's real request
+    // shape exactly. If a specific player's market still looks missing
+    // after reloading, check debugPolymarketPlayer() for the real reason
+    // (type unmapped, name mismatch, or genuinely not posted yet) before
+    // assuming truncation again.
 
     // Full per-event prop-count table, not just the truncation warnings
     // above - lets you confirm a SPECIFIC game (by event id, matched against
@@ -1919,10 +1973,15 @@
         // the same math already used for the milestone bonuses below, so the
         // two numbers in the tooltip stop contradicting each other.
         var statMean = best.kind === 'yardage' ? impliedStatMean(sk, best.threshold, best.prob) : null;
-        var contribution = best.kind === 'yardage' ? statMean * mult : best.prob * mult;
+        // passTD stacks (see impliedTdMean above) - every other binary stat
+        // (ATTD) is a genuine one-shot event where prob*mult IS the correct
+        // expected value, so this only touches passTD.
+        var tdMean = (sk === 'passTD') ? impliedTdMean(best.threshold, best.prob) : null;
+        var contribution = best.kind === 'yardage' ? statMean * mult : (tdMean !== null ? tdMean * mult : best.prob * mult);
         fp += contribution;
         breakdown[sk] = { value: contribution, threshold: best.threshold, prob: best.prob, candidateCount: list.length };
         if (best.kind === 'yardage' && statMean !== best.threshold) breakdown[sk].impliedMean = statMean;
+        if (tdMean !== null) breakdown[sk].impliedMean = tdMean;
       }
 
       // Same FanDuel milestone bonuses as Unabated/Kalshi (+3 pts each for
@@ -2361,10 +2420,17 @@
           // useful even if the exact threshold differs from the standard
           // "any/1+" line, so we do count these, just flagged as approximate.
           var prob = americanToProb(line.price);
-          contribution = prob === null ? 0 : prob * cfg.mult;
+          // passTD stacks every occurrence (4 pts EACH, no cap), unlike ATTD
+          // which is a genuine one-time "did they score at all" bonus - so
+          // prob*mult (correct for ATTD) understates Pass TD whenever the
+          // book's line isn't exactly the "1+" threshold. Same Poisson
+          // back-out as Kalshi/Polymarket's main loop now use.
+          var tdMean = (sk === 'passTD') ? impliedTdMean(line.points, prob) : null;
+          contribution = tdMean !== null ? tdMean * cfg.mult : (prob === null ? 0 : prob * cfg.mult);
         }
         fp += contribution;
         breakdown[sk] = { value: contribution, sourceId: line.sourceId, isAlt: !!line.isAlt, altCandidateCount: line.altCandidateCount, consensusCount: line.consensusCount };
+        if (sk === 'passTD' && typeof tdMean !== 'undefined' && tdMean !== null) breakdown[sk].impliedMean = tdMean;
       }
 
       // FanDuel milestone bonuses: +3 pts for 300+ passing yards, +3 for
