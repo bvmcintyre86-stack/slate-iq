@@ -1555,22 +1555,26 @@
 
     setPolymarketStatus('Loading player props for ' + eventIds.length + ' Polymarket NFL event(s)...');
     // The endpoint caps requests at 25 event ids ("At most 25 event IDs are
-    // allowed" - confirmed from a live 400 response). But live diagnostics
-    // (paste from 2026-10-01) proved a SECOND, separate cap sits on top of
-    // that: no matter what limit_per_event asks for, every event in a batch
-    // came back with exactly 50 props each - until the running total hit
-    // 800 markets for the whole HTTP response, at which point every
-    // remaining event in that batch got 0 props (not an error, just empty).
-    // 16 events x 50 = 800 exactly, which is why 16 events got data and the
-    // other 9 (in a 25-event batch) got nothing. Shrinking the batch size so
-    // that batch_size * 50 stays comfortably under 800 means no event gets
-    // zeroed out by that aggregate cap - every event should get its (still
-    // 50-capped) share. This does NOT fix the separate 50-per-event cap
-    // itself (a game with 296 total props will still only report 50 of
-    // them per batch) - see the pagination-probe logging below, which is
-    // there to find out whether that 50-per-event ceiling can be paged past
-    // at all.
-    var EVENT_BATCH_SIZE = 8;
+    // allowed" - confirmed from a live 400 response), so this chunks into
+    // batches and merges the markets from each.
+    //
+    // Live diagnostics (2026-10-01) first looked like a second, aggregate
+    // ~800-markets-per-response cap stacked on top of that (16 events x 50
+    // props = 800, with every event after that getting 0). Shrinking
+    // EVENT_BATCH_SIZE to 8 to test that theory disproved it: the exact
+    // same 16-events-get-data / 16-events-get-nothing split showed up again,
+    // split across what were now SEPARATE HTTP requests - so it isn't a
+    // per-request cap at all. The real explanation is simpler: the 16
+    // "empty" events are all 10/8-and-later games (week 2+), which Polymarket
+    // likely hasn't posted player props for yet this far from kickoff - same
+    // as the "props may not be posted yet" case already handled elsewhere.
+    // So EVENT_BATCH_SIZE is back to 25 (no evidence a smaller batch helps),
+    // and the one real open problem is the separate, confirmed 50-props-per-
+    // event ceiling on live games (PIT@CLE has 296 total, Polymarket only
+    // ever returns 50 of them) - limit_per_event does not control it. See
+    // the pagination-probe logging below, which is there to find out
+    // whether that ceiling can be paged past at all.
+    var EVENT_BATCH_SIZE = 25;
     var allMarkets = [];
     var batchFailures = 0;
     var loggedShape = false;
@@ -1619,6 +1623,17 @@
           loggedShape = true;
           console.log('Polymarket /player-props response top-level keys: ' + Object.keys(ppBody).join(', '));
           if (ppBody.bag) console.log('Polymarket response "bag" keys: ' + Object.keys(ppBody.bag).join(', '));
+          // New finding: "bag" has a "players" key alongside "markets" that
+          // we've never looked at - dump its shape in case it carries
+          // player-level data (e.g. a consolidated projection or a fuller
+          // prop list) that isn't subject to the same 50-per-event market
+          // cutoff "markets" has.
+          var playersBag = ppBody.bag && ppBody.bag.players;
+          if (playersBag != null){
+            console.log('Polymarket "bag.players" type: ' + (Array.isArray(playersBag) ? ('array of ' + playersBag.length) : typeof playersBag));
+            var firstPlayerEntry = Array.isArray(playersBag) ? playersBag[0] : (typeof playersBag === 'object' ? playersBag[Object.keys(playersBag)[0]] : null);
+            if (firstPlayerEntry) console.log('Polymarket "bag.players" first entry: ' + JSON.stringify(firstPlayerEntry).slice(0, 2000));
+          }
           var firstEv = (ppBody.events || [])[0];
           if (firstEv){
             var evKeysNoProps = {};
