@@ -145,6 +145,14 @@
     padding:10px 0;border-top:1px solid var(--line);
   }
   .src-row-half{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1 1 260px;min-width:220px;}
+  /* Polymarket paused (2026-10-02): its proxy's GetPlayerProps call can't
+     reliably be matched to the real polymarket.us request shape yet (see
+     the investigation comments around fetchPolymarketProjections), so its
+     controls and live table columns are hidden rather than deleted - flip
+     this single rule off (or delete it) to bring it all back once that's
+     sorted out. Nothing underneath was removed: the fetch function, state
+     persistence, and accuracy-log/export columns are untouched. */
+  .polymkt-col,.polymkt-row{display:none !important;}
   .src-row-label{font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;min-width:0;}
   .src-row input[type=text],.src-row-half input[type=text]{flex:1;min-width:140px;font-size:12px;}
   .src-row .src-status,.src-row-half .src-status{font-size:12px;color:var(--muted);white-space:nowrap;}
@@ -437,7 +445,7 @@
             <input id="kalshiWorkerUrl" type="text" value="https://kalshi-proxy-deno.bvmcintyre86-stack.deno.net" placeholder="https://your-kalshi-proxy.deno.dev">
           </div>
         </div>
-        <div class="src-row-half">
+        <div class="src-row-half polymkt-row">
           <button id="loadPolymarketBtn">Load Polymarket props</button>
           <button type="button" class="src-gear" data-src-toggle="polymarketUrlWrap" title="Show/edit proxy URL">&#9881;</button>
           <span id="polymarketStatus" class="src-status"></span>
@@ -458,7 +466,7 @@
         <button id="debugPlayerBtn">Search</button>
         <span class="src-hint">Unabated raw props for this player, and why each was kept or dropped - results print to the console (F12)</span>
       </div>
-      <div class="src-row">
+      <div class="src-row polymkt-row">
         <label class="src-row-label">Audit a Polymarket player</label>
         <input id="debugPolymarketInput" type="text" placeholder="e.g. Pittman">
         <button id="debugPolymarketBtn">Search</button>
@@ -491,7 +499,7 @@
             <th data-key="fppg">FPPG</th>
             <th data-key="mkt">Mkt</th>
             <th data-key="kalshi" title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th>
-            <th data-key="polymarket" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th>
+            <th data-key="polymarket" class="polymkt-col" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th>
             <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their combined Unabated+Kalshi+Polymarket projection (average of whichever are loaded). Smaller or negative = closer to or past that target.">3x &Delta;</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="tag">Script</th>
@@ -4895,7 +4903,7 @@
         '<td class="num" style="cursor:help;" title="'+effFppgTitle.replace(/"/g,'&quot;')+'">'+p.fppg.toFixed(1)+'</td>'+
         '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : '—')+'</td>'+
         '<td class="num" style="color:'+(kp?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kp,p.position).replace(/"/g,'&quot;')+'">'+(kp ? kalshiDisplayTotal(kp).toFixed(1) : '—')+'</td>'+
-        '<td class="num" style="color:'+(pp?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(pp,p.position).replace(/"/g,'&quot;')+'">'+(pp ? polymarketDisplayTotal(pp).toFixed(1) : '—')+'</td>'+
+        '<td class="num polymkt-col" style="color:'+(pp?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(pp,p.position).replace(/"/g,'&quot;')+'">'+(pp ? polymarketDisplayTotal(pp).toFixed(1) : '—')+'</td>'+
         (function(){
           var delta = mkt3xDelta(p);
           if (delta === null) return '<td class="num" style="color:var(--muted);">—</td>';
@@ -5012,7 +5020,7 @@
     var kalshi = kalshiProjections[normalizeName(p.name)];
     var kalshiCell = '<td class="mono" style="color:'+(kalshi?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kalshi,p.position).replace(/"/g,'&quot;')+'">'+(kalshi ? kalshiDisplayTotal(kalshi).toFixed(1) : '—')+'</td>';
     var polymkt = polymarketProjections[normalizeName(p.name)];
-    var polymktCell = '<td class="mono" style="color:'+(polymkt?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(polymkt,p.position).replace(/"/g,'&quot;')+'">'+(polymkt ? polymarketDisplayTotal(polymkt).toFixed(1) : '—')+'</td>';
+    var polymktCell = '<td class="mono polymkt-col" style="color:'+(polymkt?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(polymkt,p.position).replace(/"/g,'&quot;')+'">'+(polymkt ? polymarketDisplayTotal(polymkt).toFixed(1) : '—')+'</td>';
     var valueDelta = mkt3xDelta(p);
     var valueCell = (function(){
       if (valueDelta === null) return '<td class="mono" style="color:var(--muted);">—</td>';
@@ -5115,7 +5123,7 @@
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
-        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
+        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th class="polymkt-col" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
         +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>'
         +'<th></th><th></th></tr></thead><tbody>'+allRows+'</tbody></table>';
     } else {
@@ -5132,7 +5140,7 @@
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
-        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
+        +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th class="polymkt-col" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
         +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>'
         +'<th>Rank</th><th>Tier</th><th></th><th></th></tr></thead><tbody>'+posRows+'</tbody></table>';
     }
