@@ -1683,6 +1683,23 @@
         if (e.total != null && (e.total - e.returned) > worstGap){ worstGap = e.total - e.returned; worstEventId = parseInt(eid, 10); }
       });
       if (worstEventId != null){
+        // The solo probes below (this round) found Pittman's receiving-
+        // yards market sitting right inside a deterministic 50 for event
+        // 115743 - which contradicts the original bug report (his Rec Yds
+        // showing "not posted" in the pool table, sourced from the
+        // production fetch above that batches 25 events per call). The one
+        // variable that differs: batch composition. Test directly whether
+        // the PRODUCTION batch-of-25 fetch actually returned a DIFFERENT 50
+        // for this same event than a solo (batch-of-1) call does - markets
+        // don't carry eventId directly, but their slug embeds the event's
+        // own slug (e.g. ".../nfl-pit-cle-2026-10-01-td-..."), so match on
+        // that.
+        var worstEventMeta = events.filter(function(e){ return parseInt(e.id,10) === worstEventId; })[0];
+        if (worstEventMeta && worstEventMeta.slug){
+          var prodMarketsForEvent = allMarkets.filter(function(m){ return m.slug && m.slug.indexOf(worstEventMeta.slug) !== -1; });
+          console.log('Polymarket probe: production batch-of-25 fetch returned ' + prodMarketsForEvent.length + ' markets for event ' + worstEventId + ' (slug ' + worstEventMeta.slug + ').');
+          console.log('Polymarket probe: does the PRODUCTION batch-of-25 set have Pittman receiving props for this event? ' + prodMarketsForEvent.some(function(m){ return m.metadata && m.metadata.playerName && m.metadata.playerName.toLowerCase().indexOf('pittman') !== -1 && (m.sportsMarketType||'').indexOf('receiv') !== -1; }));
+        }
         console.log('Polymarket pagination probe: re-requesting event ' + worstEventId + ' solo, with and without an offset field...');
         var soloBase = await fetch(workerUrl + '/player-props', {
           method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
@@ -1707,6 +1724,20 @@
         var soloBaseBagMarkets = (soloBase && soloBase.bag && soloBase.bag.markets) || [];
         console.log('Polymarket solo probe: solo response bag.markets length=' + soloBaseBagMarkets.length);
         if (soloBaseBagMarkets[0]) console.log('Polymarket solo probe: sample bag.markets[0] entry: ' + JSON.stringify(soloBaseBagMarkets[0]));
+        // Direct comparison: does the solo call's 50 market ids match the
+        // PRODUCTION batch-of-25 call's 50 market ids for this exact same
+        // event? If they differ, batch composition (which other events are
+        // bundled into the same request) changes which 50 markets THIS
+        // event gets back - meaning solo (or smaller-batch) requests per
+        // event would surface a different, possibly better, slice than the
+        // production fetch currently gets.
+        if (worstEventMeta && worstEventMeta.slug){
+          var prodMarketsForEvent2 = allMarkets.filter(function(m){ return m.slug && m.slug.indexOf(worstEventMeta.slug) !== -1; });
+          var prodIds = prodMarketsForEvent2.map(function(m){ return m.id; });
+          var soloIds = soloBaseBagMarkets.map(function(m){ return m.id; });
+          var prodSoloOverlap = prodIds.filter(function(id){ return soloIds.indexOf(id) !== -1; }).length;
+          console.log('Polymarket probe: production-batch vs solo-call market id overlap for event ' + worstEventId + ': ' + prodSoloOverlap + ' of ' + prodIds.length + ' production ids also appear in the solo call (full overlap = same 50 regardless of batching; low/no overlap = batch composition changes which 50 an event gets).');
+        }
         var idsOf = function(props){ return props.map(function(p){ return p.id || p.marketId || p.conditionId || JSON.stringify(p).slice(0,40); }); };
         var baseIds = idsOf(soloBaseProps), offsetIds = idsOf(soloOffsetProps);
         var overlap = baseIds.filter(function(id){ return offsetIds.indexOf(id) !== -1; }).length;
