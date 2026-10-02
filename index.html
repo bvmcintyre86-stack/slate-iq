@@ -1736,6 +1736,29 @@
         soloFilteredMarkets.forEach(function(m){ filteredTypeCounts[m.sportsMarketType] = (filteredTypeCounts[m.sportsMarketType]||0) + 1; });
         console.log('Polymarket solo probe (type filter guess): props.length=' + soloFilteredProps.length + ' bag.markets.length=' + soloFilteredMarkets.length + ' total=' + (soloFiltered && soloFiltered.events && soloFiltered.events[0] && soloFiltered.events[0].totalPropCount) + ' typeCounts=' + JSON.stringify(filteredTypeCounts));
         console.log('Polymarket solo probe (type filter guess): has Pittman receiving props? ' + soloFilteredMarkets.some(function(m){ return m.metadata && m.metadata.playerName && m.metadata.playerName.toLowerCase().indexOf('pittman') !== -1 && (m.sportsMarketType||'').indexOf('receiv') !== -1; }));
+
+        // Third probe, triggered by the second one above: the "filtered"
+        // call (whose guessed filter fields were otherwise ignored - same
+        // 50/296) surfaced a Pittman receiving-yards market that the FIRST,
+        // completely plain call for this same event did not. That only
+        // makes sense if the 50-per-event window isn't a stable, ordered
+        // "top 50" at all - it may just be an arbitrary/unordered 50 rows
+        // the server happens to return, different each call. Test that
+        // directly: fire the exact same plain request (no offset, no
+        // filter guesses) twice and diff the resulting market ids. If they
+        // differ, repeating the same call and merging results is a real
+        // path to eventually covering all 296 - if they're identical, this
+        // was a fluke from the filter fields actually doing something.
+        var soloBaseRepeat = await fetch(workerUrl + '/player-props', {
+          method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ events: { event_ids: [worstEventId], limit_per_event: 500 }, combo_enabled_only: false })
+        }).then(function(r){ return r.text(); }).then(function(t){ try { return JSON.parse(t); } catch(e){ return null; } });
+        var soloBaseRepeatMarkets = (soloBaseRepeat && soloBaseRepeat.bag && soloBaseRepeat.bag.markets) || [];
+        var baseMarketIds = soloBaseBagMarkets.map(function(m){ return m.id; });
+        var repeatMarketIds = soloBaseRepeatMarkets.map(function(m){ return m.id; });
+        var repeatOverlap = baseMarketIds.filter(function(id){ return repeatMarketIds.indexOf(id) !== -1; }).length;
+        console.log('Polymarket solo probe (identical call repeated): first call ' + baseMarketIds.length + ' markets, repeat call ' + repeatMarketIds.length + ' markets, overlap=' + repeatOverlap + ' (full overlap = stable/deterministic 50; partial or low overlap = the 50 is an arbitrary/unordered sample that changes call to call, which means repeating + merging calls can accumulate full coverage).');
+        console.log('Polymarket solo probe (identical call repeated): has Pittman receiving props on repeat? ' + soloBaseRepeatMarkets.some(function(m){ return m.metadata && m.metadata.playerName && m.metadata.playerName.toLowerCase().indexOf('pittman') !== -1 && (m.sportsMarketType||'').indexOf('receiv') !== -1; }));
       }
     } catch(probeErr){
       console.warn('Polymarket pagination probe errored (harmless, just a diagnostic):', probeErr);
