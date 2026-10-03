@@ -595,12 +595,17 @@
   <section id="resultsSection">
     <div class="section-head">
       <h2><span class="section-toggle" data-toggle-section="resultsSection">&#9660;</span> Results tracking</h2>
-      <div class="sub">DraftKings: import their contest-standings CSV to auto-fill Actual/Own %/MVP Own % below. FanDuel doesn't offer this export, so those stay manual entry in Player Pool above.</div>
+      <div class="sub">Import either platform's contest-standings CSV to auto-fill Actual/Own %/MVP Own % below, for both Main Slate and Single Game.</div>
     </div>
     <div id="dkImportRow" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
       <button id="importDkResultsBtn">Import DK contest-standings CSV</button>
       <input type="file" id="dkResultsFile" accept=".csv" style="display:none;">
       <span class="sub" id="dkImportStatus"></span>
+    </div>
+    <div id="fdImportRow" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+      <button id="importFdResultsBtn">Import FD contest-standings CSV</button>
+      <input type="file" id="fdResultsFile" accept=".csv" style="display:none;">
+      <span class="sub" id="fdImportStatus"></span>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
       <button id="saveWeekResultsBtn">Save this week's results</button>
@@ -5527,18 +5532,23 @@
     });
   }
 
-  // DraftKings' contest-standings export crams two unrelated tables into one
-  // CSV: per-ENTRY standings on the left (Rank/EntryId/.../Lineup), and
-  // per-PLAYER ownership on the right (Player/Roster Position/%Drafted/
-  // FPTS), separated by one blank column. We only care about the right
-  // side. Each real player can appear as up to two rows - one per Roster
-  // Position they were used in (e.g. "CPT" and "FLEX" for Showdown) - with
-  // OWNERSHIP tracked independently per role, but FPTS for the "CPT" role
-  // is always exactly 1.5x whatever their true base score was (confirmed
-  // directly against a real export: 12.82 FLEX -> 19.23 CPT, etc). Since we
-  // apply that 1.5x ourselves at the slot level, we need the BASE score,
-  // not the already-multiplied one.
-  function importDkResultsCsv(file){
+  // Both DraftKings' and FanDuel's contest-standings export cram two
+  // unrelated tables into one CSV: per-ENTRY standings on the left
+  // (Rank/EntryId/.../Lineup), and per-PLAYER ownership on the right
+  // (Player/Roster Position/%Drafted/FPTS), separated by one blank column -
+  // same column names on both platforms, confirmed directly against a real
+  // export of each. We only care about the right side. In Single Game
+  // contests, each real player can appear as up to two rows - one per
+  // Roster Position they were used in (the captain-style slot - "CPT" on
+  // DK, "MVP" on FD - plus "FLEX") - with OWNERSHIP tracked independently
+  // per role, but FPTS for the captain-style role is always exactly 1.5x
+  // whatever their true base score was on BOTH platforms (DK: confirmed
+  // 12.82 FLEX -> 19.23 CPT; FD: MVP pays 1.5x per FanDuel's own rules).
+  // Since we apply that 1.5x ourselves at the slot level, we need the BASE
+  // score, not the already-multiplied one. Main Slate/Classic contests only
+  // ever have one role per player, so this same function just works there
+  // unchanged - the "roles" dict simply has one entry instead of two.
+  function importContestResultsCsv(file, captainRoleKey, statusElId){
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -5562,23 +5572,23 @@
           var roles = entry.roles;
           var roleKeys = Object.keys(roles);
 
-          // Base (1x) actual points: prefer any non-CPT role's FPTS as-is;
-          // if CPT is the ONLY role anyone used them in, back out the base
-          // value by dividing out the 1.5x rather than reporting the
-          // inflated number.
-          var nonCptKey = roleKeys.find(function(r){ return r !== 'CPT'; });
-          if (nonCptKey){
-            p.actualPts = roles[nonCptKey].fpts;
-          } else if (roles.CPT){
-            p.actualPts = Math.round((roles.CPT.fpts / 1.5) * 100) / 100;
+          // Base (1x) actual points: prefer any non-captain role's FPTS as
+          //-is; if the captain slot is the ONLY role anyone used them in,
+          // back out the base value by dividing out the 1.5x rather than
+          // reporting the inflated number.
+          var nonCaptainKey = roleKeys.find(function(r){ return r !== captainRoleKey; });
+          if (nonCaptainKey){
+            p.actualPts = roles[nonCaptainKey].fpts;
+          } else if (roles[captainRoleKey]){
+            p.actualPts = Math.round((roles[captainRoleKey].fpts / 1.5) * 100) / 100;
           }
 
           // Overall ownership = sum across every role (mutually exclusive
           // per entry, so this is a legitimate total). MVP ownership = the
-          // CPT role specifically, 0 if nobody drafted them as CPT at all.
+          // captain-style role specifically, 0 if nobody drafted them there.
           var totalOwn = roleKeys.reduce(function(sum, r){ return sum + roles[r].own; }, 0);
           p.ownership = Math.round(totalOwn * 100) / 100;
-          p.mvpOwnership = roles.CPT ? roles.CPT.own : 0;
+          p.mvpOwnership = roles[captainRoleKey] ? roles[captainRoleKey].own : 0;
 
           matched++;
         });
@@ -5591,7 +5601,7 @@
 
         saveState();
         renderTable();
-        var statusEl = document.getElementById('dkImportStatus');
+        var statusEl = document.getElementById(statusElId);
         var msg = matched + ' of ' + Object.keys(byPlayer).length + ' players matched and filled in.';
         if (unmatched.length) msg += ' Unmatched: ' + unmatched.join(', ') + '.';
         if (statusEl) statusEl.textContent = msg;
@@ -5599,6 +5609,8 @@
       }
     });
   }
+  function importDkResultsCsv(file){ importContestResultsCsv(file, 'CPT', 'dkImportStatus'); }
+  function importFdResultsCsv(file){ importContestResultsCsv(file, 'MVP', 'fdImportStatus'); }
 
   function exportResultsCSV(){
     if (!resultsHistory.length){ alert('No results saved yet.'); return; }
@@ -5888,6 +5900,13 @@
   });
   document.getElementById('dkResultsFile').addEventListener('change', function(){
     if (this.files && this.files[0]) importDkResultsCsv(this.files[0]);
+    this.value = ''; // allow re-selecting the same file later
+  });
+  document.getElementById('importFdResultsBtn').addEventListener('click', function(){
+    document.getElementById('fdResultsFile').click();
+  });
+  document.getElementById('fdResultsFile').addEventListener('change', function(){
+    if (this.files && this.files[0]) importFdResultsCsv(this.files[0]);
     this.value = ''; // allow re-selecting the same file later
   });
   document.getElementById('saveWeekResultsBtn').addEventListener('click', function(){
