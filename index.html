@@ -761,6 +761,8 @@
   // ── Kalshi (alongside Unabated's props, as a cross-check) ────────────────
   var kalshiProjections = {}; // normalized "first last" -> {fp, breakdown}
   var kalshiProjectionsLoadedAt = null;
+  // Team-level Kalshi markets (D/ST context): [{key:'teamSacks'|'teamDstTd', text, threshold, prob}]
+  var kalshiTeamMkts = [];
 
   // ── Polymarket US (a second, independent cross-check) ─────────────────
   var polymarketProjections = {}; // normalized "first last" -> {fp, breakdown}
@@ -1310,6 +1312,10 @@
   // KXNFLRSHTD, KXNFLRSHATT) - confirmed from a real skipped-series dump.
   // Both spellings are matched in case that ever changes.
   var KALSHI_STAT_MATCHERS = [
+    // Team-level D/ST markets (not player props). Tickers are a best guess -
+    // the skipped-series console line shows the real ones if these miss.
+    { re: /SACK/,           key: 'teamSacks',  kind: 'team'    },
+    { re: /(DSTTD|DEFTD|DEFENSETD|DEFENSIVETD|DEFSPEC|DSTTDS|^KXNFLDST)/, key: 'teamDstTd', kind: 'team' },
     // The series our /ANYTD/ matcher was catching exists but has 0 open
     // events (confirmed via the ATTD diagnostic breakdown) - it's a stale/
     // unused ticker. The real live anytime-TD-scorer series is the bare
@@ -1477,6 +1483,8 @@
     // actual shape of the payload so a fix (if still needed) can target the
     // real field names instead of guessing again.
     var attdSamples = [];
+    var teamMktsNew = [];
+    var teamSamples = { teamSacks: [], teamDstTd: [] };
 
     async function processSeries(rs){
       if (!diag.byKey[rs.key]) diag.byKey[rs.key] = { events: 0, markets: 0, nameParseFail: 0, thresholdFail: 0, probFail: 0, kept: 0 };
@@ -1488,6 +1496,20 @@
           diag.events++; kd.events++;
           (ev.markets||[]).forEach(function(mkt){
             diag.markets++; kd.markets++;
+            if (rs.kind === 'team'){
+              var tText = [mkt.title, mkt.yes_sub_title, mkt.subtitle].filter(Boolean).join(' | ');
+              if (teamSamples[rs.key].length < 6) teamSamples[rs.key].push({ ticker: mkt.ticker, title: mkt.title, yes_sub_title: mkt.yes_sub_title, floor_strike: mkt.floor_strike, bid: mkt.yes_bid_dollars, ask: mkt.yes_ask_dollars, last: mkt.last_price_dollars });
+              var tThr = (mkt.floor_strike !== undefined && mkt.floor_strike !== null) ? parseFloat(mkt.floor_strike) : null;
+              if (tThr === null || isNaN(tThr)){ var tm = /(\d+(\.\d+)?)\+/.exec(mkt.title || ''); tThr = tm ? parseFloat(tm[1]) : null; }
+              var tb = mkt.yes_bid_dollars != null ? parseFloat(mkt.yes_bid_dollars) : null;
+              var ta = mkt.yes_ask_dollars != null ? parseFloat(mkt.yes_ask_dollars) : null;
+              var tl = mkt.last_price_dollars != null ? parseFloat(mkt.last_price_dollars) : null;
+              var tProb = (tb != null && !isNaN(tb) && ta != null && !isNaN(ta) && (tb > 0 || ta > 0)) ? (tb + ta) / 2 : (tl != null && !isNaN(tl) ? tl : null);
+              if (tProb === null || isNaN(tProb)){ diag.probFail++; kd.probFail++; return; }
+              diag.kept++; kd.kept++;
+              teamMktsNew.push({ key: rs.key, text: tText, threshold: tThr, prob: tProb });
+              return;
+            }
             if (rs.key === 'attd' && attdSamples.length < 5){
               attdSamples.push({ ticker: mkt.ticker, title: mkt.title, yes_sub_title: mkt.yes_sub_title, floor_strike: mkt.floor_strike, yes_bid_dollars: mkt.yes_bid_dollars, yes_ask_dollars: mkt.yes_ask_dollars, last_price_dollars: mkt.last_price_dollars });
             }
@@ -1654,8 +1676,14 @@
       matched++;
     }
 
+    kalshiTeamMkts = teamMktsNew;
+    var nSacks = teamMktsNew.filter(function(m){ return m.key === 'teamSacks'; }).length;
+    var nDst = teamMktsNew.filter(function(m){ return m.key === 'teamDstTd'; }).length;
+    var foundTeamSeries = relevantSeries.filter(function(r){ return r.kind === 'team'; }).map(function(r){ return r.ticker; });
+    console.log('Kalshi D/ST team markets - series found: ' + (foundTeamSeries.join(', ') || '(none)') + '; sacks markets: ' + nSacks + ', D/ST TD markets: ' + nDst + '. Raw samples:', JSON.stringify(teamSamples));
     kalshiProjectionsLoadedAt = Date.now();
     setKalshiStatus(shortLoadStatus(matched, kalshiProjectionsLoadedAt) +
+      ' | DEF mkts: ' + nSacks + ' sacks, ' + nDst + ' D/ST TD' +
       (failedSeries.length ? ' (' + failedSeries.length + ' group(s) failed - see console)' : ''));
     if (failedSeries.length) console.warn('Kalshi series that failed to load (see warnings above for why): ' + failedSeries.join(', '));
     console.log('Kalshi fetch diagnostics: ' + diag.events + ' events, ' + diag.markets + ' markets scanned across ' + relevantSeries.length + ' group(s) - ' +
@@ -2496,6 +2524,40 @@
     // one-off console queries against the same data without extra plumbing.
     window.lastRawPregame = lastRawPregame;
     window.lastRawPeople = lastRawPeople;
+    try { scanUnabatedForDefMarkets(); } catch (e) { console.warn('Unabated D/ST scan failed:', e); }
+  }
+
+  // Discovery for D/ST markets in the Unabated pull (team sacks, D/ST anytime
+  // TD). We don't know in advance whether Unabated models a defense as a
+  // "person" (then the normal ATTD pipeline already matches it by team name),
+  // or as a team-level side with no personId, or under a bet type we haven't
+  // mapped. This logs every one of those so the next load shows what's there.
+  function scanUnabatedForDefMarkets(){
+    var defRe = /d\/?st|defen[sc]e|special\s*teams|sack/i;
+    var defPeople = [];
+    for (var pid in lastRawPeople){
+      var pr = lastRawPeople[pid] || {};
+      var full = ((pr.firstName || '') + ' ' + (pr.lastName || '')).trim();
+      if (defRe.test(full) || !pr.firstName || JSON.stringify(pr).search(/"position(Name|Abbr)?":"(D\/?ST|DST|DEF)"/i) !== -1) defPeople.push({ id: pid, name: full || '(no name)' });
+    }
+    var byType = {};
+    for (var ek in lastRawPregame){
+      var en = lastRawPregame[ek];
+      var mapped = !!BET_TYPE_ID_TO_KEY_GLOBAL[en.betTypeId];
+      var sides = en.sides || {};
+      var teamSides = 0, personSides = 0;
+      for (var sk2 in sides){ if (sides[sk2].personId) personSides++; else teamSides++; }
+      if (mapped && !teamSides) continue;
+      var k = (mapped ? 'mapped ' + BET_TYPE_ID_TO_KEY_GLOBAL[en.betTypeId] : 'unmapped') + ' id ' + en.betTypeId + (en.betSubType ? ' / ' + en.betSubType : '');
+      if (!byType[k]) byType[k] = { entries: 0, teamSides: 0, personSides: 0, sample: null };
+      byType[k].entries++; byType[k].teamSides += teamSides; byType[k].personSides += personSides;
+      if (!byType[k].sample) byType[k].sample = en;
+    }
+    window.unabatedDefScan = { defPeople: defPeople, byType: byType };
+    console.log('Unabated D/ST scan - people that look like defenses (' + defPeople.length + '):', defPeople.slice(0, 40));
+    var summary = {};
+    Object.keys(byType).forEach(function(k){ summary[k] = { entries: byType[k].entries, teamSides: byType[k].teamSides, personSides: byType[k].personSides }; });
+    console.log('Unabated bet types that are unmapped or have team-level sides (full samples in window.unabatedDefScan):', summary);
   }
 
   var lastRawPregame = {};
@@ -3117,6 +3179,7 @@
         matchupDataLoadedAt: matchupDataLoadedAt,
         kalshiWorkerUrl: document.getElementById('kalshiWorkerUrl') ? document.getElementById('kalshiWorkerUrl').value : '',
         kalshiProjections: kalshiProjections,
+        kalshiTeamMkts: kalshiTeamMkts,
         kalshiProjectionsLoadedAt: kalshiProjectionsLoadedAt,
         polymarketWorkerUrl: document.getElementById('polymarketWorkerUrl') ? document.getElementById('polymarketWorkerUrl').value : '',
         polymarketProjections: polymarketProjections,
@@ -3212,6 +3275,7 @@
       if (state.kalshiWorkerUrl && document.getElementById('kalshiWorkerUrl')) document.getElementById('kalshiWorkerUrl').value = state.kalshiWorkerUrl;
       if (state.kalshiProjections){
         kalshiProjections = state.kalshiProjections;
+        kalshiTeamMkts = state.kalshiTeamMkts || [];
         kalshiProjectionsLoadedAt = state.kalshiProjectionsLoadedAt || null;
         if (Object.keys(kalshiProjections).length) setKalshiStatus(kalshiFreshnessMsg());
       }
@@ -4227,7 +4291,65 @@
   // r = -0.34). Sacks/INT rates were tested and add ~nothing on top of this.
   function defLineProjection(p){
     if (p.position !== 'DEF' || p.oppImplied == null) return null;
-    return Math.max(0, 18.87 - 0.56 * p.oppImplied);
+    var base = 18.87 - 0.56 * p.oppImplied;
+    // Kalshi team-sacks market: swap the league-average sack contribution
+    // (2.44 sacks/game, 1 pt each) for the market's expected sacks instead of
+    // stacking both. Guarded to a sane range in case a market parses oddly.
+    var info = kalshiDefInfo(p);
+    if (info && info.sacksMean != null) base = base - 2.44 + info.sacksMean;
+    return Math.max(0, base);
+  }
+
+  function defNickToken(p){
+    var parts = normalizeName(p.name).split(' ');
+    return parts[parts.length - 1] || '';
+  }
+  function normText(s){ return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' '); }
+  var _defNickCache = { n: -1, nicks: [] };
+  function allDefNicks(){
+    if (_defNickCache.n === players.length) return _defNickCache.nicks;
+    var nicks = [];
+    players.forEach(function(q){
+      if (q.position !== 'DEF') return;
+      var t = (q.name || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim().split(/\s+/);
+      var nick = t[t.length - 1];
+      if (nick && nicks.indexOf(nick) === -1) nicks.push(nick);
+    });
+    _defNickCache = { n: players.length, nicks: nicks };
+    return nicks;
+  }
+  // Team-level Kalshi data for a DEF row: expected sacks (Poisson back-out of
+  // the closest-to-50% threshold) and the D/ST touchdown probability.
+  // Markets mentioning more than one team nickname (game-level) are skipped.
+  function kalshiDefInfo(p){
+    if (p.position !== 'DEF' || !kalshiTeamMkts.length) return null;
+    var nick = (p.name || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim().split(/\s+/).pop();
+    if (!nick) return null;
+    var nicks = allDefNicks();
+    var mine = kalshiTeamMkts.filter(function(m){
+      var txt = ' ' + normText(m.text) + ' ';
+      if (txt.indexOf(' ' + nick + ' ') === -1) return false;
+      for (var i = 0; i < nicks.length; i++){
+        if (nicks[i] !== nick && txt.indexOf(' ' + nicks[i] + ' ') !== -1) return false;
+      }
+      return true;
+    });
+    if (!mine.length) return null;
+    var out = { sacksMean: null, sacksThreshold: null, sacksProb: null, dstTdProb: null };
+    var sacks = mine.filter(function(m){ return m.key === 'teamSacks' && m.threshold != null; });
+    var best = null, bestDist = Infinity;
+    sacks.forEach(function(m){ var d = Math.abs(m.prob - 0.5); if (d < bestDist){ bestDist = d; best = m; } });
+    if (best){
+      var lam = impliedTdMean(best.threshold, best.prob);
+      if (lam !== null && lam >= 0.5 && lam <= 6){ out.sacksMean = lam; out.sacksThreshold = best.threshold; out.sacksProb = best.prob; }
+    }
+    var tds = mine.filter(function(m){ return m.key === 'teamDstTd'; });
+    if (tds.length){
+      // anytime D/ST TD = the lowest-threshold (or only) market
+      tds.sort(function(a, b){ return (a.threshold == null ? 0 : a.threshold) - (b.threshold == null ? 0 : b.threshold); });
+      out.dstTdProb = tds[0].prob;
+    }
+    return (out.sacksMean !== null || out.dstTdProb !== null) ? out : null;
   }
 
   function combinedMarketProjection(p){
@@ -4890,7 +5012,15 @@
         '<td class="mono">'+p.team+'</td>'+
         '<td class="num">'+money(p.salary)+'</td>'+
         '<td class="num" style="cursor:help;" title="'+effFppgTitle.replace(/"/g,'&quot;')+'">'+p.fppg.toFixed(1)+'</td>'+
-        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : (defLineProjection(p) !== null ? '<span style="color:var(--teal);opacity:.75;" title="Line-based DEF projection: 18.87 - 0.56 x opponent implied total (fit on 2023-26 tournament data)">'+defLineProjection(p).toFixed(1)+' <span style="font-size:11px;">line</span></span>' : '—'))+'</td>'+
+        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : (defLineProjection(p) !== null ? (function(){
+          var di = kalshiDefInfo(p);
+          var tip = 'Line-based DEF projection: 18.87 - 0.56 x opponent implied total (fit on 2023-26 tournament data)';
+          if (di && di.sacksMean != null) tip += '. Sacks swapped to Kalshi: ' + di.sacksMean.toFixed(1) + ' expected (' + di.sacksThreshold + '+ at ' + Math.round(di.sacksProb*100) + '%) instead of the 2.4 average';
+          if (di && di.dstTdProb != null) tip += '. Kalshi D/ST TD probability ' + (di.dstTdProb*100).toFixed(0) + '% (~' + (di.dstTdProb*6).toFixed(1) + ' pts of the projection; ceiling flag, base rate ~12%)';
+          var extra = '';
+          if (di && di.dstTdProb != null) extra = ' <span style="font-size:11px;color:'+(di.dstTdProb >= 0.17 ? 'var(--gold)' : 'var(--muted)')+';">TD '+Math.round(di.dstTdProb*100)+'%</span>';
+          return '<span style="color:var(--teal);opacity:.85;" title="'+tip.replace(/"/g,'&quot;')+'">'+defLineProjection(p).toFixed(1)+' <span style="font-size:11px;">'+(di && di.sacksMean != null ? 'line+sk' : 'line')+'</span>'+extra+'</span>';
+        })() : '—'))+'</td>'+
         '<td class="num" style="color:'+(kp?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kp,p.position).replace(/"/g,'&quot;')+'">'+(kp ? kalshiDisplayTotal(kp).toFixed(1) : '—')+'</td>'+
         '<td class="num polymkt-col" style="color:'+(pp?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(pp,p.position).replace(/"/g,'&quot;')+'">'+(pp ? polymarketDisplayTotal(pp).toFixed(1) : '—')+'</td>'+
         (function(){
