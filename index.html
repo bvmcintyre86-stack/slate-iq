@@ -499,6 +499,8 @@
             <th data-key="polymarket" class="polymkt-col" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th>
             <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their combined Unabated+Kalshi+Polymarket projection (average of whichever are loaded). Smaller or negative = closer to or past that target.">3x &Delta;</th>
             <th data-key="teamImplied">Team total</th>
+            <th data-key="oppImplied" title="Opponent's implied team total. Lower = better for that team's DEF (and a tougher scoring spot for its offense).">Opp total</th>
+            <th data-key="teamSpread" title="This team's spread (negative = favored). Favored defenses score more.">Sprd</th>
             <th data-key="tag">Script</th>
             <th data-key="opp" title="Opponent's rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th>
             <th data-key="role" title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>
@@ -2940,6 +2942,7 @@
       var match = findGameForTeam(p.team);
       if (!match){
         p.tag = 'unmatched'; p.teamImplied = null; p.oppTeam = null; p.isHome = null;
+        p.oppImplied = null; p.teamSpread = null;
         return;
       }
       var s = gameSides(match.game);
@@ -2947,6 +2950,9 @@
       var opp = match.side === 'away' ? s.home : s.away;
       p.tag = mine.tag;
       p.teamImplied = mine.implied;
+      p.oppImplied = opp.implied;
+      // Signed spread from this player's team view: negative = favored.
+      p.teamSpread = match.game.favorite === 'pick' ? 0 : (mine.isFav ? -1 : 1) * Math.abs(match.game.spread || 0);
       p.oppTeam = opp.team;
       p.isHome = match.side === 'home';
     });
@@ -4217,6 +4223,13 @@
   // A player with only 1 of the 3 loaded still gets a number (that source's
   // own fp, unchanged); a player with 0 loaded returns null so the caller
   // can fall back to fppg, same as always.
+  // DEF fantasy pts ~ 18.87 - 0.56 * opponent implied total (939 team-weeks,
+  // r = -0.34). Sacks/INT rates were tested and add ~nothing on top of this.
+  function defLineProjection(p){
+    if (p.position !== 'DEF' || p.oppImplied == null) return null;
+    return Math.max(0, 18.87 - 0.56 * p.oppImplied);
+  }
+
   function combinedMarketProjection(p){
     var norm = normalizeName(p.name);
     var parts = [];
@@ -4226,6 +4239,13 @@
     if (mp) parts.push({ source: 'Unabated',  fp: mp.fp });
     if (kp) parts.push({ source: 'Kalshi',    fp: kp.fp });
     if (pp) parts.push({ source: 'Polymarket',fp: pp.fp });
+    // Defenses have no player props, so give them a betting-line projection
+    // (fit on 2023-26 FanDuel tournament data): fewer points implied for the
+    // opponent = more DEF points. Only used when no other source exists.
+    if (!parts.length){
+      var dl = defLineProjection(p);
+      if (dl !== null) parts.push({ source: 'Line model', fp: dl });
+    }
     if (!parts.length) return null;
     var sum = parts.reduce(function(a,b){ return a + b.fp; }, 0);
     return { fp: sum / parts.length, parts: parts, count: parts.length };
@@ -4870,7 +4890,7 @@
         '<td class="mono">'+p.team+'</td>'+
         '<td class="num">'+money(p.salary)+'</td>'+
         '<td class="num" style="cursor:help;" title="'+effFppgTitle.replace(/"/g,'&quot;')+'">'+p.fppg.toFixed(1)+'</td>'+
-        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : '—')+'</td>'+
+        '<td class="num" style="color:'+(mp?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mp,p.position).replace(/"/g,'&quot;')+'">'+(mp ? mktDisplayTotal(mp).toFixed(1)+(mktCoverage(mp,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mp,p.position).matched+'/'+mktCoverage(mp,p.position).total+')</span>':'') : (defLineProjection(p) !== null ? '<span style="color:var(--teal);opacity:.75;" title="Line-based DEF projection: 18.87 - 0.56 x opponent implied total (fit on 2023-26 tournament data)">'+defLineProjection(p).toFixed(1)+' <span style="font-size:11px;">line</span></span>' : '—'))+'</td>'+
         '<td class="num" style="color:'+(kp?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kp,p.position).replace(/"/g,'&quot;')+'">'+(kp ? kalshiDisplayTotal(kp).toFixed(1) : '—')+'</td>'+
         '<td class="num polymkt-col" style="color:'+(pp?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(pp,p.position).replace(/"/g,'&quot;')+'">'+(pp ? polymarketDisplayTotal(pp).toFixed(1) : '—')+'</td>'+
         (function(){
@@ -4880,6 +4900,13 @@
           return '<td class="num" style="color:'+color+';font-weight:'+(delta<=0?'700':'400')+';">'+(delta > 0 ? '+' : '')+delta.toFixed(1)+'</td>';
         })()+
         '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
+        (function(){
+          if (p.oppImplied == null) return '<td class="num" style="color:var(--muted);">—</td><td class="num" style="color:var(--muted);">—</td>';
+          var strong = p.position === 'DEF' && p.oppImplied <= 18.5;
+          var sp = p.teamSpread === 0 ? 'PK' : (p.teamSpread > 0 ? '+' : '') + round1(p.teamSpread);
+          return '<td class="num" style="'+(strong?'color:var(--gold);font-weight:700;':'')+'">'+round1(p.oppImplied)+'</td>'+
+                 '<td class="num">'+sp+'</td>';
+        })()+
         '<td><span class="tag-pill" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+
         renderMatchupCells(p).replace(/class="mono"/g, 'class="num"')+
         '<td>'+
