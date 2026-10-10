@@ -761,7 +761,7 @@
   // ── Kalshi (alongside Unabated's props, as a cross-check) ────────────────
   var kalshiProjections = {}; // normalized "first last" -> {fp, breakdown}
   var kalshiProjectionsLoadedAt = null;
-  // Team-level Kalshi markets (D/ST context): [{key:'teamSacks'|'teamDstTd', text, threshold, prob}]
+  // Team-level Kalshi markets for DEF rows: [{key:'teamSacks'|'teamDstAttd', event, alias, threshold, prob, bid, ask}]
   var kalshiTeamMkts = [];
 
   // ── Polymarket US (a second, independent cross-check) ─────────────────
@@ -1312,13 +1312,12 @@
   // KXNFLRSHTD, KXNFLRSHATT) - confirmed from a real skipped-series dump.
   // Both spellings are matched in case that ever changes.
   var KALSHI_STAT_MATCHERS = [
-    // Team-level D/ST markets (confirmed from a real series dump): TEAMSACK =
-    // per-team sack ladder ("Jacksonville: 3+ sacks"); DSTTD = ONE market per
-    // GAME ("D/ST touchdown in the game?", either team). Exact tickers only so
+    // Team sacks: per-team ladder ("Jacksonville: 3+ sacks"). Exact ticker so
     // KXNFLSACK (player sacks), KXNFLGAMESACK (game total) and
-    // KXNFLSACKRECORD are not swept in.
+    // KXNFLSACKRECORD are not swept in. D/ST anytime TDs are NOT a separate
+    // series: they sit in the player ATTD series (KXNFLTD) as "JAC Jaguars
+    // D/ST: 1+ touchdowns" rows and are captured in processSeries below.
     { re: /^KXNFLTEAMSACK$/, key: 'teamSacks', kind: 'team'    },
-    { re: /^KXNFLDSTTD$/,    key: 'teamDstTd', kind: 'team'    },
     // The series our /ANYTD/ matcher was catching exists but has 0 open
     // events (confirmed via the ATTD diagnostic breakdown) - it's a stale/
     // unused ticker. The real live anytime-TD-scorer series is the bare
@@ -1487,8 +1486,6 @@
     // real field names instead of guessing again.
     var attdSamples = [];
     var teamMktsNew = [];
-    var attdDropSamples = [];
-    var teamSamples = { teamSacks: [], teamDstTd: [] };
 
     async function processSeries(rs){
       if (!diag.byKey[rs.key]) diag.byKey[rs.key] = { events: 0, markets: 0, nameParseFail: 0, thresholdFail: 0, probFail: 0, kept: 0 };
@@ -1502,7 +1499,6 @@
             diag.markets++; kd.markets++;
             if (rs.kind === 'team'){
               var tText = [mkt.title, mkt.yes_sub_title, mkt.subtitle].filter(Boolean).join(' | ');
-              if (teamSamples[rs.key].length < 6) teamSamples[rs.key].push({ ticker: mkt.ticker, title: mkt.title, yes_sub_title: mkt.yes_sub_title, floor_strike: mkt.floor_strike, bid: mkt.yes_bid_dollars, ask: mkt.yes_ask_dollars, last: mkt.last_price_dollars });
               var tThr = (mkt.floor_strike !== undefined && mkt.floor_strike !== null) ? parseFloat(mkt.floor_strike) : null;
               if (tThr === null || isNaN(tThr)){ var tm = /(\d+(\.\d+)?)\+/.exec(mkt.title || ''); tThr = tm ? parseFloat(tm[1]) : null; }
               var tb = mkt.yes_bid_dollars != null ? parseFloat(mkt.yes_bid_dollars) : null;
@@ -1529,7 +1525,6 @@
               // Keep them as team entries instead of dropping them.
               var dLabel = (mkt.title || '') + ' | ' + (mkt.yes_sub_title || '');
               var dIsDst = /d\/?st|defen[sc]e|special\s*teams/i.test(dLabel);
-              if (attdDropSamples.length < 6) attdDropSamples.push({ ticker: mkt.ticker, title: mkt.title, yes_sub_title: mkt.yes_sub_title, floor_strike: mkt.floor_strike, dst: dIsDst });
               if (dIsDst){
                 var dtk = /-(\d{2}[A-Z]{3}\d{2})([A-Z]+)-([A-Z0-9]+)(?:-\d+)?$/.exec(mkt.ticker || '');
                 var db = mkt.yes_bid_dollars != null ? parseFloat(mkt.yes_bid_dollars) : null;
@@ -1708,11 +1703,8 @@
 
     kalshiTeamMkts = teamMktsNew;
     var nSacks = teamMktsNew.filter(function(m){ return m.key === 'teamSacks'; }).length;
-    var nDst = teamMktsNew.filter(function(m){ return m.key === 'teamDstTd'; }).length;
     var nDstAttd = teamMktsNew.filter(function(m){ return m.key === 'teamDstAttd'; }).length;
-    console.log('Kalshi ATTD rows that failed player-name parsing (first 6): ' + JSON.stringify(attdDropSamples) + ' | kept as D/ST anytime-TD: ' + nDstAttd);
-    var foundTeamSeries = relevantSeries.filter(function(r){ return r.kind === 'team'; }).map(function(r){ return r.ticker; });
-    console.log('Kalshi D/ST team markets - series found: ' + (foundTeamSeries.join(', ') || '(none)') + '; sacks markets: ' + nSacks + ', D/ST TD markets: ' + nDst + '. Raw samples:', JSON.stringify(teamSamples));
+    console.log('Kalshi DEF markets: ' + nSacks + ' team-sack rungs, ' + nDstAttd + ' D/ST anytime-TD rows.' + (nSacks + nDstAttd === 0 ? ' None found - check that the team-sack series (KXNFLTEAMSACK) and D/ST rows in KXNFLTD are posted.' : ''));
     kalshiProjectionsLoadedAt = Date.now();
     setKalshiStatus(shortLoadStatus(matched, kalshiProjectionsLoadedAt) +
       ' | DEF mkts: ' + nSacks + ' sacks, ' + nDstAttd + ' D/ST ATTD' +
@@ -2556,56 +2548,6 @@
     // one-off console queries against the same data without extra plumbing.
     window.lastRawPregame = lastRawPregame;
     window.lastRawPeople = lastRawPeople;
-    try { scanUnabatedForDefMarkets(); } catch (e) { console.warn('Unabated D/ST scan failed:', e); }
-  }
-
-  // Discovery for D/ST markets in the Unabated pull (team sacks, D/ST anytime
-  // TD). We don't know in advance whether Unabated models a defense as a
-  // "person" (then the normal ATTD pipeline already matches it by team name),
-  // or as a team-level side with no personId, or under a bet type we haven't
-  // mapped. This logs every one of those so the next load shows what's there.
-  function scanUnabatedForDefMarkets(){
-    var defRe = /d\/?st|defen[sc]e|special\s*teams|sack/i;
-    var defPeople = [];
-    for (var pid in lastRawPeople){
-      var pr = lastRawPeople[pid] || {};
-      var full = ((pr.firstName || '') + ' ' + (pr.lastName || '')).trim();
-      if (defRe.test(full) || !pr.firstName || JSON.stringify(pr).search(/"position(Name|Abbr)?":"(D\/?ST|DST|DEF)"/i) !== -1) defPeople.push({ id: pid, name: full || '(no name)' });
-    }
-    var byType = {};
-    for (var ek in lastRawPregame){
-      var en = lastRawPregame[ek];
-      var mapped = !!BET_TYPE_ID_TO_KEY_GLOBAL[en.betTypeId];
-      var sides = en.sides || {};
-      var teamSides = 0, personSides = 0;
-      for (var sk2 in sides){ if (sides[sk2].personId) personSides++; else teamSides++; }
-      if (mapped && !teamSides) continue;
-      var k = (mapped ? 'mapped ' + BET_TYPE_ID_TO_KEY_GLOBAL[en.betTypeId] : 'unmapped') + ' id ' + en.betTypeId + (en.betSubType ? ' / ' + en.betSubType : '');
-      if (!byType[k]) byType[k] = { entries: 0, teamSides: 0, personSides: 0, sample: null };
-      byType[k].entries++; byType[k].teamSides += teamSides; byType[k].personSides += personSides;
-      if (!byType[k].sample) byType[k].sample = en;
-    }
-    var nflNick = /\b(cardinals|falcons|ravens|bills|panthers|bears|bengals|browns|cowboys|broncos|lions|packers|texans|colts|jaguars|chiefs|raiders|chargers|rams|dolphins|vikings|patriots|saints|giants|jets|eagles|steelers|49ers|seahawks|buccaneers|titans|commanders)\b/i;
-    for (var pid2 in lastRawPeople){
-      var pr2 = lastRawPeople[pid2] || {};
-      var full2 = ((pr2.firstName || '') + ' ' + (pr2.lastName || '')).trim();
-      if (nflNick.test(full2) && !defPeople.some(function(d){ return d.id === pid2; })) defPeople.push({ id: pid2, name: full2 });
-    }
-    var defPoolHits = players.filter(function(q){ return q.position === 'DEF'; }).map(function(q){
-      var m = marketProjections[normalizeName(q.name)];
-      return { name: q.name, unabatedKey: !!m, attd: m && m.breakdown && m.breakdown.attd ? m.breakdown.attd.value : null };
-    });
-    console.log('Unabated vs pool DEF rows (does an Unabated entry exist under the DEF row\'s own name?): ' + JSON.stringify(defPoolHits.slice(0, 40)));
-    window.unabatedDefScan = { defPeople: defPeople, byType: byType };
-    console.log('Unabated D/ST scan - people that look like defenses (' + defPeople.length + '): ' + JSON.stringify(defPeople.slice(0, 40)));
-    var summary = {};
-    Object.keys(byType).forEach(function(k){ summary[k] = { entries: byType[k].entries, teamSides: byType[k].teamSides, personSides: byType[k].personSides }; });
-    console.log('Unabated bet types that are unmapped or have team-level sides: ' + JSON.stringify(summary));
-    Object.keys(byType).slice(0, 12).forEach(function(k){
-      var smp = byType[k].sample || {};
-      var firstSide = smp.sides ? smp.sides[Object.keys(smp.sides)[0]] : null;
-      console.log('Unabated sample [' + k + ']: ' + JSON.stringify({ betTypeId: smp.betTypeId, betSubType: smp.betSubType, sideKeys: smp.sides ? Object.keys(smp.sides).slice(0, 4) : null, firstSide: firstSide ? Object.assign({}, firstSide, { marketSourceLines: firstSide.marketSourceLines ? Object.keys(firstSide.marketSourceLines).length + ' books' : null }) : null }).slice(0, 700));
-    });
   }
 
   var lastRawPregame = {};
@@ -4352,21 +4294,11 @@
     return Math.max(0, base);
   }
 
-  // Anytime D/ST TD probability for a defense row, averaged across whichever
-  // of Kalshi / Unabated priced it (same ATTD market the player props use).
+  // Anytime D/ST TD probability for a defense row, from Kalshi's D/ST rows in
+  // the same anytime-TD series the player props use.
   function defTdInfo(p){
-    if (p.position !== 'DEF') return null;
-    var parts = [];
     var ki = kalshiDefInfo(p);
-    if (ki && ki.dstTdProb != null) parts.push({ src: 'Kalshi', p: ki.dstTdProb, derived: !ki.dstTdIndividual });
-    var mp = marketProjections[normalizeName(p.name)];
-    if (mp && mp.breakdown && mp.breakdown.attd && PROP_BET_TYPES.attd.mult){
-      var up = mp.breakdown.attd.value / PROP_BET_TYPES.attd.mult;
-      if (up > 0 && up < 1) parts.push({ src: 'Unabated', p: up, derived: false });
-    }
-    if (!parts.length) return null;
-    var avg = parts.reduce(function(a, x){ return a + x.p; }, 0) / parts.length;
-    return { p: avg, parts: parts };
+    return (ki && ki.dstTdProb != null) ? { p: ki.dstTdProb } : null;
   }
 
   // Kalshi uses its own team codes (JAC, LA, WAS...); FanDuel's pool may use
@@ -4395,11 +4327,10 @@
     }
     return best;
   }
-  // Team-level Kalshi data for a DEF row. Markets are tied to THIS game by the
-  // ticker's event code (away+home), so a later week's open markets for the
-  // same team can't leak in. D/ST TD is one market for the whole game (either
-  // team), converted to a per-team chance assuming the two sides are equal:
-  // per-team p = 1 - sqrt(1 - P_game).
+  // Team-level Kalshi data for a DEF row: expected sacks (ladder fit) and the
+  // D/ST anytime-TD probability. Markets are tied to THIS game by the ticker's
+  // event code (away+home), so a later week's open markets for the same team
+  // can't leak in.
   function kalshiDefInfo(p){
     if (p.position !== 'DEF' || !kalshiTeamMkts.length || !p.team || !p.oppTeam) return null;
     var mine = teamCodeSet(p.team), theirs = teamCodeSet(p.oppTeam);
@@ -4407,14 +4338,14 @@
     mine.forEach(function(a){ theirs.forEach(function(b){ evOk[a + b] = true; evOk[b + a] = true; }); });
     var games_ = kalshiTeamMkts.filter(function(m){ return m.event && evOk[m.event]; });
     if (!games_.length) return null;
-    var out = { sacksMean: null, sacksRungs: 0, dstTdProb: null, dstTdGameProb: null };
+    var out = { sacksMean: null, sacksRungs: 0, dstTdProb: null };
     var rungs = games_.filter(function(m){ return m.key === 'teamSacks' && m.alias && mine.indexOf(m.alias) !== -1; });
     if (rungs.length){
       var lam = fitSackRate(rungs);
       if (lam !== null && lam >= 0.5 && lam <= 6.5){ out.sacksMean = lam; out.sacksRungs = rungs.length; }
     }
-    // Individual D/ST anytime-TD (same Kalshi market as the player ATTD). The
-    // ticker suffix carries the team code; city/nickname in the label is the fallback.
+    // D/ST anytime-TD row for this team: the ticker suffix carries the team
+    // code ("JACJACDST"); the label is the fallback.
     var defName = normalizeName(p.name);
     var ind = games_.filter(function(m){
       if (m.key !== 'teamDstAttd') return false;
@@ -4425,12 +4356,7 @@
     });
     if (ind.length){
       ind.sort(function(a, b){ return (a.threshold == null ? 0 : a.threshold) - (b.threshold == null ? 0 : b.threshold); });
-      out.dstTdProb = ind[0].prob; out.dstTdIndividual = true;
-    }
-    var tds = ind.length ? [] : games_.filter(function(m){ return m.key === 'teamDstTd'; });
-    if (tds.length){
-      var P = tds[0].bid != null && tds[0].ask != null && (tds[0].bid > 0 || tds[0].ask > 0) ? (tds[0].bid + tds[0].ask) / 2 : tds[0].prob;
-      if (P > 0 && P < 1){ out.dstTdGameProb = P; out.dstTdProb = 1 - Math.sqrt(1 - P); }
+      out.dstTdProb = ind[0].prob;
     }
     return (out.sacksMean !== null || out.dstTdProb !== null) ? out : null;
   }
@@ -4439,9 +4365,8 @@
     var norm = normalizeName(p.name);
     var parts = [];
     if (p.position === 'DEF'){
-      // A defense's own Unabated/Kalshi ATTD price is only its touchdown
-      // piece (~1 pt), so it feeds defLineProjection instead of standing in
-      // for the whole projection.
+      // A defense's Kalshi ATTD price is only its touchdown piece (~1 pt), so
+      // it feeds defLineProjection instead of standing in for the whole thing.
       var dlp = defLineProjection(p);
       return dlp === null ? null : { fp: dlp, parts: [{ source: 'Line model', fp: dlp }], count: 1 };
     }
@@ -5107,7 +5032,7 @@
           var td = defTdInfo(p);
           var tip = 'Line-based DEF projection: 18.87 - 0.56 x opponent implied total (fit on 2023-26 tournament data)';
           if (di && di.sacksMean != null) tip += '. Sacks swapped to Kalshi: ' + di.sacksMean.toFixed(1) + ' expected (fit across ' + di.sacksRungs + ' posted rungs) instead of the 2.4 average';
-          if (td) tip += '. D/ST anytime TD ' + (td.p*100).toFixed(0) + '% (' + td.parts.map(function(x){ return x.src + ' ' + (x.p*100).toFixed(0) + '%' + (x.derived ? ' derived from the game-level market' : ''); }).join(', ') + ') swapped in for the ~0.8-pt average: worth ' + (td.p*6).toFixed(1) + ' pts. Also a ceiling flag (league base rate ~12%)';
+          if (td) tip += '. Kalshi D/ST anytime TD ' + (td.p*100).toFixed(0) + '% swapped in for the ~0.8-pt average: worth ' + (td.p*6).toFixed(1) + ' pts. Also a ceiling flag (league base rate ~12%)';
           var extra = '';
           if (td) extra = ' <span style="font-size:11px;color:'+(td.p >= 0.17 ? 'var(--gold)' : 'var(--muted)')+';">TD '+Math.round(td.p*100)+'%</span>';
           var tags = [];
