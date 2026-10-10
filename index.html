@@ -153,6 +153,8 @@
      sorted out. Nothing underneath was removed: the fetch function, state
      persistence, and accuracy-log/export columns are untouched. */
   .polymkt-col,.polymkt-row{display:none !important;}
+  /* Defense-only view: Team total isn't useful there (Opp total + Sprd are). */
+  #poolTable.hide-team-total th[data-key="teamImplied"], #poolTable.hide-team-total td.tt-cell{display:none;}
   .src-row-label{font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;min-width:0;}
   .src-row input[type=text],.src-row-half input[type=text]{flex:1;min-width:140px;font-size:12px;}
   .src-row .src-status,.src-row-half .src-status{font-size:12px;color:var(--muted);white-space:nowrap;}
@@ -4914,6 +4916,9 @@
       games.forEach(function(g){ sgTeams[g.away]=true; sgTeams[g.home]=true; });
     }
 
+    var poolTbl = document.getElementById('poolTable');
+    if (poolTbl) poolTbl.classList.toggle('hide-team-total', posF === 'DEF');
+
     var rows = players.filter(function(p){
       if (sgTeams && !sgTeams[p.team]) return false;
       // Hide unmatched players when games are loaded
@@ -5048,7 +5053,7 @@
           var color = delta <= 0 ? 'var(--gold)' : (delta <= 2 ? 'var(--teal)' : 'var(--muted)');
           return '<td class="num" style="color:'+color+';font-weight:'+(delta<=0?'700':'400')+';">'+(delta > 0 ? '+' : '')+delta.toFixed(1)+'</td>';
         })()+
-        '<td class="num">'+(p.teamImplied !== null ? round1(p.teamImplied) : '—')+'</td>'+
+        '<td class="num tt-cell">'+((p.teamImplied !== null && p.position !== 'DEF') ? round1(p.teamImplied) : '—')+'</td>'+
         (function(){
           if (p.oppImplied == null) return '<td class="num" style="color:var(--muted);">—</td><td class="num" style="color:var(--muted);">—</td>';
           var strong = p.position === 'DEF' && p.oppImplied <= 18.5;
