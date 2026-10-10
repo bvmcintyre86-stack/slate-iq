@@ -481,7 +481,7 @@
       <select id="teamFilter"><option value="">All teams</option></select>
       <select id="matchupFilter"><option value="">All matchups</option></select>
       <select id="tagFilter"><option value="">All script tags</option></select>
-      <label class="stack-chk" title="Shows players with at least one of Unabated/Kalshi/Polymarket loaded - the same condition effectiveFppg needs to produce a Market/Blend number instead of falling back to fppg."><input type="checkbox" id="mktOnlyFilter"> Has market data (any source)</label>
+      <label class="stack-chk" title="Shows only players with an Unabated (MKT) and/or Kalshi projection."><input type="checkbox" id="mktOnlyFilter"> Has MKT / Kalshi projection</label>
       <span class="row-count" id="rowCount"></span>
     </div>
 
@@ -4728,7 +4728,8 @@
       gameTeams = Array.from(new Set(players.map(function(p){return p.team;}))).filter(Boolean).sort();
     }
     var teams = gameTeams;
-    posSel.innerHTML  = '<option value="">All positions</option>' + positions.map(function(p){return '<option value="'+p+'">'+p+'</option>';}).join('');
+    var hasFlexPos = positions.indexOf('RB') !== -1 || positions.indexOf('WR') !== -1 || positions.indexOf('TE') !== -1;
+    posSel.innerHTML  = '<option value="">All positions</option>' + (hasFlexPos ? '<option value="FLEX">Flex (RB/WR/TE)</option>' : '') + positions.map(function(p){return '<option value="'+p+'">'+p+'</option>';}).join('');
     teamSel.innerHTML = '<option value="">All teams</option>'     + teams.map(function(t){return '<option value="'+t+'">'+t+'</option>';}).join('');
     var matchupSel = document.getElementById('matchupFilter');
     var matchups = games.map(function(g){ return g.away+'@'+g.home; }).sort();
@@ -4765,14 +4766,17 @@
         var parts = filterMatchup.split('@');
         if (p.team !== parts[0] && p.team !== parts[1]) return false;
       }
-      if (posF  && p.position !== posF)  return false;
+      if (posF === 'FLEX'){
+        if (p.position !== 'RB' && p.position !== 'WR' && p.position !== 'TE') return false;
+      } else if (posF && p.position !== posF) return false;
       if (teamF && p.team     !== teamF) return false;
       if (tagF  && p.tag      !== tagF)  return false;
-      // Broadened from "has Unabated data" to "has ANY of the 3 sources" -
-      // this is the same condition that lets effectiveFppg produce a real
-      // Market/Blend number instead of silently falling back to fppg, so the
-      // filter now matches what actually has market signal behind it.
-      if (filterMktOnly && !combinedMarketProjection(p)) return false;
+      // Only players with an Unabated (MKT) and/or Kalshi projection.
+      // Polymarket is hidden for now, so it is intentionally not counted.
+      if (filterMktOnly){
+        var nm = normalizeName(p.name);
+        if (!marketProjections[nm] && !kalshiProjections[nm]) return false;
+      }
       if (search && p.name.toLowerCase().indexOf(search) === -1 && p.team.toLowerCase().indexOf(search) === -1) return false;
       return true;
     });
