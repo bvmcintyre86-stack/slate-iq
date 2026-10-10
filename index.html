@@ -158,6 +158,9 @@
   #poolTable.hide-team-total th[data-key="kalshi"], #poolTable.hide-team-total th[data-key="opp"], #poolTable.hide-team-total th[data-key="role"],
   /* td positions: Kalshi = 7, Opp = 14, Role = 15 (update if columns are added/reordered) */
   #poolTable.hide-team-total tbody td:nth-child(7), #poolTable.hide-team-total tbody td:nth-child(14), #poolTable.hide-team-total tbody td:nth-child(15){display:none;}
+  /* Opp total + Sprd only matter for defenses: shown only in the DEF view. td positions: Opp total = 11, Sprd = 12 */
+  #poolTable.hide-def-cols th[data-key="oppImplied"], #poolTable.hide-def-cols th[data-key="teamSpread"],
+  #poolTable.hide-def-cols tbody td:nth-child(11), #poolTable.hide-def-cols tbody td:nth-child(12){display:none;}
   .src-row-label{font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;min-width:0;}
   .src-row input[type=text],.src-row-half input[type=text]{flex:1;min-width:140px;font-size:12px;}
   .src-row .src-status,.src-row-half .src-status{font-size:12px;color:var(--muted);white-space:nowrap;}
@@ -4920,7 +4923,10 @@
     }
 
     var poolTbl = document.getElementById('poolTable');
-    if (poolTbl) poolTbl.classList.toggle('hide-team-total', posF === 'DEF');
+    if (poolTbl){
+      poolTbl.classList.toggle('hide-team-total', posF === 'DEF');
+      poolTbl.classList.toggle('hide-def-cols', posF !== 'DEF');
+    }
 
     var rows = players.filter(function(p){
       if (sgTeams && !sgTeams[p.team]) return false;
