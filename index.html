@@ -391,7 +391,8 @@
         <button id="clearGamesBtn">Clear all games</button>
         <span style="color:var(--line);padding:0 4px;">|</span>
         <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Week</label>
-        <select id="unabatedWeek" style="font-size:12px;"><option value="">All upcoming</option></select>
+        <select id="unabatedWeek" style="font-size:12px;" title="Pick a week - the board reloads automatically with that week's games for the current mode."><option value="">Load from Unabated first</option></select>
+        <select id="unabatedGame" style="font-size:12px;display:none;" title="Single Game only: pick which standalone game to build for."><option value="">All standalone games</option></select>
         <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Proxy URL</label>
         <input id="unabatedWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://unabated-proxy.bvmcintyre86.workers.dev">
         <span id="unabatedStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
@@ -2880,33 +2881,56 @@
 
   function formatKickoff(isoStr){
     if (!isoStr) return '';
-    var d = new Date(isoStr);
-    var etDate = new Date(d.getTime() + (-4 * 60 * 60 * 1000));
+    var e = etParts(isoStr);
     var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    var dayIdx = etDate.getUTCDay();
-    var hour = etDate.getUTCHours();
-    var day  = days[dayIdx];
-    var m    = etDate.getUTCMinutes();
-    var ampm = hour >= 12 ? 'pm' : 'am';
-    var h    = hour % 12 || 12;
-    var mStr = m ? ':' + String(m).padStart(2,'0') : '';
-    return day + ' ' + h + mStr + ampm + ' ET';
+    var ampm = e.h >= 12 ? 'pm' : 'am';
+    var h    = e.h % 12 || 12;
+    var mStr = e.min ? ':' + String(e.min).padStart(2,'0') : '';
+    return days[e.wd] + ' ' + h + mStr + ampm + ' ET';
   }
 
+  // Eastern-time parts for an ISO timestamp, DST-correct (the old fixed
+  // UTC-4 shift pushed late-season games across midnight after Nov 1).
+  var _etFmt = null;
+  function etParts(dateStr){
+    if (!_etFmt) _etFmt = new Intl.DateTimeFormat('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', weekday:'short', hour:'2-digit', minute:'2-digit', hour12:false});
+    var o = {};
+    _etFmt.formatToParts(new Date(dateStr)).forEach(function(x){ o[x.type] = x.value; });
+    var wdMap = {Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
+    return {y:+o.year, m:+o.month, d:+o.day, wd:wdMap[o.weekday], h:(+o.hour)%24, min:+o.minute};
+  }
+
+  // Returns the ISO date (YYYY-MM-DD) of the Thursday that anchors this
+  // game's NFL week. Weeks run Thu-Wed-ish: Tue/Wed games roll to the
+  // upcoming Thursday's week only for Wednesday; Mon/Tue belong to the
+  // week that started the prior Thursday.
   function getNFLWeekSunday(dateStr){
-    var d = new Date(dateStr);
-    var etDate = new Date(d.getTime() + (-4 * 60 * 60 * 1000));
-    var day = etDate.getUTCDay();
-    if (day === 3) {
-      var nextThu = new Date(etDate);
-      nextThu.setUTCDate(etDate.getUTCDate() + 1);
-      return nextThu.toISOString().slice(0,10);
-    }
-    var daysBackMap = {0:3, 1:4, 2:5, 4:0, 5:1, 6:2};
-    var daysBack = daysBackMap[day] !== undefined ? daysBackMap[day] : 0;
-    var thu = new Date(etDate);
-    thu.setUTCDate(etDate.getUTCDate() - daysBack);
-    return thu.toISOString().slice(0,10);
+    var e = etParts(dateStr);
+    var base = Date.UTC(e.y, e.m-1, e.d);
+    var offset = (e.wd === 3) ? 1 : -({0:3,1:4,2:5,4:0,5:1,6:2}[e.wd] || 0);
+    return new Date(base + offset*86400000).toISOString().slice(0,10);
+  }
+
+  // Real NFL week number from the Thursday date: Week 1 is the Thursday
+  // after Labor Day. Returns 0 or negative before the season (preseason).
+  function nflWeekNumber(thuIso){
+    var t = new Date(thuIso+'T00:00:00Z');
+    var sy = t.getUTCMonth() >= 6 ? t.getUTCFullYear() : t.getUTCFullYear()-1;
+    var ld = new Date(Date.UTC(sy, 8, 1));
+    while (ld.getUTCDay() !== 1) ld.setUTCDate(ld.getUTCDate()+1);
+    var thu1 = ld.getTime() + 3*86400000;
+    return Math.round((t.getTime() - thu1) / (7*86400000)) + 1;
+  }
+
+  // Which FanDuel/DK slate a game belongs to. Main Slate = Sunday games
+  // kicking off 12:30-5:00pm ET (the 1pm and 4pm windows). Everything else
+  // - Thursday, Friday, Saturday, early international Sundays, Sunday
+  // night, Monday - is a standalone game for Single Game mode.
+  function classifySlate(ev){
+    if (!ev || !ev.eventStart) return 'sg';
+    var e = etParts(ev.eventStart);
+    var mins = e.h*60 + e.min;
+    return (e.wd === 0 && mins >= 750 && mins < 1020) ? 'main' : 'sg';
   }
 
   function renderGames(){
@@ -5447,32 +5471,106 @@
   }
 
   function populateWeekSelector(events){
-    var regSeason = events.filter(function(ev){
-      if (!ev.eventStart) return false;
-      var d = new Date(ev.eventStart);
-      var etDate = new Date(d.getTime() + (-4*60*60*1000));
-      var m = etDate.getUTCMonth();
-      return m >= 8 || m <= 1;
-    });
-    if (!regSeason.length) regSeason = events;
     var weekMap = {};
-    regSeason.forEach(function(ev){
+    events.forEach(function(ev){
+      if (!ev.eventStart) return;
       var wk = getNFLWeekSunday(ev.eventStart);
-      if (!weekMap[wk]) weekMap[wk] = [];
-      weekMap[wk].push(ev);
+      if (nflWeekNumber(wk) < 1) return; // skip preseason
+      (weekMap[wk] = weekMap[wk] || []).push(ev);
     });
+    if (!Object.keys(weekMap).length){
+      events.forEach(function(ev){
+        if (!ev.eventStart) return;
+        var wk = getNFLWeekSunday(ev.eventStart);
+        (weekMap[wk] = weekMap[wk] || []).push(ev);
+      });
+    }
     var weekKeys = Object.keys(weekMap).sort();
     var wkSel = document.getElementById('unabatedWeek');
     var prevVal = wkSel.value;
-    wkSel.innerHTML = '<option value="">All regular season</option>';
-    weekKeys.forEach(function(wk,i){
+    wkSel.innerHTML = '';
+    var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var now = Date.now(), current = null;
+    weekKeys.forEach(function(wk){
+      var evs = weekMap[wk];
+      var nMain = evs.filter(function(e){return classifySlate(e)==='main';}).length;
+      var last = Math.max.apply(null, evs.map(function(e){return new Date(e.eventStart).getTime();}));
+      if (current === null && last + 4*3600000 > now) current = wk;
+      var n = nflWeekNumber(wk);
+      var d = new Date(wk+'T00:00:00Z');
       var opt = document.createElement('option');
       opt.value = wk;
-      opt.textContent = 'Week '+(i+1)+' — '+weekMap[wk][0].eventStart.slice(0,10)+' ('+weekMap[wk].length+' games)';
+      opt.textContent = (n >= 1 && n <= 18 ? 'Week '+n : 'Playoffs') + ' \u2014 ' + MON[d.getUTCMonth()] + ' ' + d.getUTCDate() + ' (' + nMain + ' main, ' + (evs.length-nMain) + ' standalone)';
       wkSel.appendChild(opt);
     });
-    if (prevVal) wkSel.value = prevVal;
-    return {weekMap:weekMap, regSeason:regSeason};
+    if (!current) current = weekKeys[weekKeys.length-1];
+    wkSel.value = (prevVal && weekMap[prevVal]) ? prevVal : current;
+    return {weekMap:weekMap};
+  }
+
+  var _unabatedWeekData = null;   // {weekMap}
+  var _unabatedOdds = null;       // {spreadMap, totalMap}
+
+  // Show the standalone-game picker only in Single Game mode.
+  function syncSlateControls(){
+    var g = document.getElementById('unabatedGame');
+    if (g) g.style.display = slateMode === 'sg' ? '' : 'none';
+  }
+
+  // Rebuild the board for the selected week + current mode from cached
+  // Unabated data: Main Slate gets only the Sunday 1pm/4pm games, Single
+  // Game gets only standalone games (optionally narrowed to one).
+  function applyUnabatedBoard(statusEl){
+    var status = statusEl || document.getElementById('unabatedStatus');
+    if (!_unabatedWeekData || !_unabatedOdds) return;
+    var wk = document.getElementById('unabatedWeek').value;
+    var evs = (_unabatedWeekData.weekMap[wk] || []).filter(function(ev){ return classifySlate(ev) === slateMode; });
+    evs.sort(function(a,b){ return new Date(a.eventStart) - new Date(b.eventStart); });
+
+    var gameSel = document.getElementById('unabatedGame');
+    if (slateMode === 'sg' && gameSel){
+      var prev = gameSel.value;
+      gameSel.innerHTML = '<option value="">All standalone games ('+evs.length+')</option>';
+      evs.forEach(function(ev){
+        var teams = ev.eventTeams || [];
+        var a = teamToAbbr(((teams.find(function(t){return t.sideIndex===0;})||teams[0]||{}).name)||'');
+        var h = teamToAbbr(((teams.find(function(t){return t.sideIndex===1;})||teams[1]||{}).name)||'');
+        var o = document.createElement('option');
+        o.value = String(ev.eventId);
+        o.textContent = a+' @ '+h+' \u2014 '+(typeof formatKickoff === 'function' ? formatKickoff(ev.eventStart) : ev.eventStart.slice(0,10));
+        gameSel.appendChild(o);
+      });
+      if (prev && evs.some(function(e){return String(e.eventId)===prev;})) gameSel.value = prev;
+      if (gameSel.value) evs = evs.filter(function(e){ return String(e.eventId) === gameSel.value; });
+    }
+
+    // Replace Unabated-sourced games for this mode; keep hand-added ones.
+    games = games.filter(function(g){ return !g._eid; });
+    addEventsToBoard(evs, _unabatedOdds.spreadMap, _unabatedOdds.totalMap, status);
+    status.textContent = evs.length+' '+(slateMode==='sg'?'standalone':'main slate')+' game'+(evs.length!==1?'s':'')+' loaded for this week.' +
+      (Object.keys(_unabatedOdds.spreadMap).length ? ' (Pinnacle lines)' : '');
+  }
+
+  function loadUnabated(){
+    var status = document.getElementById('unabatedStatus');
+    var workerUrl = (document.getElementById('unabatedWorkerUrl').value||'').trim().replace(/\/+$/,'');
+    if (!workerUrl){ status.textContent='Enter your Worker URL first.'; return; }
+    status.textContent = 'Fetching lines from Pinnacle...';
+    var spreadUrl = workerUrl+'/market/nfl/straight/odds?betTypeId='+_unabatedSpreadId;
+    var totalUrl  = workerUrl+'/market/nfl/straight/odds?betTypeId='+_unabatedTotalId;
+    Promise.all([
+      fetch(workerUrl+'/event/nfl/upcoming').then(function(r){return r.json();}).catch(function(){return null;}),
+      fetch(spreadUrl).then(function(r){return r.json();}).catch(function(){return null;}),
+      fetch(totalUrl ).then(function(r){return r.json();}).catch(function(){return null;})
+    ]).then(function(results){
+      var evData = results[0];
+      if (!evData){ status.textContent='Failed to fetch events. Check Worker URL.'; return; }
+      var evArr = Array.isArray(evData) ? evData : (evData.data||[]);
+      _unabatedEvents = evArr;
+      _unabatedWeekData = populateWeekSelector(evArr);
+      _unabatedOdds = {spreadMap: buildOddsMap(results[1], true), totalMap: buildOddsMap(results[2], false)};
+      applyUnabatedBoard(status);
+    }).catch(function(err){ status.textContent='Error: '+err.message; });
   }
 
   function addEventsToBoard(eventsToAdd, spreadMap, totalMap, status){
@@ -5505,52 +5603,6 @@
     status.textContent = msg;
   }
 
-  function loadUnabated(){
-    var status = document.getElementById('unabatedStatus');
-    var workerUrl = (document.getElementById('unabatedWorkerUrl').value||'').trim().replace(/\/+$/,'');
-    if (!workerUrl){ status.textContent='Enter your Worker URL first.'; return; }
-    status.textContent = 'Fetching lines from Pinnacle...';
-    var spreadUrl = workerUrl+'/market/nfl/straight/odds?betTypeId='+_unabatedSpreadId;
-    var totalUrl  = workerUrl+'/market/nfl/straight/odds?betTypeId='+_unabatedTotalId;
-    Promise.all([
-      fetch(workerUrl+'/event/nfl/upcoming').then(function(r){return r.json();}).catch(function(){return null;}),
-      fetch(spreadUrl).then(function(r){return r.json();}).catch(function(){return null;}),
-      fetch(totalUrl ).then(function(r){return r.json();}).catch(function(){return null;})
-    ]).then(function(results){
-      var evData = results[0]; var spreadData = results[1]; var totalData = results[2];
-      if (!evData){ status.textContent='Failed to fetch events. Check Worker URL.'; return; }
-      var evArr = Array.isArray(evData) ? evData : (evData.data||[]);
-      _unabatedEvents = evArr;
-      var wkData = populateWeekSelector(evArr);
-      var wkSel  = document.getElementById('unabatedWeek');
-
-      // Auto-select the nearest upcoming week if none selected
-      if (!wkSel.value && wkSel.options.length > 1) {
-        var today = new Date().toISOString().slice(0,10);
-        var nearest = null;
-        for (var i = 1; i < wkSel.options.length; i++) {
-          var wkDate = wkSel.options[i].value;
-          if (wkDate >= today) { nearest = wkSel.options[i].value; break; }
-        }
-        // If all weeks are in the past, pick last one
-        if (!nearest) nearest = wkSel.options[wkSel.options.length-1].value;
-        wkSel.value = nearest;
-      }
-
-      var spreadMap = buildOddsMap(spreadData, true);
-      var totalMap  = buildOddsMap(totalData, false);
-      var eventsToAdd = wkSel.value ? (wkData.weekMap[wkSel.value]||wkData.regSeason) : wkData.regSeason;
-
-      // Clear existing games for this week before loading fresh
-      if (wkSel.value && eventsToAdd.length) {
-        var eids = eventsToAdd.map(function(ev){ return String(ev.eventId); });
-        games = games.filter(function(g){ return !eids.includes(g._eid); });
-      }
-
-      addEventsToBoard(eventsToAdd, spreadMap, totalMap, status);
-    }).catch(function(err){ status.textContent='Error: '+err.message; });
-  }
-
   function refreshLines(){
     var status = document.getElementById('unabatedStatus');
     if (!games.length){ status.textContent='No games on board to refresh.'; return; }
@@ -5563,6 +5615,7 @@
     ]).then(function(results){
       var spreadMap = buildOddsMap(results[0], true);
       var totalMap  = buildOddsMap(results[1], false);
+      _unabatedOdds = {spreadMap: spreadMap, totalMap: totalMap};
       var updated = 0;
       var evMap = {};
       if (_unabatedEvents){
@@ -5892,6 +5945,8 @@
     if (mvpFilterWrap) mvpFilterWrap.style.display = mode==='sg' ? 'flex' : 'none';
     var mvpFilterDivider = document.getElementById('mvpFilterDivider');
     if (mvpFilterDivider) mvpFilterDivider.style.display = mode==='sg' ? 'block' : 'none';
+    syncSlateControls();
+    if (!games.length && _unabatedEvents) applyUnabatedBoard();
     renderGames();
     if (players.length){ populateFilterOptions(); tagPlayers(); }
     else { renderTable(); document.getElementById('poolStatus').textContent = players.length ? players.length+' players loaded.' : 'No players loaded.'; }
@@ -6156,6 +6211,9 @@
   });
   document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
   document.getElementById('refreshLinesBtn').addEventListener('click', refreshLines);
+  document.getElementById('unabatedWeek').addEventListener('change', function(){ applyUnabatedBoard(); });
+  document.getElementById('unabatedGame').addEventListener('change', function(){ applyUnabatedBoard(); });
+  syncSlateControls();
   document.getElementById('clearGamesBtn').addEventListener('click', function(){
     if (games.length && confirm('Clear all '+games.length+' games?')){
       games=[]; renderGames(); if(players.length) tagPlayers(); saveState();
