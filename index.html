@@ -737,9 +737,22 @@
   // underlying market data on a given platform), so these get a simpler,
   // platform-only cache rather than the full platform x mode matrix above.
   var platformCap = { fd: 60000, dk: 50000 };
+  // Every market source (Unabated, Kalshi, Polymarket) is cached per
+  // platform x mode, so loading props in Single Game can never touch what
+  // Main Slate has loaded (and vice versa).
+  function newMd(){
+    return { marketProjections: {}, marketProjectionsLoadedAt: null,
+             kalshiProjections: {}, kalshiTeamMkts: [], kalshiProjectionsLoadedAt: null,
+             polymarketProjections: {}, polymarketProjectionsLoadedAt: null };
+  }
+  function normMd(md){
+    var b = newMd(); md = md || {};
+    Object.keys(b).forEach(function(k){ if (md[k] === undefined || md[k] === null) { if (k.indexOf('LoadedAt') < 0) md[k] = b[k]; else if (md[k] === undefined) md[k] = null; } });
+    return md;
+  }
   var platformMarketData = {
-    fd: { main: { marketProjections: {}, marketProjectionsLoadedAt: null }, sg: { marketProjections: {}, marketProjectionsLoadedAt: null } },
-    dk: { main: { marketProjections: {}, marketProjectionsLoadedAt: null }, sg: { marketProjections: {}, marketProjectionsLoadedAt: null } }
+    fd: { main: newMd(), sg: newMd() },
+    dk: { main: newMd(), sg: newMd() }
   };
   // Permanent results history - survives future CSV uploads/platform
   // switches, since the live player pool gets replaced every week but past
@@ -776,6 +789,46 @@
   // ── Polymarket US (a second, independent cross-check) ─────────────────
   var polymarketProjections = {}; // normalized "first last" -> {fp, breakdown}
   var polymarketProjectionsLoadedAt = null;
+  // Copy the live market globals into / out of one platform x mode scope.
+  function stashMarketScope(plat, mode){
+    var md = platformMarketData[plat][mode];
+    md.marketProjections = marketProjections;
+    md.marketProjectionsLoadedAt = marketProjectionsLoadedAt;
+    md.kalshiProjections = kalshiProjections;
+    md.kalshiTeamMkts = kalshiTeamMkts;
+    md.kalshiProjectionsLoadedAt = kalshiProjectionsLoadedAt;
+    md.polymarketProjections = polymarketProjections;
+    md.polymarketProjectionsLoadedAt = polymarketProjectionsLoadedAt;
+  }
+  function loadMarketScope(plat, mode){
+    var md = normMd(platformMarketData[plat][mode]);
+    marketProjections = md.marketProjections;
+    marketProjectionsLoadedAt = md.marketProjectionsLoadedAt;
+    kalshiProjections = md.kalshiProjections;
+    kalshiTeamMkts = md.kalshiTeamMkts;
+    kalshiProjectionsLoadedAt = md.kalshiProjectionsLoadedAt;
+    polymarketProjections = md.polymarketProjections;
+    polymarketProjectionsLoadedAt = md.polymarketProjectionsLoadedAt;
+    // Refresh the three status lines so they describe THIS scope.
+    var pe = document.getElementById('propsStatus');
+    if (pe) pe.textContent = Object.keys(marketProjections).length ? propsFreshnessMsg() : '';
+    var ke = document.getElementById('kalshiStatus');
+    if (ke) ke.textContent = Object.keys(kalshiProjections).length ? kalshiFreshnessMsg() : '';
+    var me = document.getElementById('polymarketStatus');
+    if (me) me.textContent = Object.keys(polymarketProjections).length ? polymarketFreshnessMsg() : '';
+  }
+  // Keep only projections for players in the CURRENT pool, so a load only
+  // fills the slate you're on (the whole-league feeds carry every game).
+  // With no pool loaded yet there is nothing to scope to, so keep everything.
+  function restrictToPool(projMap){
+    if (!players || !players.length) return { map: projMap, kept: Object.keys(projMap).length, dropped: 0, scoped: false };
+    var names = {};
+    players.forEach(function(pl){ names[normalizeName(pl.name)] = true; });
+    var out = {}, kept = 0, dropped = 0;
+    Object.keys(projMap).forEach(function(k){ if (names[k]){ out[k] = projMap[k]; kept++; } else dropped++; });
+    return { map: out, kept: kept, dropped: dropped, scoped: true };
+  }
+
   var lastRawPolymarketMarkets = []; // every market from the last fetch, unfiltered - see debugPolymarketPlayer()
   var lastRawPolymarketEventProps = {}; // eventId -> {returned, total} - see debugPolymarketPlayer() and the per-event truncation warning in fetchPolymarketProjections
 
@@ -1456,6 +1509,7 @@
     var workerUrl = (document.getElementById('kalshiWorkerUrl').value||'').trim().replace(/\/+$/,'');
     if (!workerUrl){ setKalshiStatus('Set your Kalshi Proxy URL above first.'); return; }
 
+    var loadPlat = platform, loadMode = slateMode; // results belong to this scope
     setKalshiStatus('Finding NFL prop markets on Kalshi...');
     var seriesResult = await kalshiFetchAllPages(workerUrl, '/series?category=Sports&limit=200');
     if (seriesResult.failed) console.warn('Kalshi series discovery hit an error partway through - results below may be incomplete.');
@@ -1618,6 +1672,10 @@
     console.log('Kalshi candidates object has ' + candidateKeys.length + ' player key(s) right after fetch completed.' +
       (candidateKeys.length ? (' First key: "' + candidateKeys[0] + '" -> ' + JSON.stringify(candidates[candidateKeys[0]])) : ''));
 
+    if (loadPlat !== platform || loadMode !== slateMode){
+      setKalshiStatus('Load discarded: you switched platform/mode while it was running. Reload props here.');
+      return;
+    }
     kalshiProjections = {};
     var matched = 0;
     for (var normName in candidates){
@@ -1710,6 +1768,19 @@
       matched++;
     }
 
+    var kScope = restrictToPool(kalshiProjections);
+    kalshiProjections = kScope.map; matched = kScope.kept;
+    if (kScope.scoped) console.log('Kalshi scoped to the ' + (slateMode === 'sg' ? 'Single Game' : 'Main Slate') + ' pool: kept ' + kScope.kept + ', ignored ' + kScope.dropped + ' players outside it.');
+    if (players.length){
+      // Team-level DEF markets: keep only games involving a pool team.
+      var poolCodes = {};
+      players.forEach(function(pl){ teamCodeSet(pl.team).forEach(function(c){ poolCodes[c] = true; }); });
+      var poolCodeList = Object.keys(poolCodes);
+      teamMktsNew = teamMktsNew.filter(function(m){
+        if (!m.event) return false;
+        return poolCodeList.some(function(c){ return m.event.indexOf(c) === 0 || m.event.slice(-c.length) === c; });
+      });
+    }
     kalshiTeamMkts = teamMktsNew;
     var nSacks = teamMktsNew.filter(function(m){ return m.key === 'teamSacks'; }).length;
     var nDstAttd = teamMktsNew.filter(function(m){ return m.key === 'teamDstAttd'; }).length;
@@ -1723,6 +1794,7 @@
       diag.kept + ' kept, ' + diag.nameParseFail + ' dropped (name parse), ' + diag.thresholdFail + ' dropped (no threshold), ' + diag.probFail + ' dropped (no price). ' +
       (diag.events === 0 ? 'Zero events means Kalshi has not posted markets for these series yet (check back closer to game day) - not a bug.' : ''));
     console.log('Kalshi projections:', kalshiProjections);
+    stashMarketScope(platform, slateMode);
     if (diag.byKey.attd){
       var ak = diag.byKey.attd;
       console.log('Kalshi ATTD (ANYTD) breakdown: ' + ak.events + ' events, ' + ak.markets + ' markets - ' +
@@ -1775,6 +1847,7 @@
     if (!workerUrl){ setPolymarketStatus('Set your Polymarket Proxy URL above first.'); return; }
 
     lastRawPolymarketEventProps = {};
+    var loadPlat = platform, loadMode = slateMode;
     setPolymarketStatus('Finding NFL events on Polymarket...');
     var events;
     try {
@@ -1986,6 +2059,10 @@
       candidates[norm][matcher.key].push({ threshold: threshold, prob: prob, kind: matcher.kind });
     });
 
+    if (loadPlat !== platform || loadMode !== slateMode){
+      setPolymarketStatus('Load discarded: you switched platform/mode while it was running. Reload props here.');
+      return;
+    }
     polymarketProjections = {};
     var matched = 0;
     for (var normName in candidates){
@@ -2074,6 +2151,8 @@
       matched++;
     }
 
+    var pScope = restrictToPool(polymarketProjections);
+    polymarketProjections = pScope.map; matched = pScope.kept;
     polymarketProjectionsLoadedAt = Date.now();
     setPolymarketStatus(shortLoadStatus(matched, polymarketProjectionsLoadedAt) +
       (batchFailures ? ' (' + batchFailures + ' batch(es) failed - see console)' : ''));
@@ -2082,6 +2161,7 @@
       diag.noName + ' dropped (no player name), ' + diag.noPrice + ' dropped (no price).');
     if (diag.unmatchedType) console.log('Polymarket unrecognized sportsMarketType counts:', unmatchedTypes);
     console.log('Polymarket projections:', polymarketProjections);
+    stashMarketScope(platform, slateMode);
     renderTable();
     renderTopPlayers();
     saveState();
@@ -2284,6 +2364,7 @@
     var statusEl = document.getElementById('propsStatus');
     if (!workerUrl){ setPropsStatus('Set your Proxy URL above first.'); return; }
 
+    var loadPlat = platform, loadMode = slateMode;
     setPropsStatus('Loading people (this can take ~20-30s to stay within Unabated\'s rate guidance)...');
     var people = {};
     var cursor = null;
@@ -2427,6 +2508,10 @@
     });
     console.log('Props fetch diagnostics:\n' + diag.join('\n'));
 
+    if (loadPlat !== platform || loadMode !== slateMode){
+      setPropsStatus('Load discarded: you switched platform/mode while it was running. Reload props here.');
+      return;
+    }
     // Convert accumulated lines into fantasy-point projections
     marketProjections = {};
     var matched = 0;
@@ -2540,8 +2625,12 @@
     }
     console.log('Matched players with an approved-book line:\n' + (matchedNames.length ? matchedNames.join('\n') : '(none)'));
 
+    var uScope = restrictToPool(marketProjections);
+    marketProjections = uScope.map; matched = uScope.kept;
+    if (uScope.scoped) console.log('Unabated scoped to the ' + (slateMode === 'sg' ? 'Single Game' : 'Main Slate') + ' pool: kept ' + uScope.kept + ', ignored ' + uScope.dropped + ' players outside it.');
     marketProjectionsLoadedAt = Date.now();
     setPropsStatus(shortLoadStatus(matched, marketProjectionsLoadedAt));
+    stashMarketScope(platform, slateMode);
     renderTable();
     saveState();
 
@@ -3200,12 +3289,7 @@
         matchupData: matchupData,
         matchupDataLoadedAt: matchupDataLoadedAt,
         kalshiWorkerUrl: document.getElementById('kalshiWorkerUrl') ? document.getElementById('kalshiWorkerUrl').value : '',
-        kalshiProjections: kalshiProjections,
-        kalshiTeamMkts: kalshiTeamMkts,
-        kalshiProjectionsLoadedAt: kalshiProjectionsLoadedAt,
         polymarketWorkerUrl: document.getElementById('polymarketWorkerUrl') ? document.getElementById('polymarketWorkerUrl').value : '',
-        polymarketProjections: polymarketProjections,
-        polymarketProjectionsLoadedAt: polymarketProjectionsLoadedAt,
         thresholds: {
           blowout: document.getElementById('thBlowout').value,
           highTotal: document.getElementById('thHighTotal').value,
@@ -3264,7 +3348,7 @@
             fd:{main:platformMarketData.fd.main, sg:platformMarketData.fd.sg},
             dk:{main:platformMarketData.dk.main, sg:platformMarketData.dk.sg}
           };
-          d[platform][slateMode] = { marketProjections: marketProjections, marketProjectionsLoadedAt: marketProjectionsLoadedAt };
+          stashMarketScope(platform, slateMode);
           return d;
         })(),
         resultsHistory: resultsHistory,
@@ -3295,18 +3379,7 @@
       if (state.unabatedWorkerUrl && document.getElementById('unabatedWorkerUrl')) document.getElementById('unabatedWorkerUrl').value = state.unabatedWorkerUrl;
       if (state.matchupWorkerUrl && document.getElementById('matchupWorkerUrl')) document.getElementById('matchupWorkerUrl').value = state.matchupWorkerUrl;
       if (state.kalshiWorkerUrl && document.getElementById('kalshiWorkerUrl')) document.getElementById('kalshiWorkerUrl').value = state.kalshiWorkerUrl;
-      if (state.kalshiProjections){
-        kalshiProjections = state.kalshiProjections;
-        kalshiTeamMkts = state.kalshiTeamMkts || [];
-        kalshiProjectionsLoadedAt = state.kalshiProjectionsLoadedAt || null;
-        if (Object.keys(kalshiProjections).length) setKalshiStatus(kalshiFreshnessMsg());
-      }
       if (state.polymarketWorkerUrl && document.getElementById('polymarketWorkerUrl')) document.getElementById('polymarketWorkerUrl').value = state.polymarketWorkerUrl;
-      if (state.polymarketProjections){
-        polymarketProjections = state.polymarketProjections;
-        polymarketProjectionsLoadedAt = state.polymarketProjectionsLoadedAt || null;
-        if (Object.keys(polymarketProjections).length) setPolymarketStatus(polymarketFreshnessMsg());
-      }
       if (state.matchupData){
         matchupData = state.matchupData;
         matchupDataLoadedAt = state.matchupDataLoadedAt || null;
@@ -3395,18 +3468,18 @@
         });
         if (state.platformCap) platformCap = { fd: state.platformCap.fd||60000, dk: state.platformCap.dk||50000 };
         if (state.platformMarketData){
-          var emptyMd = function(){ return {marketProjections:{}, marketProjectionsLoadedAt:null}; };
+          var emptyMd = newMd;
           ['fd','dk'].forEach(function(plat){
             var saved = state.platformMarketData[plat];
             if (saved && (saved.main || saved.sg)){
               // Current format: already mode-scoped.
-              platformMarketData[plat] = { main: saved.main || emptyMd(), sg: saved.sg || emptyMd() };
+              platformMarketData[plat] = { main: normMd(saved.main || emptyMd()), sg: normMd(saved.sg || emptyMd()) };
             } else if (saved && saved.marketProjections){
               // Mid-migration format: platform-scoped only, from before mode-
               // scoping existed - treat it as belonging to Main Slate, since
               // that's almost certainly what it was (Single Game is newer
               // and less used), rather than discarding it.
-              platformMarketData[plat] = { main: saved, sg: emptyMd() };
+              platformMarketData[plat] = { main: normMd(saved), sg: emptyMd() };
             }
           });
         }
@@ -3465,9 +3538,19 @@
       lineup = lineups[activeIdx];
       salaryCap = platformCap[platform] || (platform==='dk'?50000:60000);
       document.getElementById('capInput').value = salaryCap;
-      marketProjections = ((platformMarketData[platform]||{})[slateMode]||{}).marketProjections || {};
-      marketProjectionsLoadedAt = ((platformMarketData[platform]||{})[slateMode]||{}).marketProjectionsLoadedAt || null;
-      if (Object.keys(marketProjections).length) setPropsStatus(propsFreshnessMsg());
+      // Older saves kept Kalshi/Polymarket as one shared global. Treat that
+      // as belonging to Main Slate of the saved platform (never Single Game).
+      var legacyMd = platformMarketData[platform].main;
+      if (state.kalshiProjections && !Object.keys(legacyMd.kalshiProjections || {}).length){
+        legacyMd.kalshiProjections = state.kalshiProjections;
+        legacyMd.kalshiTeamMkts = state.kalshiTeamMkts || [];
+        legacyMd.kalshiProjectionsLoadedAt = state.kalshiProjectionsLoadedAt || null;
+      }
+      if (state.polymarketProjections && !Object.keys(legacyMd.polymarketProjections || {}).length){
+        legacyMd.polymarketProjections = state.polymarketProjections;
+        legacyMd.polymarketProjectionsLoadedAt = state.polymarketProjectionsLoadedAt || null;
+      }
+      loadMarketScope(platform, slateMode);
 
       resultsHistory = state.resultsHistory || [];
       if (state.pendingResults && state.pendingResults.length){
@@ -5897,8 +5980,7 @@
     // Mkt props data is scoped per platform+mode too now, same reasoning as
     // the lineup/player caching above - loading props for Main Slate should
     // never silently overwrite what's cached for Single Game.
-    platformMarketData[platform][slateMode].marketProjections = marketProjections;
-    platformMarketData[platform][slateMode].marketProjectionsLoadedAt = marketProjectionsLoadedAt;
+    stashMarketScope(platform, slateMode);
     // Exposure tracker filter selections are tied to a specific mode's
     // player pool/lineups - player IDs aren't guaranteed unique across
     // Main Slate vs Single Game, so a filter selected in one mode could
@@ -5930,11 +6012,7 @@
       activeIdx = 0;
     }
     lineup = lineups[activeIdx];
-    var mms = platformMarketData[platform][mode];
-    marketProjections = mms.marketProjections || {};
-    marketProjectionsLoadedAt = mms.marketProjectionsLoadedAt || null;
-    if (Object.keys(marketProjections).length) setPropsStatus(propsFreshnessMsg());
-    else { var propsStatusEl = document.getElementById('propsStatus'); if (propsStatusEl) propsStatusEl.textContent = ''; }
+    loadMarketScope(platform, mode);
     setMsg('');
     updateLuSubAndLabels();
     var stackEl = document.getElementById('stackSettings');
@@ -5968,8 +6046,7 @@
     modeState[platform][slateMode].players    = players;
     modeState[platform][slateMode].topPlayers = topPlayers;
     platformCap[platform] = salaryCap;
-    platformMarketData[platform][slateMode].marketProjections = marketProjections;
-    platformMarketData[platform][slateMode].marketProjectionsLoadedAt = marketProjectionsLoadedAt;
+    stashMarketScope(platform, slateMode);
 
     // Point collapsedSections at the NEW platform's own saved collapse
     // preferences - no need to stash the current one, since it's already
@@ -5994,8 +6071,7 @@
     salaryCap = platformCap[platform];
     var capEl = document.getElementById('capInput');
     if (capEl) capEl.value = salaryCap;
-    marketProjections = platformMarketData[platform][slateMode].marketProjections;
-    marketProjectionsLoadedAt = platformMarketData[platform][slateMode].marketProjectionsLoadedAt;
+    loadMarketScope(platform, slateMode);
 
     // Restore this platform's player pool/lineups for whichever mode you're
     // currently in (Main Slate stays Main Slate across the platform swap).
