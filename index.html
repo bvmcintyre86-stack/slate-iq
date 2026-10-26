@@ -99,24 +99,30 @@
     font-size:13px;line-height:1;padding:2px 6px;cursor:pointer;
   }
   .game-card .flip-btn:hover{color:var(--gold);}
-  .mu-head{font-family:'Oswald',sans-serif;font-size:15px;letter-spacing:.02em;display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;}
+  .game-card .face-back{padding:12px 14px;}
+  .mu-wrap{display:flex;flex-direction:column;height:100%;min-height:0;}
+  .mu-head{font-family:'Oswald',sans-serif;font-size:15px;letter-spacing:.02em;display:flex;justify-content:space-between;align-items:baseline;}
   .mu-head .hint{font-family:'Inter',sans-serif;font-size:10px;color:var(--muted);letter-spacing:0;}
-  .mu-rec{font-size:10.5px;color:var(--muted);margin-bottom:8px;line-height:1.35;}
-  .mu-sec{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--gold);margin:8px 0 4px;}
-  .mu-row{margin-bottom:5px;}
-  .mu-top{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);}
-  .mu-row.strong .mu-top{color:var(--chalk);font-weight:600;}
-  .mu-top .pos{color:var(--teal);} .mu-top .neg{color:var(--brick);}
-  .mu-track{position:relative;height:8px;background:var(--ink);border-radius:4px;overflow:hidden;}
+  .mu-rec{font-size:10.5px;color:var(--muted);margin:1px 0 7px;line-height:1.35;}
+  .mu-syn{flex:1 1 auto;min-height:0;overflow-y:auto;background:var(--ink);border-radius:6px;padding:6px 8px;margin-bottom:8px;font-size:11.5px;line-height:1.35;}
+  .mu-syn .ln{display:grid;grid-template-columns:42px 1fr;gap:6px;margin-bottom:3px;}
+  .mu-syn .ln:last-child{margin-bottom:0;}
+  .mu-syn .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;padding-top:2px;}
+  .mu-syn .k-lean{color:var(--teal);} .mu-syn .k-watch{color:var(--brick);} .mu-syn .k-script{color:var(--gold);} .mu-syn .k-top{color:var(--muted);}
+  .mu-syn .sub2{display:block;}
+  .mu-grid{display:grid;grid-template-columns:64px 1fr 1fr;column-gap:8px;row-gap:3px;align-items:center;flex:0 0 auto;}
+  .mu-colh{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--gold);}
+  .mu-lbl{font-size:11px;color:var(--muted);}
+  .mu-lbl.strong{color:var(--chalk);font-weight:600;}
+  .mu-cell{display:flex;align-items:center;gap:5px;}
+  .mu-track{position:relative;flex:1;height:8px;background:var(--ink);border-radius:4px;overflow:hidden;}
   .mu-mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line);}
   .mu-fill{position:absolute;top:0;bottom:0;border-radius:4px;}
   .mu-fill.pos{background:var(--teal);} .mu-fill.neg{background:var(--brick);}
-  .mu-syn{background:var(--ink);border-radius:6px;padding:7px 9px;margin:0 0 6px;font-size:11.5px;line-height:1.4;}
-  .mu-syn div{margin-bottom:3px;} .mu-syn div:last-child{margin-bottom:0;}
-  .mu-syn b{font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-right:5px;}
-  .mu-syn .k-lean{color:var(--teal);} .mu-syn .k-watch{color:var(--brick);} .mu-syn .k-script{color:var(--gold);} .mu-syn .k-top{color:var(--chalk);}
+  .mu-num{width:26px;text-align:right;font-size:11px;}
+  .mu-num.pos{color:var(--teal);} .mu-num.neg{color:var(--brick);} .mu-num.strong{font-weight:700;}
   .mu-empty{font-size:12px;color:var(--muted);padding:14px 0;}
-  .mu-legend{font-size:10px;color:var(--muted);margin-top:6px;}
+  .mu-legend{font-size:10px;color:var(--muted);margin-top:7px;line-height:1.35;flex:0 0 auto;}
   @media (prefers-reduced-motion:reduce){ .game-card .flip-inner{transition:none;} }
   .game-card .remove{
     position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);
@@ -3139,21 +3145,21 @@
 
   // Rule-based synopsis from the grade gaps (offense grade minus the
   // opposing defense grade). Deterministic - same inputs, same text.
+  var MU_BACK_H = 420; // every flipped card is exactly this tall
+  function shortName(n){
+    var parts = String(n).trim().split(/\s+/);
+    return parts.length < 2 ? n : parts[0].charAt(0) + '. ' + parts.slice(1).join(' ');
+  }
   function matchupSynopsis(g, A, H){
     var EDGE = 10, SCRIPT = 8;
-    function d(O, D, i){ return O[MU_ROWS[i][1]] - D[MU_ROWS[i][2]]; }
-    // index: 0 overall, 1 passing, 2 pass pro, 3 rushing, 4 run block
-    var side = {};
-    side[g.away] = { o: A, d: H }; side[g.home] = { o: H, d: A };
     var teams = [g.away, g.home], opp = {}; opp[g.away] = g.home; opp[g.home] = g.away;
+    var own = {}; own[g.away] = A; own[g.home] = H;
     var diff = {};
-    teams.forEach(function(t){ diff[t] = [0,1,2,3,4].map(function(i){ return d(side[t].o, side[t].d, i); }); });
-    // (side[t].d is the OPPONENT defense row, side[t].o is the team's own offense row)
-    var out = [];
+    teams.forEach(function(t){
+      diff[t] = MU_ROWS.map(function(r){ return own[t][r[1]] - own[opp[t]][r[2]]; });
+    }); // index: 0 overall, 1 passing, 2 pass pro, 3 rushing, 4 run block
 
     // Top players for a team at given positions, from the loaded Player Pool.
-    // Ranked by the projection currently in use; players with a market or
-    // Kalshi price are preferred (an unpriced name is often inactive).
     function names(team, positions, n){
       if (!players || !players.length) return '';
       var tn = normalizeTeam(team);
@@ -3165,56 +3171,42 @@
         }).filter(function(x){ return x.fp > 0; });
       if (list.some(function(x){ return x.mkt; })) list = list.filter(function(x){ return x.mkt; });
       list.sort(function(a,b){ return b.fp - a.fp; });
-      return list.slice(0, n).map(function(x){ return x.pl.name + ' ($' + (x.pl.salary/1000).toFixed(1) + 'K)'; }).join(', ');
+      return list.slice(0, n).map(function(x){ return shortName(x.pl.name); }).join(', ');
     }
-    function withNames(label, parts){
+    function sg(v){ var r = Math.round(v); return r === 0 ? '0' : (r > 0 ? '+' : '−') + Math.abs(r); }
+    function item(label, v, parts){
       var txt = parts.filter(Boolean).join(', ');
-      return label + (txt ? ': ' + txt : '');
+      return { v: Math.abs(v), html: label + ' <span class="mono">' + sg(v) + '</span>' + (txt ? ': ' + txt : '') };
     }
-
-    // Biggest single gap in the game
-    var best = null;
-    teams.forEach(function(t){ diff[t].forEach(function(v, i){ if (i > 0 && (!best || Math.abs(v) > Math.abs(best.v))) best = { t:t, i:i, v:v }; }); });
-    if (best && Math.abs(best.v) >= SCRIPT){
-      var o = opp[best.t], sg = (best.v >= 0 ? '+' : '\u2212') + Math.abs(best.v).toFixed(0);
-      var txt = [
-        null,
-        best.v >= 0 ? best.t + '\u2019s passing game has the biggest edge, against ' + o + '\u2019s coverage (' + sg + ').' : best.t + '\u2019s passing game is outmatched by ' + o + '\u2019s coverage (' + sg + ').',
-        best.v >= 0 ? best.t + '\u2019s pass protection beats ' + o + '\u2019s rush (' + sg + ').' : best.t + '\u2019s QB faces pressure: pass pro is outmatched by ' + o + '\u2019s rush (' + sg + ').',
-        best.v >= 0 ? best.t + '\u2019s run game has the biggest edge, against ' + o + '\u2019s run defense (' + sg + ').' : best.t + '\u2019s run game is outmatched by ' + o + '\u2019s run defense (' + sg + ').',
-        best.v >= 0 ? best.t + '\u2019s run blocking beats ' + o + '\u2019s run defense (' + sg + ').' : best.t + '\u2019s run blocking is outmatched by ' + o + '\u2019s run defense (' + sg + ').'
-      ][best.i];
-      out.push('<div><b class="k-top">Key gap</b>' + txt + '</div>');
-    }
+    function ln(cls, k, body){ return '<div class="ln"><span class="k ' + cls + '">' + k + '</span><span>' + body + '</span></div>'; }
+    var out = [];
 
     // Script
     var pa = diff[g.away][1], ph = diff[g.home][1], ra = diff[g.away][3], rh = diff[g.home][3];
     var script;
-    if (pa >= SCRIPT && ph >= SCRIPT) script = 'Both passing games have the edge: pass-heavy, stack and bring-back friendly.';
-    else if (pa <= -SCRIPT && ph <= -SCRIPT) script = 'Both passing games are outmatched: expect a run-leaning, lower-scoring game.';
-    else if (pa >= SCRIPT && ph <= -SCRIPT) script = g.away + ' passing has the edge; ' + g.home + ' passing does not.';
-    else if (ph >= SCRIPT && pa <= -SCRIPT) script = g.home + ' passing has the edge; ' + g.away + ' passing does not.';
-    else if (ra >= SCRIPT && rh >= SCRIPT) script = 'Both run games have the edge: ground game should matter.';
-    else script = 'No clear script from the grades: let the line and your props decide.';
-    var s2 = gameSides(g);
-    script += ' Board: ' + g.away + ' ' + TAGS[s2.away.tag].label + ', ' + g.home + ' ' + TAGS[s2.home.tag].label + '.';
-    out.push('<div><b class="k-script">Script</b>' + script + '</div>');
+    if (pa >= SCRIPT && ph >= SCRIPT) script = 'Both passing games have the edge: pass-heavy, stack-friendly.';
+    else if (pa <= -SCRIPT && ph <= -SCRIPT) script = 'Both passing games outmatched: run-leaning, lower scoring.';
+    else if (pa >= SCRIPT && ph <= -SCRIPT) script = g.away + ' passing has the edge; ' + g.home + ' does not.';
+    else if (ph >= SCRIPT && pa <= -SCRIPT) script = g.home + ' passing has the edge; ' + g.away + ' does not.';
+    else if (ra >= SCRIPT && rh >= SCRIPT) script = 'Both run games have the edge: ground game matters.';
+    else script = 'No clear script from the grades.';
+    out.push(ln('k-script', 'Script', script));
 
-    // Leans and watches (grouped by position group)
+    // Lean / Watch: strongest two each, QB + top two pass catchers for passing
     var lean = [], watch = [];
     teams.forEach(function(t){
-      var dd = diff[t];
-      var qb = names(t, ['QB'], 1);
-      if (dd[1] >= EDGE) lean.push(withNames(t + ' passing (+' + dd[1].toFixed(0) + ')', [qb, names(t, ['WR','TE'], 3)]));
-      if (dd[3] >= EDGE) lean.push(withNames(t + ' run game (+' + dd[3].toFixed(0) + ')', [names(t, ['RB'], 2)]));
-      if (dd[2] >= EDGE && dd[1] < EDGE) lean.push(withNames(t + ' QB clean pocket (+' + dd[2].toFixed(0) + ')', [qb]));
-      if (dd[1] <= -EDGE) watch.push(withNames(t + ' passing (\u2212' + Math.abs(dd[1]).toFixed(0) + ')', [qb, names(t, ['WR','TE'], 2)]));
-      if (dd[2] <= -EDGE) watch.push(withNames(t + ' QB under pressure (\u2212' + Math.abs(dd[2]).toFixed(0) + ')', [qb]));
-      if (dd[3] <= -EDGE) watch.push(withNames(t + ' run game (\u2212' + Math.abs(dd[3]).toFixed(0) + ')', [names(t, ['RB'], 2)]));
-      if (dd[4] <= -EDGE) watch.push(withNames(t + ' run blocking (\u2212' + Math.abs(dd[4]).toFixed(0) + ')', [names(t, ['RB'], 1)]));
+      var dd = diff[t], qb = names(t, ['QB'], 1);
+      if (dd[1] >= EDGE) lean.push(item(t + ' passing', dd[1], [qb, names(t, ['WR','TE'], 2)]));
+      if (dd[3] >= EDGE) lean.push(item(t + ' run game', dd[3], [names(t, ['RB'], 2)]));
+      if (dd[2] >= EDGE && dd[1] < EDGE) lean.push(item(t + ' QB clean pocket', dd[2], [qb]));
+      if (dd[1] <= -EDGE) watch.push(item(t + ' passing', dd[1], [qb, names(t, ['WR','TE'], 1)]));
+      if (dd[2] <= -EDGE) watch.push(item(t + ' QB pressure', dd[2], [qb]));
+      if (dd[3] <= -EDGE) watch.push(item(t + ' run game', dd[3], [names(t, ['RB'], 2)]));
+      if (dd[4] <= -EDGE) watch.push(item(t + ' run blocking', dd[4], [names(t, ['RB'], 1)]));
     });
-    if (lean.length)  out.push('<div><b class="k-lean">Lean</b>' + lean.join('<br>') + '</div>');
-    if (watch.length) out.push('<div><b class="k-watch">Watch</b>' + watch.join('<br>') + '</div>');
+    function top2(a){ return a.sort(function(x,y){ return y.v - x.v; }).slice(0, 2).map(function(x){ return '<span class="sub2">' + x.html + '</span>'; }).join(''); }
+    if (lean.length)  out.push(ln('k-lean', 'Lean', top2(lean)));
+    if (watch.length) out.push(ln('k-watch', 'Watch', top2(watch.slice(0,0).concat(watch).sort(function(x,y){ return y.v - x.v; }).slice(0,1))));
     return '<div class="mu-syn">' + out.join('') + '</div>';
   }
 
@@ -3222,31 +3214,32 @@
     var A = teamGrades[normalizeTeam(g.away)], H = teamGrades[normalizeTeam(g.home)];
     var head = '<div class="mu-head"><span>' + g.away + ' @ ' + g.home + '</span><span class="hint">click to flip back</span></div>';
     if (!A || !H){
-      return head + '<div class="mu-empty">' + (Object.keys(teamGrades).length
+      return '<div class="mu-wrap">' + head + '<div class="mu-empty">' + (Object.keys(teamGrades).length
         ? 'No PFF grades found for ' + (!A ? g.away : g.home) + ' in the uploaded file.'
-        : 'Upload PFF\'s team_overview.csv (Game Environment &rarr; Upload team grades CSV) to see this matchup.') + '</div>';
+        : 'Upload PFF\'s team_overview.csv (Game Environment &rarr; Upload team grades CSV) to see this matchup.') + '</div></div>';
     }
-    function section(O, D, oc, dc){
-      var h = '<div class="mu-sec">' + oc + ' offense vs ' + dc + ' defense</div>';
-      var diffs = MU_ROWS.map(function(r){ return O[r[1]] - D[r[2]]; });
-      var maxAbs = Math.max.apply(null, diffs.map(Math.abs));
-      MU_ROWS.forEach(function(r, i){
-        var off = O[r[1]], def = D[r[2]];
-        if (typeof off !== 'number' || typeof def !== 'number') return;
-        var d = off - def, w = Math.min(50, Math.abs(d) / 30 * 50);
-        var cls = d >= 0 ? 'pos' : 'neg';
-        var left = d >= 0 ? 50 : 50 - w;
-        h += '<div class="mu-row' + (Math.abs(d) === maxAbs && Math.abs(d) >= 8 ? ' strong' : '') + '">' +
-          '<div class="mu-top"><span>' + r[0] + '</span><span class="mono">' + off.toFixed(0) + ' v ' + def.toFixed(0) + ' <b class="' + cls + '">' + (d >= 0 ? '+' : '') + d.toFixed(0) + '</b></span></div>' +
-          '<div class="mu-track"><div class="mu-mid"></div><div class="mu-fill ' + cls + '" style="left:' + left + '%;width:' + w + '%;"></div></div></div>';
-      });
-      return h;
+    var SHORT = ['Overall', 'Pass', 'Pass pro', 'Run', 'Run block'];
+    var da = MU_ROWS.map(function(r){ return A[r[1]] - H[r[2]]; });
+    var dh = MU_ROWS.map(function(r){ return H[r[1]] - A[r[2]]; });
+    var maxAbs = Math.max.apply(null, da.concat(dh).map(function(v, i){ return (i % 5 === 0) ? 0 : Math.abs(v); }));
+    function cell(d, off, def, strong){
+      if (isNaN(d)) return '<div class="mu-cell"></div>';
+      var w = Math.min(50, Math.abs(d) / 30 * 50), cls = d >= 0 ? 'pos' : 'neg', left = d >= 0 ? 50 : 50 - w;
+      return '<div class="mu-cell" title="offense ' + off.toFixed(0) + ' v defense ' + def.toFixed(0) + '">' +
+        '<div class="mu-track"><div class="mu-mid"></div><div class="mu-fill ' + cls + '" style="left:' + left + '%;width:' + w + '%;"></div></div>' +
+        '<span class="mu-num mono ' + cls + (strong ? ' strong' : '') + '">' + (Math.round(d) === 0 ? '0' : (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(0)) + '</span></div>';
     }
-    return head +
+    var grid = '<div class="mu-grid"><span></span><span class="mu-colh">' + g.away + ' off</span><span class="mu-colh">' + g.home + ' off</span>';
+    MU_ROWS.forEach(function(r, i){
+      var sA = i > 0 && Math.abs(da[i]) === maxAbs && maxAbs >= 8, sH = i > 0 && Math.abs(dh[i]) === maxAbs && maxAbs >= 8;
+      grid += '<span class="mu-lbl' + (sA || sH ? ' strong' : '') + '">' + SHORT[i] + '</span>' +
+        cell(da[i], A[r[1]], H[r[2]], sA) + cell(dh[i], H[r[1]], A[r[2]], sH);
+    });
+    grid += '</div>';
+    return '<div class="mu-wrap">' + head +
       '<div class="mu-rec mono">' + muRecord(A, g.away) + '<br>' + muRecord(H, g.home) + '</div>' +
-      matchupSynopsis(g, A, H) +
-      section(A, H, g.away, g.home) + section(H, A, g.home, g.away) +
-      '<div class="mu-legend">Offense grade v defense grade (PFF, 0&ndash;100). <span style="color:var(--teal)">Green</span> = offense edge, <span style="color:var(--brick)">red</span> = defense edge. Bold = biggest gap. <b>PFF grades through Week ' + gradesThroughWeek() + '.</b></div>';
+      matchupSynopsis(g, A, H) + grid +
+      '<div class="mu-legend">Each bar: that offense\'s PFF grade minus the opposing defense\'s. <span style="color:var(--teal)">Green</span> = offense edge, <span style="color:var(--brick)">red</span> = defense edge. Hover for raw grades. Through Week ' + gradesThroughWeek() + '.</div></div>';
   }
 
   // Rebuild just the matchup side of each card (names depend on the Player
@@ -3272,9 +3265,9 @@
   // The back face is absolutely positioned (so the front keeps its natural
   // height when unflipped) - when flipped, grow the card to fit the back.
   function sizeFlippedCard(card){
-    var inner = card.querySelector('.flip-inner'), back = card.querySelector('.face-back'), front = card.querySelector('.face-front');
-    if (!inner || !back || !front) return;
-    inner.style.minHeight = card.classList.contains('flipped') ? Math.max(front.offsetHeight, back.scrollHeight) + 'px' : '';
+    var inner = card.querySelector('.flip-inner');
+    if (!inner) return;
+    inner.style.minHeight = card.classList.contains('flipped') ? MU_BACK_H + 'px' : '';
   }
 
   function renderGames(){
