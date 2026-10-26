@@ -111,6 +111,10 @@
   .mu-mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line);}
   .mu-fill{position:absolute;top:0;bottom:0;border-radius:4px;}
   .mu-fill.pos{background:var(--teal);} .mu-fill.neg{background:var(--brick);}
+  .mu-syn{background:var(--ink);border-radius:6px;padding:7px 9px;margin:0 0 6px;font-size:11.5px;line-height:1.4;}
+  .mu-syn div{margin-bottom:3px;} .mu-syn div:last-child{margin-bottom:0;}
+  .mu-syn b{font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-right:5px;}
+  .mu-syn .k-lean{color:var(--teal);} .mu-syn .k-watch{color:var(--brick);} .mu-syn .k-script{color:var(--gold);} .mu-syn .k-top{color:var(--chalk);}
   .mu-empty{font-size:12px;color:var(--muted);padding:14px 0;}
   .mu-legend{font-size:10px;color:var(--muted);margin-top:6px;}
   @media (prefers-reduced-motion:reduce){ .game-card .flip-inner{transition:none;} }
@@ -1824,6 +1828,7 @@
       (diag.events === 0 ? 'Zero events means Kalshi has not posted markets for these series yet (check back closer to game day) - not a bug.' : ''));
     console.log('Kalshi projections:', kalshiProjections);
     stashMarketScope(platform, slateMode);
+    refreshMatchupBacks();
     if (diag.byKey.attd){
       var ak = diag.byKey.attd;
       console.log('Kalshi ATTD (ANYTD) breakdown: ' + ak.events + ' events, ' + ak.markets + ' markets - ' +
@@ -2191,6 +2196,7 @@
     if (diag.unmatchedType) console.log('Polymarket unrecognized sportsMarketType counts:', unmatchedTypes);
     console.log('Polymarket projections:', polymarketProjections);
     stashMarketScope(platform, slateMode);
+    refreshMatchupBacks();
     renderTable();
     renderTopPlayers();
     saveState();
@@ -2660,6 +2666,7 @@
     marketProjectionsLoadedAt = Date.now();
     setPropsStatus(shortLoadStatus(matched, marketProjectionsLoadedAt));
     stashMarketScope(platform, slateMode);
+    refreshMatchupBacks();
     renderTable();
     saveState();
 
@@ -3094,9 +3101,25 @@
     teamGrades = out;
     teamGradesLoadedAt = Date.now();
     var n = Object.keys(out).length;
-    status.textContent = shortLoadStatus(n, teamGradesLoadedAt).replace(/players?/, 'teams');
+    status.textContent = teamGradesStatusText();
     renderGames();
     saveState();
+  }
+
+  // Last week the uploaded grades cover: the most games any team has played
+  // (wins + losses + ties). A team coming off a bye has one fewer.
+  function gradesThroughWeek(){
+    var mx = 0;
+    Object.keys(teamGrades).forEach(function(k){
+      var t = teamGrades[k], gp = (t.wins||0) + (t.losses||0) + (t.ties||0);
+      if (gp > mx) mx = gp;
+    });
+    return mx;
+  }
+  function teamGradesStatusText(){
+    var n = Object.keys(teamGrades).length;
+    var ts = shortLoadStatus(n, teamGradesLoadedAt).replace(/^\d+ players?/, '');
+    return n + ' teams \u00b7 through Week ' + gradesThroughWeek() + ts;
   }
 
   var MU_ROWS = [
@@ -3112,6 +3135,87 @@
     var rec = t.wins + '-' + t.losses + (t.ties ? '-' + t.ties : '');
     if (!gp) return code + ' ' + rec;
     return code + ' ' + rec + ' &middot; ' + (t.points_scored/gp).toFixed(1) + ' PF / ' + (t.points_allowed/gp).toFixed(1) + ' PA';
+  }
+
+  // Rule-based synopsis from the grade gaps (offense grade minus the
+  // opposing defense grade). Deterministic - same inputs, same text.
+  function matchupSynopsis(g, A, H){
+    var EDGE = 10, SCRIPT = 8;
+    function d(O, D, i){ return O[MU_ROWS[i][1]] - D[MU_ROWS[i][2]]; }
+    // index: 0 overall, 1 passing, 2 pass pro, 3 rushing, 4 run block
+    var side = {};
+    side[g.away] = { o: A, d: H }; side[g.home] = { o: H, d: A };
+    var teams = [g.away, g.home], opp = {}; opp[g.away] = g.home; opp[g.home] = g.away;
+    var diff = {};
+    teams.forEach(function(t){ diff[t] = [0,1,2,3,4].map(function(i){ return d(side[t].o, side[t].d, i); }); });
+    // (side[t].d is the OPPONENT defense row, side[t].o is the team's own offense row)
+    var out = [];
+
+    // Top players for a team at given positions, from the loaded Player Pool.
+    // Ranked by the projection currently in use; players with a market or
+    // Kalshi price are preferred (an unpriced name is often inactive).
+    function names(team, positions, n){
+      if (!players || !players.length) return '';
+      var tn = normalizeTeam(team);
+      var list = players.filter(function(pl){ return normalizeTeam(pl.team) === tn && positions.indexOf(pl.position) >= 0; })
+        .map(function(pl){
+          var fp = 0; try { fp = effectiveFppg(pl) || 0; } catch(e){}
+          var nm = normalizeName(pl.name);
+          return { pl: pl, fp: fp, mkt: !!(marketProjections[nm] || kalshiProjections[nm]) };
+        }).filter(function(x){ return x.fp > 0; });
+      if (list.some(function(x){ return x.mkt; })) list = list.filter(function(x){ return x.mkt; });
+      list.sort(function(a,b){ return b.fp - a.fp; });
+      return list.slice(0, n).map(function(x){ return x.pl.name + ' ($' + (x.pl.salary/1000).toFixed(1) + 'K)'; }).join(', ');
+    }
+    function withNames(label, parts){
+      var txt = parts.filter(Boolean).join(', ');
+      return label + (txt ? ': ' + txt : '');
+    }
+
+    // Biggest single gap in the game
+    var best = null;
+    teams.forEach(function(t){ diff[t].forEach(function(v, i){ if (i > 0 && (!best || Math.abs(v) > Math.abs(best.v))) best = { t:t, i:i, v:v }; }); });
+    if (best && Math.abs(best.v) >= SCRIPT){
+      var o = opp[best.t], sg = (best.v >= 0 ? '+' : '\u2212') + Math.abs(best.v).toFixed(0);
+      var txt = [
+        null,
+        best.v >= 0 ? best.t + '\u2019s passing game has the biggest edge, against ' + o + '\u2019s coverage (' + sg + ').' : best.t + '\u2019s passing game is outmatched by ' + o + '\u2019s coverage (' + sg + ').',
+        best.v >= 0 ? best.t + '\u2019s pass protection beats ' + o + '\u2019s rush (' + sg + ').' : best.t + '\u2019s QB faces pressure: pass pro is outmatched by ' + o + '\u2019s rush (' + sg + ').',
+        best.v >= 0 ? best.t + '\u2019s run game has the biggest edge, against ' + o + '\u2019s run defense (' + sg + ').' : best.t + '\u2019s run game is outmatched by ' + o + '\u2019s run defense (' + sg + ').',
+        best.v >= 0 ? best.t + '\u2019s run blocking beats ' + o + '\u2019s run defense (' + sg + ').' : best.t + '\u2019s run blocking is outmatched by ' + o + '\u2019s run defense (' + sg + ').'
+      ][best.i];
+      out.push('<div><b class="k-top">Key gap</b>' + txt + '</div>');
+    }
+
+    // Script
+    var pa = diff[g.away][1], ph = diff[g.home][1], ra = diff[g.away][3], rh = diff[g.home][3];
+    var script;
+    if (pa >= SCRIPT && ph >= SCRIPT) script = 'Both passing games have the edge: pass-heavy, stack and bring-back friendly.';
+    else if (pa <= -SCRIPT && ph <= -SCRIPT) script = 'Both passing games are outmatched: expect a run-leaning, lower-scoring game.';
+    else if (pa >= SCRIPT && ph <= -SCRIPT) script = g.away + ' passing has the edge; ' + g.home + ' passing does not.';
+    else if (ph >= SCRIPT && pa <= -SCRIPT) script = g.home + ' passing has the edge; ' + g.away + ' passing does not.';
+    else if (ra >= SCRIPT && rh >= SCRIPT) script = 'Both run games have the edge: ground game should matter.';
+    else script = 'No clear script from the grades: let the line and your props decide.';
+    var s2 = gameSides(g);
+    script += ' Board: ' + g.away + ' ' + TAGS[s2.away.tag].label + ', ' + g.home + ' ' + TAGS[s2.home.tag].label + '.';
+    out.push('<div><b class="k-script">Script</b>' + script + '</div>');
+
+    // Leans and watches (grouped by position group)
+    var lean = [], watch = [];
+    teams.forEach(function(t){
+      var dd = diff[t];
+      var qb = names(t, ['QB'], 1);
+      if (dd[1] >= EDGE) lean.push(withNames(t + ' passing (+' + dd[1].toFixed(0) + ')', [qb, names(t, ['WR','TE'], 3)]));
+      if (dd[3] >= EDGE) lean.push(withNames(t + ' run game (+' + dd[3].toFixed(0) + ')', [names(t, ['RB'], 2)]));
+      if (dd[2] >= EDGE && dd[1] < EDGE) lean.push(withNames(t + ' QB clean pocket (+' + dd[2].toFixed(0) + ')', [qb]));
+      if (dd[1] <= -EDGE) watch.push(withNames(t + ' passing (\u2212' + Math.abs(dd[1]).toFixed(0) + ')', [qb, names(t, ['WR','TE'], 2)]));
+      if (dd[2] <= -EDGE) watch.push(withNames(t + ' QB under pressure (\u2212' + Math.abs(dd[2]).toFixed(0) + ')', [qb]));
+      if (dd[3] <= -EDGE) watch.push(withNames(t + ' run game (\u2212' + Math.abs(dd[3]).toFixed(0) + ')', [names(t, ['RB'], 2)]));
+      if (dd[4] <= -EDGE) watch.push(withNames(t + ' run blocking (\u2212' + Math.abs(dd[4]).toFixed(0) + ')', [names(t, ['RB'], 1)]));
+    });
+    if (lean.length)  out.push('<div><b class="k-lean">Lean</b>' + lean.join('<br>') + '</div>');
+    if (watch.length) out.push('<div><b class="k-watch">Watch</b>' + watch.join('<br>') + '</div>');
+    return '<div class="mu-syn">' + out.join('') + '</div>';
   }
 
   function matchupBackHtml(g){
@@ -3140,8 +3244,23 @@
     }
     return head +
       '<div class="mu-rec mono">' + muRecord(A, g.away) + '<br>' + muRecord(H, g.home) + '</div>' +
+      matchupSynopsis(g, A, H) +
       section(A, H, g.away, g.home) + section(H, A, g.home, g.away) +
-      '<div class="mu-legend">Offense grade v defense grade (PFF, 0&ndash;100). <span style="color:var(--teal)">Green</span> = offense edge, <span style="color:var(--brick)">red</span> = defense edge. Bold = biggest gap.</div>';
+      '<div class="mu-legend">Offense grade v defense grade (PFF, 0&ndash;100). <span style="color:var(--teal)">Green</span> = offense edge, <span style="color:var(--brick)">red</span> = defense edge. Bold = biggest gap. <b>PFF grades through Week ' + gradesThroughWeek() + '.</b></div>';
+  }
+
+  // Rebuild just the matchup side of each card (names depend on the Player
+  // Pool and loaded projections, which arrive after the cards are drawn).
+  function refreshMatchupBacks(){
+    var grid = document.getElementById('gamesGrid'); if (!grid) return;
+    grid.querySelectorAll('.game-card').forEach(function(card){
+      var gid = parseFloat(card.getAttribute('data-gid'));
+      var g = games.find(function(x){ return x.id === gid; });
+      var back = card.querySelector('.face-back');
+      if (!g || !back) return;
+      back.innerHTML = matchupBackHtml(g);
+      sizeFlippedCard(card);
+    });
   }
 
   function toggleFlip(card, id){
@@ -3296,6 +3415,7 @@
     });
 
     populateFilterOptions();
+    refreshMatchupBacks();
     renderTable();
   }
 
@@ -3532,7 +3652,7 @@
         teamGrades = state.teamGrades;
         teamGradesLoadedAt = state.teamGradesLoadedAt || null;
         var tgEl = document.getElementById('teamGradesStatus');
-        if (tgEl) tgEl.textContent = shortLoadStatus(Object.keys(teamGrades).length, teamGradesLoadedAt).replace(/players?/, 'teams');
+        if (tgEl) tgEl.textContent = teamGradesStatusText();
       }
       if (state.matchupData){
         matchupData = state.matchupData;
