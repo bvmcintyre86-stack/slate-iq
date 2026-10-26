@@ -83,11 +83,37 @@
   .field input, .field select{width:100px;}
   .field input.team{width:70px;text-transform:uppercase;}
 
-  .games-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
+  .games-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;align-items:start;}
   .game-card{
     background:var(--panel);border:1px solid var(--line);border-radius:10px;
-    padding:14px 16px 16px;position:relative;
+    padding:0;position:relative;perspective:1100px;cursor:pointer;
   }
+  .game-card .flip-inner{position:relative;transform-style:preserve-3d;transition:transform .5s ease;}
+  .game-card.flipped .flip-inner{transform:rotateY(180deg);}
+  .game-card .face{padding:14px 16px 16px;backface-visibility:hidden;-webkit-backface-visibility:hidden;}
+  .game-card .face-back{position:absolute;inset:0;transform:rotateY(180deg);overflow:hidden;}
+  .game-card:not(.flipped) .face-back{pointer-events:none;}
+  .game-card.flipped .face-front{pointer-events:none;}
+  .game-card .flip-btn{
+    position:absolute;top:10px;right:34px;background:none;border:none;color:var(--muted);
+    font-size:13px;line-height:1;padding:2px 6px;cursor:pointer;
+  }
+  .game-card .flip-btn:hover{color:var(--gold);}
+  .mu-head{font-family:'Oswald',sans-serif;font-size:15px;letter-spacing:.02em;display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;}
+  .mu-head .hint{font-family:'Inter',sans-serif;font-size:10px;color:var(--muted);letter-spacing:0;}
+  .mu-rec{font-size:10.5px;color:var(--muted);margin-bottom:8px;line-height:1.35;}
+  .mu-sec{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--gold);margin:8px 0 4px;}
+  .mu-row{margin-bottom:5px;}
+  .mu-top{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);}
+  .mu-row.strong .mu-top{color:var(--chalk);font-weight:600;}
+  .mu-top .pos{color:var(--teal);} .mu-top .neg{color:var(--brick);}
+  .mu-track{position:relative;height:8px;background:var(--ink);border-radius:4px;overflow:hidden;}
+  .mu-mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line);}
+  .mu-fill{position:absolute;top:0;bottom:0;border-radius:4px;}
+  .mu-fill.pos{background:var(--teal);} .mu-fill.neg{background:var(--brick);}
+  .mu-empty{font-size:12px;color:var(--muted);padding:14px 0;}
+  .mu-legend{font-size:10px;color:var(--muted);margin-top:6px;}
+  @media (prefers-reduced-motion:reduce){ .game-card .flip-inner{transition:none;} }
   .game-card .remove{
     position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);
     font-size:16px;line-height:1;padding:2px 6px;cursor:pointer;
@@ -389,6 +415,9 @@
         <button id="loadUnabatedBtn">Load from Unabated</button>
         <button id="refreshLinesBtn">Refresh lines</button>
         <button id="clearGamesBtn">Clear all games</button>
+        <button id="teamGradesBtn" title="Upload PFF's team_overview.csv - powers the flip-over matchup view on each game card.">Upload team grades CSV</button>
+        <input type="file" id="teamGradesFile" accept=".csv" style="display:none;">
+        <span id="teamGradesStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
         <span style="color:var(--line);padding:0 4px;">|</span>
         <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Week</label>
         <select id="unabatedWeek" style="font-size:12px;" title="Pick a week - the board reloads automatically with that week's games for the current mode."><option value="">Load from Unabated first</option></select>
@@ -3022,6 +3051,113 @@
     return (e.wd === 0 && mins >= 750 && mins < 1020) ? 'main' : 'sg';
   }
 
+  // ── PFF team grades (team_overview.csv) → flip-over matchup view ──────
+  var teamGrades = {};            // normalized team code -> {grades_*, wins, losses, ties, points_scored, points_allowed}
+  var teamGradesLoadedAt = null;
+  var flippedGames = {};          // game id -> true while its card shows the matchup side
+
+  function parseSimpleCsv(text){
+    var rows = [], row = [], cur = '', inQ = false;
+    for (var i = 0; i < text.length; i++){
+      var c = text[i];
+      if (inQ){
+        if (c === '"'){ if (text[i+1] === '"'){ cur += '"'; i++; } else inQ = false; }
+        else cur += c;
+      } else if (c === '"') inQ = true;
+      else if (c === ','){ row.push(cur); cur = ''; }
+      else if (c === '\n' || c === '\r'){
+        if (c === '\r' && text[i+1] === '\n') i++;
+        row.push(cur); cur = '';
+        if (row.length > 1 || row[0] !== '') rows.push(row);
+        row = [];
+      } else cur += c;
+    }
+    if (cur !== '' || row.length){ row.push(cur); rows.push(row); }
+    return rows;
+  }
+
+  function loadTeamGradesText(text){
+    var status = document.getElementById('teamGradesStatus');
+    var rows = parseSimpleCsv(text);
+    if (rows.length < 2){ status.textContent = 'That file looks empty.'; return; }
+    var hdr = rows[0].map(function(h){ return h.trim(); });
+    var need = ['abbreviation','grades_offense','grades_defense','grades_pass_block','grades_pass_rush_defense','grades_coverage_defense','grades_run_defense'];
+    var missing = need.filter(function(k){ return hdr.indexOf(k) < 0; });
+    if (missing.length){ status.textContent = 'Not a team_overview.csv - missing: ' + missing.join(', '); return; }
+    var out = {};
+    rows.slice(1).forEach(function(r){
+      var o = {};
+      hdr.forEach(function(h, i){ var v = (r[i] || '').trim(); o[h] = (v !== '' && !isNaN(v)) ? parseFloat(v) : v; });
+      if (!o.abbreviation) return;
+      out[normalizeTeam(o.abbreviation)] = o;
+    });
+    teamGrades = out;
+    teamGradesLoadedAt = Date.now();
+    var n = Object.keys(out).length;
+    status.textContent = shortLoadStatus(n, teamGradesLoadedAt).replace(/players?/, 'teams');
+    renderGames();
+    saveState();
+  }
+
+  var MU_ROWS = [
+    ['Overall',            'grades_offense',    'grades_defense'],
+    ['Passing vs coverage','grades_pass',       'grades_coverage_defense'],
+    ['Pass pro vs rush',   'grades_pass_block', 'grades_pass_rush_defense'],
+    ['Rushing vs run D',   'grades_run',        'grades_run_defense'],
+    ['Run block vs run D', 'grades_run_block',  'grades_run_defense']
+  ];
+
+  function muRecord(t, code){
+    var gp = (t.wins||0) + (t.losses||0) + (t.ties||0);
+    var rec = t.wins + '-' + t.losses + (t.ties ? '-' + t.ties : '');
+    if (!gp) return code + ' ' + rec;
+    return code + ' ' + rec + ' &middot; ' + (t.points_scored/gp).toFixed(1) + ' PF / ' + (t.points_allowed/gp).toFixed(1) + ' PA';
+  }
+
+  function matchupBackHtml(g){
+    var A = teamGrades[normalizeTeam(g.away)], H = teamGrades[normalizeTeam(g.home)];
+    var head = '<div class="mu-head"><span>' + g.away + ' @ ' + g.home + '</span><span class="hint">click to flip back</span></div>';
+    if (!A || !H){
+      return head + '<div class="mu-empty">' + (Object.keys(teamGrades).length
+        ? 'No PFF grades found for ' + (!A ? g.away : g.home) + ' in the uploaded file.'
+        : 'Upload PFF\'s team_overview.csv (Game Environment &rarr; Upload team grades CSV) to see this matchup.') + '</div>';
+    }
+    function section(O, D, oc, dc){
+      var h = '<div class="mu-sec">' + oc + ' offense vs ' + dc + ' defense</div>';
+      var diffs = MU_ROWS.map(function(r){ return O[r[1]] - D[r[2]]; });
+      var maxAbs = Math.max.apply(null, diffs.map(Math.abs));
+      MU_ROWS.forEach(function(r, i){
+        var off = O[r[1]], def = D[r[2]];
+        if (typeof off !== 'number' || typeof def !== 'number') return;
+        var d = off - def, w = Math.min(50, Math.abs(d) / 30 * 50);
+        var cls = d >= 0 ? 'pos' : 'neg';
+        var left = d >= 0 ? 50 : 50 - w;
+        h += '<div class="mu-row' + (Math.abs(d) === maxAbs && Math.abs(d) >= 8 ? ' strong' : '') + '">' +
+          '<div class="mu-top"><span>' + r[0] + '</span><span class="mono">' + off.toFixed(0) + ' v ' + def.toFixed(0) + ' <b class="' + cls + '">' + (d >= 0 ? '+' : '') + d.toFixed(0) + '</b></span></div>' +
+          '<div class="mu-track"><div class="mu-mid"></div><div class="mu-fill ' + cls + '" style="left:' + left + '%;width:' + w + '%;"></div></div></div>';
+      });
+      return h;
+    }
+    return head +
+      '<div class="mu-rec mono">' + muRecord(A, g.away) + '<br>' + muRecord(H, g.home) + '</div>' +
+      section(A, H, g.away, g.home) + section(H, A, g.home, g.away) +
+      '<div class="mu-legend">Offense grade v defense grade (PFF, 0&ndash;100). <span style="color:var(--teal)">Green</span> = offense edge, <span style="color:var(--brick)">red</span> = defense edge. Bold = biggest gap.</div>';
+  }
+
+  function toggleFlip(card, id){
+    var on = !card.classList.contains('flipped');
+    card.classList.toggle('flipped', on);
+    if (on) flippedGames[id] = true; else delete flippedGames[id];
+    sizeFlippedCard(card);
+  }
+  // The back face is absolutely positioned (so the front keeps its natural
+  // height when unflipped) - when flipped, grow the card to fit the back.
+  function sizeFlippedCard(card){
+    var inner = card.querySelector('.flip-inner'), back = card.querySelector('.face-back'), front = card.querySelector('.face-front');
+    if (!inner || !back || !front) return;
+    inner.style.minHeight = card.classList.contains('flipped') ? Math.max(front.offsetHeight, back.scrollHeight) + 'px' : '';
+  }
+
   function renderGames(){
     var grid = document.getElementById('gamesGrid');
     grid.innerHTML = '';
@@ -3057,7 +3193,10 @@
         ' data-field="total" value="'+g.total+'">';
       var kickoffStr = g.kickoff ? formatKickoff(g.kickoff) : '';
 
+      card.setAttribute('data-gid', g.id);
       card.innerHTML =
+        '<div class="flip-inner"><div class="face face-front">'+
+        '<button class="flip-btn" title="Matchup view (PFF grades)">&#8644;</button>'+
         '<button class="remove" data-id="'+g.id+'" title="Remove game">&times;</button>'+
         (kickoffStr ? '<div style="font-size:11px;color:var(--muted);margin-bottom:2px;">'+kickoffStr+'</div>' : '')+
         '<div class="matchup">'+g.away+'<span class="at">@</span>'+g.home+'</div>'+
@@ -3065,9 +3204,16 @@
         barRow(s.away.team, s.away.implied, maxImplied, TAGS[s.away.tag].color)+
         barRow(s.home.team, s.home.implied, maxImplied, TAGS[s.home.tag].color)+
         '<span class="tag-pill" title="'+TAGS[s.away.tag].note+'" style="color:'+TAGS[s.away.tag].color+';background:'+TAGS[s.away.tag].bg+';">'+s.away.team+' '+TAGS[s.away.tag].label+'</span> '+
-        '<span class="tag-pill" title="'+TAGS[s.home.tag].note+'" style="color:'+TAGS[s.home.tag].color+';background:'+TAGS[s.home.tag].bg+';">'+s.home.team+' '+TAGS[s.home.tag].label+'</span>';
+        '<span class="tag-pill" title="'+TAGS[s.home.tag].note+'" style="color:'+TAGS[s.home.tag].color+';background:'+TAGS[s.home.tag].bg+';">'+s.home.team+' '+TAGS[s.home.tag].label+'</span>'+
+        '</div><div class="face face-back">'+matchupBackHtml(g)+'</div></div>';
 
+      card.addEventListener('click', function(e){
+        if (e.target.closest('input,select,option,label,.remove')) return;
+        toggleFlip(card, g.id);
+      });
+      if (flippedGames[g.id]) card.classList.add('flipped');
       grid.appendChild(card);
+      if (flippedGames[g.id]) sizeFlippedCard(card);
     });
 
     grid.querySelectorAll('.remove').forEach(function(btn){
@@ -3288,6 +3434,8 @@
         matchupWorkerUrl: document.getElementById('matchupWorkerUrl') ? document.getElementById('matchupWorkerUrl').value : '',
         matchupData: matchupData,
         matchupDataLoadedAt: matchupDataLoadedAt,
+        teamGrades: teamGrades,
+        teamGradesLoadedAt: teamGradesLoadedAt,
         kalshiWorkerUrl: document.getElementById('kalshiWorkerUrl') ? document.getElementById('kalshiWorkerUrl').value : '',
         polymarketWorkerUrl: document.getElementById('polymarketWorkerUrl') ? document.getElementById('polymarketWorkerUrl').value : '',
         thresholds: {
@@ -3380,6 +3528,12 @@
       if (state.matchupWorkerUrl && document.getElementById('matchupWorkerUrl')) document.getElementById('matchupWorkerUrl').value = state.matchupWorkerUrl;
       if (state.kalshiWorkerUrl && document.getElementById('kalshiWorkerUrl')) document.getElementById('kalshiWorkerUrl').value = state.kalshiWorkerUrl;
       if (state.polymarketWorkerUrl && document.getElementById('polymarketWorkerUrl')) document.getElementById('polymarketWorkerUrl').value = state.polymarketWorkerUrl;
+      if (state.teamGrades && Object.keys(state.teamGrades).length){
+        teamGrades = state.teamGrades;
+        teamGradesLoadedAt = state.teamGradesLoadedAt || null;
+        var tgEl = document.getElementById('teamGradesStatus');
+        if (tgEl) tgEl.textContent = shortLoadStatus(Object.keys(teamGrades).length, teamGradesLoadedAt).replace(/players?/, 'teams');
+      }
       if (state.matchupData){
         matchupData = state.matchupData;
         matchupDataLoadedAt = state.matchupDataLoadedAt || null;
@@ -6294,6 +6448,14 @@
     if (games.length && confirm('Clear all '+games.length+' games?')){
       games=[]; renderGames(); if(players.length) tagPlayers(); saveState();
     }
+  });
+  document.getElementById('teamGradesBtn').addEventListener('click', function(){ document.getElementById('teamGradesFile').click(); });
+  document.getElementById('teamGradesFile').addEventListener('change', function(){
+    var f = this.files && this.files[0]; if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){ loadTeamGradesText(String(rd.result || '')); };
+    rd.readAsText(f);
+    this.value = '';
   });
   document.getElementById('clearLineupBtn').addEventListener('click', clearLineup);
   // copyLineupBtn removed from the UI per request - copyLineup() itself is
