@@ -254,6 +254,14 @@
   .stack-settings select{background:var(--panel-2);color:var(--chalk);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px;}
   .stack-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--chalk);cursor:pointer;}
   .stack-chk input{accent-color:var(--teal);}
+  .sec-details{position:relative;font-size:12px;align-self:flex-end;}
+  .sec-details summary{cursor:pointer;list-style:none;color:var(--muted);padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel-2);}
+  .sec-details summary::-webkit-details-marker{display:none;}
+  .sec-details[open] summary{color:var(--gold);border-color:var(--gold);}
+  .sec-list{position:absolute;z-index:40;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-width:270px;box-shadow:0 8px 24px rgba(0,0,0,.45);}
+  .sec-list label{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:12px;color:var(--chalk);cursor:pointer;}
+  .sec-list label input{accent-color:var(--teal);}
+  .sec-list .sec-sep{border-top:1px solid var(--line);margin:6px 0 4px;}
   .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:8px;}
   .slot-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:70px;position:relative;}
   .slot-card.filled{border-color:var(--gold);}
@@ -601,6 +609,15 @@
           </select>
         </div>
         <label class="stack-chk" title="Forces in your QB's opponent's alpha WR (their highest-salaried receiver) - a true same-game bring-back, matching what actually showed up in your tournament-winning-lineup study."><input type="checkbox" id="bringBackChk"> Bring-back</label>
+        <div class="field">
+          <label title="Correlated pairs built in OTHER games than your QB's, from the types you pick under Types.">Secondary stacks</label>
+          <select id="secCountSel" style="width:13ch;">
+            <option value="0">None</option>
+            <option value="1">1 pair</option>
+            <option value="2">2 pairs</option>
+          </select>
+        </div>
+        <details class="sec-details" id="secDetails"><summary>Types</summary><div class="sec-list" id="secList"></div></details>
       </div>
 
       <div class="field field-inline" id="mvpFilterWrap" style="display:none;align-self:center;">
@@ -804,7 +821,8 @@
   var activeIdx  = 0;
   var lineup     = lineups[activeIdx];
   var salaryCap  = 60000;
-  var stackSettings = { level: 0, bringBack: false, onslaughtOnly: false };
+  var SEC_DEFAULTS = { secCount: 0, secCombos: { rbDef: true, rbOppPC: true, wrOppPC: true, rbSamePC: false, rbOppRb: false }, avoidDefOpp: true };
+  var stackSettings = Object.assign({ level: 0, bringBack: false, onslaughtOnly: false }, JSON.parse(JSON.stringify(SEC_DEFAULTS)));
 
   // ── Market-based projections (Unabated player props) ─────────────────────
   var SPORTSBOOK_PRIORITY = [1, 2, 86, 4, 20, 36]; // DK, FanDuel, Fanatics, BetMGM, Caesars, theScore Bet
@@ -3455,6 +3473,38 @@
       if (qb.tag && TAGS[qb.tag]) result.envNote = TAGS[qb.tag];
     }
 
+    // Secondary stacks: correlated pairs outside the QB's own game.
+    result.secondary = [];
+    result.defClash = false;
+    if (slateMode === 'main'){
+      var skipTeams = {};
+      if (qbEntry){ skipTeams[qbEntry.player.team] = true; if (qbEntry.player.oppTeam) skipTeams[qbEntry.player.oppTeam] = true; }
+      var sp = filled.map(function(f){ return f.player; }).filter(function(pl){ return pl.position !== 'QB' && !skipTeams[pl.team]; });
+      var seenSec = {};
+      var addSec = function(label, a, b){
+        var ids = (b && b !== a) ? [a, b].sort().join('/') : a, k = label + '|' + ids;
+        if (seenSec[k]) return; seenSec[k] = true;
+        result.secondary.push(label + ' ' + ids);
+      };
+      var isPC = function(q){ return q.position === 'WR' || q.position === 'TE'; };
+      sp.forEach(function(a){
+        sp.forEach(function(b){
+          if (a.id === b.id) return;
+          if (a.position === 'RB'){
+            if (b.position === 'DEF' && b.team === a.team) addSec('RB+DEF', a.team);
+            if (isPC(b) && b.team === a.team) addSec('RB+WR/TE', a.team);
+            if (isPC(b) && a.oppTeam && b.team === a.oppTeam) addSec('RB+opp WR/TE', a.team, b.team);
+            if (b.position === 'RB' && a.oppTeam && b.team === a.oppTeam) addSec('RB+opp RB', a.team, b.team);
+          }
+          if (a.position === 'WR' && isPC(b) && a.oppTeam && b.team === a.oppTeam) addSec('WR+opp WR/TE', a.team, b.team);
+        });
+      });
+      var dEntry = filled.find(function(f){ return f.player.position === 'DEF'; });
+      if (dEntry && dEntry.player.oppTeam){
+        result.defClash = filled.some(function(f){ return f.player.position !== 'DEF' && f.player.team === dEntry.player.oppTeam; });
+      }
+    }
+
     // Onslaught / shootout builds are a Single Game concept (6 total roster spots, 1 game)
     if (slateMode === 'sg'){
       var maxTeam = teams.reduce(function(m,t){ return teamCounts[t] > teamCounts[m] ? t : m; }, teams[0]);
@@ -3478,6 +3528,9 @@
     } else if (qbEntry){
       result.label = 'Naked QB (' + qbEntry.player.team + ', no stack)';
     }
+    if (slateMode === 'main' && result.secondary.length){
+      result.label += ' \u00b7 2nd: ' + result.secondary.slice(0, 3).join(', ') + (result.secondary.length > 3 ? ' +' + (result.secondary.length - 3) + ' more' : '');
+    }
 
     return result;
   }
@@ -3497,6 +3550,7 @@
     if (!c){ el.innerHTML = ''; return; }
     var colors = constructionBadgeColor(c);
     var html = '<span class="cb-main" style="color:'+colors.color+';background:'+colors.bg+';">'+c.label+'</span>';
+    if (c.defClash){ html += '<span class="cb-note" style="color:var(--brick);">DEF faces one of your own players - that pairing works against you.</span>'; }
     if (c.envNote){ html += '<span class="cb-note">'+c.envNote.note+'</span>'; }
     el.innerHTML = html;
   }
@@ -3664,8 +3718,10 @@
       salaryCap = state.cap || 60000;
       document.getElementById('capInput').value = salaryCap;
       if (state.stackSettings){
-        stackSettings = Object.assign({level:0,bringBack:false,onslaughtOnly:false}, state.stackSettings);
+        stackSettings = Object.assign({level:0,bringBack:false,onslaughtOnly:false}, JSON.parse(JSON.stringify(SEC_DEFAULTS)), state.stackSettings);
+        stackSettings.secCombos = Object.assign({}, SEC_DEFAULTS.secCombos, (state.stackSettings || {}).secCombos);
         document.getElementById('stackLevelSel').value = stackSettings.level;
+        if (typeof syncSecondaryUI === 'function') syncSecondaryUI();
         document.getElementById('bringBackChk').checked = stackSettings.bringBack;
         // onslaughtOnlyChk removed from the UI per request - stackSettings.onslaughtOnly
         // stays in state (default false) so nothing downstream breaks if it's ever re-added.
@@ -4616,6 +4672,55 @@
   var exposureCount = {};
   var EXPOSURE_PENALTY_PER_USE = 4;
 
+  // ── Secondary stacks (correlated pairs OUTSIDE the QB's own game) ─────
+  // 'A' is the team the first role belongs to, 'B' its opponent.
+  var SEC_COMBOS = [
+    { key:'rbDef',    label:'RB + own DEF',         short:'RB+DEF',        roles:[{who:'A',pos:['RB']}, {who:'A',pos:['DEF']}] },
+    { key:'rbOppPC',  label:'RB + opposing WR/TE',  short:'RB+opp WR/TE',  roles:[{who:'A',pos:['RB']}, {who:'B',pos:['WR','TE']}] },
+    { key:'rbSamePC', label:'RB + same-team WR/TE', short:'RB+WR/TE',      roles:[{who:'A',pos:['RB']}, {who:'A',pos:['WR','TE']}] },
+    { key:'wrOppPC',  label:'WR + opposing WR/TE',  short:'WR+opp WR/TE',  roles:[{who:'A',pos:['WR']}, {who:'B',pos:['WR','TE']}] },
+    { key:'rbOppRb',  label:'RB + opposing RB',     short:'RB+opp RB',     roles:[{who:'A',pos:['RB']}, {who:'B',pos:['RB']}] }
+  ];
+  // How many times each type / team has been used in the current bulk batch,
+  // so a 20-lineup build rotates through your selected types and games.
+  var secComboUse = {}, secTeamUse = {};
+
+  function topPlayersInGame(g){
+    var n = 0;
+    Object.keys(topPlayers).forEach(function(id){ var t = topPlayers[id].team; if (t === g.away || t === g.home) n++; });
+    return Math.min(n, 6);
+  }
+  // Which game/team orientation suits each pair type best. Higher = better.
+  function secScore(key, X, Y, g){
+    var adv = g.favorite === 'pick' ? 0 : (X.isFav ? 1 : -1) * Math.abs(g.spread || 0);
+    var base;
+    if (key === 'rbDef')         base = X.implied - 0.6 * Y.implied + 0.2 * adv;            // strong favorite: RB grinds, DEF faces a low total
+    else if (key === 'rbOppPC')  base = Y.implied + 0.6 * X.implied + 0.3 * adv;            // favorite's RB late, trailing team's pass catchers
+    else if (key === 'rbSamePC') base = X.implied;                                          // team expected to score the most
+    else if (key === 'wrOppPC')  base = g.total - 0.3 * Math.abs(g.spread || 0);            // shootout, close game
+    else                         base = g.total - 0.5 * Math.abs(g.spread || 0);            // rbOppRb: lots of plays, close game
+    return base + 0.4 * (SCRIPT_BONUS[X.tag] || 0) + 1.5 * topPlayersInGame(g)
+      - 3 * (secTeamUse[X.team] || 0) - 3 * (secTeamUse[Y.team] || 0);
+  }
+
+  // Anti-correlation guard: never roster a DEF against your own offense.
+  // `ignoreKey` is the slot about to be replaced (its current occupant
+  // shouldn't count against the candidate).
+  function defClash(cand, ignoreKey){
+    if (!stackSettings.avoidDefOpp) return false;
+    if (cand.position === 'DEF'){
+      if (!cand.oppTeam) return false;
+      return activeSLOT_DEFS.some(function(s){
+        var q = lineup[s.key];
+        return s.key !== ignoreKey && q && q.position !== 'DEF' && q.team === cand.oppTeam;
+      });
+    }
+    var defSlot = activeSLOT_DEFS.find(function(s){ return s.eligible.indexOf('DEF') !== -1; });
+    if (!defSlot || defSlot.key === ignoreKey) return false;
+    var d = lineup[defSlot.key];
+    return !!(d && d.oppTeam && d.oppTeam === cand.team);
+  }
+
   // Shared by bring-back (below) and Stack Suggestions - the tags that
   // represent a genuinely favorable game script worth correlating around.
   var GOOD_SCRIPT_TAGS = {onslaught:true, shootout:true, live:true};
@@ -4836,6 +4941,7 @@
     var slotExcludeTeam = {};
     var slotPositionLock = {};
     var slotRequireGoodScript = {};
+    var slotPosAllowed = {};   // secondary stacks: e.g. a WR/TE role may be filled by either
     var slotStackRole = {};
     var stackNote = null;
     var autoQbNote = null;
@@ -4874,6 +4980,10 @@
     }
     if (wantsStack && lineup.QB){
       var qb = lineup.QB;
+      // Keep the QB on his own team through the upgrade passes below -
+      // otherwise a later "upgrade" can swap in a better QB from another
+      // team and silently orphan the stack / bring-back built around him.
+      slotTeamConstraint['QB'] = qb.team;
       if (stackSettings.onslaughtOnly && qb.tag !== 'onslaught'){
         stackNote = qb.team + ' isn\'t tagged Onslaught, so the stack wasn\'t forced this run.';
       } else {
@@ -4982,6 +5092,80 @@
       }
     }
 
+    // Phase 0b: secondary stacks. Reserve correlated pairs in games OTHER
+    // than the QB's, choosing the least-used selected type first (so a bulk
+    // build rotates through them) and the best-suited game for that type.
+    // Reserved slots stay locked to their team (and to the pair's allowed
+    // positions) through the later upgrade passes, like the QB stack does.
+    var secNote = null;
+    if (slateMode === 'main' && stackSettings.secCount > 0){
+      var secEnabled = SEC_COMBOS.filter(function(c){ return stackSettings.secCombos && stackSettings.secCombos[c.key]; });
+      var secUsedGames = {};
+      if (lineup.QB){ var qgm = findGameForTeam(lineup.QB.team); if (qgm) secUsedGames[qgm.game.id] = true; }
+      var secFreeSlot = function(pos){
+        return emptySlots.filter(function(sl){ return !lineup[sl.key] && sl.eligible.indexOf(pos) !== -1; })
+          .sort(function(a,b){ return a.eligible.length - b.eligible.length; })[0] || null;
+      };
+      var secTryPlan = function(combo, orient){
+        var done = [], ok = true;
+        for (var ri = 0; ri < combo.roles.length && ok; ri++){
+          var role = combo.roles[ri], team = role.who === 'A' ? orient.A : orient.B;
+          var fits = function(pl){ return pl.team === team && role.pos.indexOf(pl.position) !== -1 && !picks[pl.id]; };
+          var cands = pool.filter(fits);
+          if (!cands.length) cands = fullPool.filter(fits);
+          cands = cands.filter(function(pl){ return secFreeSlot(pl.position) && !defClash(pl, null); });
+          if (!cands.length){ ok = false; break; }
+          var bestC = cands.reduce(function(m,pl){
+            var pExp = exposureCount[pl.id] || 0, mExp = exposureCount[m.id] || 0;
+            if (pExp !== mExp) return pExp < mExp ? pl : m;
+            return pl.salary < m.salary ? pl : m;
+          }, cands[0]);
+          var sl = secFreeSlot(bestC.position);
+          lineup[sl.key] = bestC; picks[bestC.id] = true;
+          done.push({ slot: sl, player: bestC, role: role, team: team });
+        }
+        if (!ok){ done.forEach(function(d){ lineup[d.slot.key] = null; delete picks[d.player.id]; }); return null; }
+        return done;
+      };
+      var secTried = {}, secMade = 0;
+      while (secMade < stackSettings.secCount){
+        var secOrder = secEnabled.filter(function(c){ return !secTried[c.key]; })
+          .sort(function(a,b){ return (secComboUse[a.key] || 0) - (secComboUse[b.key] || 0); });
+        if (!secOrder.length) break;
+        var secPlaced = false;
+        for (var oi = 0; oi < secOrder.length && !secPlaced; oi++){
+          var combo = secOrder[oi]; secTried[combo.key] = true;
+          var orients = [];
+          games.forEach(function(g){
+            if (secUsedGames[g.id]) return;
+            var sd = gameSides(g);
+            [[sd.away, sd.home], [sd.home, sd.away]].forEach(function(pr){
+              orients.push({ g: g, A: pr[0].team, B: pr[1].team, score: secScore(combo.key, pr[0], pr[1], g) });
+            });
+          });
+          orients.sort(function(a,b){ return b.score - a.score; });
+          for (var k = 0; k < orients.length && !secPlaced; k++){
+            var plan = secTryPlan(combo, orients[k]);
+            if (!plan) continue;
+            plan.forEach(function(d){
+              slotTeamConstraint[d.slot.key] = d.team;
+              slotPosAllowed[d.slot.key] = d.role.pos;
+              slotStackRole[d.slot.key] = 'sec';
+            });
+            secUsedGames[orients[k].g.id] = true;
+            secComboUse[combo.key] = (secComboUse[combo.key] || 0) + 1;
+            secTeamUse[orients[k].A] = (secTeamUse[orients[k].A] || 0) + 1;
+            if (combo.roles.some(function(r){ return r.who === 'B'; })) secTeamUse[orients[k].B] = (secTeamUse[orients[k].B] || 0) + 1;
+            secPlaced = true; secMade++;
+          }
+        }
+        if (!secPlaced) break;
+      }
+      if (secMade < stackSettings.secCount){
+        secNote = 'Built ' + secMade + ' of ' + stackSettings.secCount + ' secondary stack(s) - not enough open slots, games or eligible players for more.';
+      }
+    }
+
     // Phase 1: guarantee a feasible lineup by filling every remaining empty slot
     // with the CHEAPEST eligible option (Top Players preferred, full pool as fallback).
     // Process the most-constrained slots (fewest eligible positions) first so
@@ -5001,6 +5185,8 @@
         });
       }
       if (!candidates.length){ unfilled.push(slot.label); return; }
+      var noClash = candidates.filter(function(p){ return !defClash(p, slot.key); });
+      if (noClash.length) candidates = noClash;
       var cheapest = candidates.reduce(function(m,p){ return p.salary<m.salary?p:m; }, candidates[0]);
       picks[cheapest.id] = true;
       lineup[slot.key] = cheapest;
@@ -5032,7 +5218,9 @@
           if (reqTeam && p.team !== reqTeam) return false;
           if (slotExcludeTeam[slot.key] && p.team === slotExcludeTeam[slot.key]) return false;
           if (slotPositionLock[slot.key] && p.position !== slotPositionLock[slot.key]) return false;
+          if (slotPosAllowed[slot.key] && slotPosAllowed[slot.key].indexOf(p.position) === -1) return false;
           if (slotRequireGoodScript[slot.key] && !GOOD_SCRIPT_TAGS[p.tag]) return false;
+          if (defClash(p, slot.key)) return false;
           return slot.eligible.indexOf(p.position)!==-1;
         });
         opts.forEach(function(cand){
@@ -5075,7 +5263,9 @@
           if (reqTeam && p.team !== reqTeam) return false;
           if (slotExcludeTeam[slot.key] && p.team === slotExcludeTeam[slot.key]) return false;
           if (slotPositionLock[slot.key] && p.position !== slotPositionLock[slot.key]) return false;
+          if (slotPosAllowed[slot.key] && slotPosAllowed[slot.key].indexOf(p.position) === -1) return false;
           if (slotRequireGoodScript[slot.key] && !GOOD_SCRIPT_TAGS[p.tag]) return false;
+          if (defClash(p, slot.key)) return false;
           return slot.eligible.indexOf(p.position)!==-1;
         });
         opts.forEach(function(cand){
@@ -5102,6 +5292,7 @@
     var msgParts = [];
     if (autoQbNote) msgParts.push(autoQbNote);
     if (stackNote) msgParts.push(stackNote);
+    if (secNote) msgParts.push(secNote);
     if (unfilled.length) msgParts.push('Could not fill: ' + unfilled.join(', '));
     if (salaryUsed() < salaryFloor){
       msgParts.push('Could not reach the ' + money(salaryFloor) + ' salary floor - no higher-priced eligible replacements available.');
@@ -5146,6 +5337,7 @@
     activeSLOT_DEFS.forEach(function(s){ template[s.key] = lineup[s.key] || null; });
 
     exposureCount = {}; // start this batch with a clean slate
+    secComboUse = {}; secTeamUse = {};
 
     // Track exact lineup "signatures" (sorted player IDs) already produced
     // in this batch. The exposure penalty above only makes repeats LESS
@@ -5217,6 +5409,7 @@
     activeIdx = 0;
     lineup = lineups[0];
     exposureCount = {}; // clear so a later single-lineup Optimize isn't affected
+    secComboUse = {}; secTeamUse = {};
 
     var msg;
     if (stoppedEarly){
@@ -6408,6 +6601,35 @@
   document.getElementById('bringBackChk').addEventListener('change', function(){
     stackSettings.bringBack = this.checked;
     saveState();
+  });
+  // Secondary stacks controls
+  function buildSecondaryUI(){
+    var list = document.getElementById('secList'); if (!list) return;
+    list.innerHTML = SEC_COMBOS.map(function(c){
+      return '<label><input type="checkbox" data-sec="' + c.key + '"> ' + c.label + '</label>';
+    }).join('') + '<div class="sec-sep"></div>' +
+      '<label title="Rules out a DEF whose opponent is one of your offensive players (and the reverse) - that pairing is negatively correlated."><input type="checkbox" id="avoidDefOppChk"> Never roster a DEF against my own players</label>';
+    list.addEventListener('change', function(e){
+      var t = e.target;
+      if (t.getAttribute('data-sec')) stackSettings.secCombos[t.getAttribute('data-sec')] = t.checked;
+      else if (t.id === 'avoidDefOppChk') stackSettings.avoidDefOpp = t.checked;
+      saveState();
+    });
+  }
+  function syncSecondaryUI(){
+    var sel = document.getElementById('secCountSel'); if (sel) sel.value = String(stackSettings.secCount || 0);
+    document.querySelectorAll('#secList input[data-sec]').forEach(function(cb){ cb.checked = !!stackSettings.secCombos[cb.getAttribute('data-sec')]; });
+    var av = document.getElementById('avoidDefOppChk'); if (av) av.checked = !!stackSettings.avoidDefOpp;
+  }
+  buildSecondaryUI();
+  syncSecondaryUI();
+  document.getElementById('secCountSel').addEventListener('change', function(){
+    stackSettings.secCount = parseInt(this.value, 10) || 0;
+    saveState();
+  });
+  document.addEventListener('click', function(e){
+    var d = document.getElementById('secDetails');
+    if (d && d.open && !d.contains(e.target)) d.open = false;
   });
   // onslaughtOnlyChk listener removed along with the checkbox itself.
   document.getElementById('loadPropsBtn').addEventListener('click', function(){
