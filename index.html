@@ -821,7 +821,7 @@
   var activeIdx  = 0;
   var lineup     = lineups[activeIdx];
   var salaryCap  = 60000;
-  var SEC_DEFAULTS = { secCount: 0, secCombos: { rbDef: true, rbOppPC: true, wrOppPC: true, rbSamePC: false, rbOppRb: false }, avoidDefOpp: true };
+  var SEC_DEFAULTS = { secCount: 0, secCombos: { rbDef: true, rbOppPC: true, wrOppPC: true, rbSamePC: false, rbOppRb: false }, avoidDefOpp: true, noSameTeamDup: true, rbFavOnly: true };
   var stackSettings = Object.assign({ level: 0, bringBack: false, onslaughtOnly: false }, JSON.parse(JSON.stringify(SEC_DEFAULTS)));
 
   // ── Market-based projections (Unabated player props) ─────────────────────
@@ -3499,6 +3499,20 @@
           if (a.position === 'WR' && isPC(b) && a.oppTeam && b.team === a.oppTeam) addSec('WR+opp WR/TE', a.team, b.team);
         });
       });
+      result.warnings = [];
+      var rbTeams = {}, posTeams = {};
+      filled.forEach(function(f){
+        var q = f.player;
+        if (q.position === 'RB'){ if (rbTeams[q.team]) result.warnings.push('Two RBs from ' + q.team); rbTeams[q.team] = true; }
+        if ((q.position === 'WR' || q.position === 'TE') && !(qbEntry && (q.team === qbEntry.player.team || q.team === qbEntry.player.oppTeam))){
+          var kk = q.team + q.position; if (posTeams[kk]) result.warnings.push('Two ' + q.position + 's from ' + q.team + ' without the QB'); posTeams[kk] = true;
+        }
+      });
+      filled.forEach(function(f){
+        var q = f.player;
+        if (isClearUnderdogRb(q) && filled.some(function(g2){ return (g2.player.position === 'WR' || g2.player.position === 'TE') && q.oppTeam && g2.player.team === q.oppTeam; }))
+          result.warnings.push(q.team + ' underdog RB with ' + q.oppTeam + ' pass catcher');
+      });
       var dEntry = filled.find(function(f){ return f.player.position === 'DEF'; });
       if (dEntry && dEntry.player.oppTeam){
         result.defClash = filled.some(function(f){ return f.player.position !== 'DEF' && f.player.team === dEntry.player.oppTeam; });
@@ -3551,6 +3565,7 @@
     var colors = constructionBadgeColor(c);
     var html = '<span class="cb-main" style="color:'+colors.color+';background:'+colors.bg+';">'+c.label+'</span>';
     if (c.defClash){ html += '<span class="cb-note" style="color:var(--brick);">DEF faces one of your own players - that pairing works against you.</span>'; }
+    if (c.warnings && c.warnings.length){ html += '<span class="cb-note" style="color:var(--brick);">' + c.warnings.join('; ') + '.</span>'; }
     if (c.envNote){ html += '<span class="cb-note">'+c.envNote.note+'</span>'; }
     el.innerHTML = html;
   }
@@ -4721,6 +4736,41 @@
     return !!(d && d.oppTeam && d.oppTeam === cand.team);
   }
 
+  // Rule 1 - no cannibalizing teammates: never two RBs from one team, and
+  // never two WRs (or two TEs) from one team unless that team is the QB's
+  // own game (a stack / bring-back is the point there).
+  function dupClash(cand, ignoreKey){
+    if (!stackSettings.noSameTeamDup) return false;
+    var qbp = lineup.QB && ignoreKey !== 'QB' ? lineup.QB : null;
+    var gameTeam = {};
+    if (qbp){ gameTeam[qbp.team] = true; if (qbp.oppTeam) gameTeam[qbp.oppTeam] = true; }
+    return activeSLOT_DEFS.some(function(s){
+      var q = lineup[s.key];
+      if (!q || s.key === ignoreKey || q.id === cand.id || q.team !== cand.team) return false;
+      if (cand.position === 'RB' && q.position === 'RB') return true;
+      if (!gameTeam[cand.team] && cand.position === q.position && (cand.position === 'WR' || cand.position === 'TE')) return true;
+      return false;
+    });
+  }
+
+  // Rule 2 - game script: an RB on a clear underdog (more than 3 points)
+  // loses touches when his team trails, so RB+DEF and RB+opposing WR/TE are
+  // only built from a favorite (or near pick'em) RB, and an underdog RB is
+  // never rostered alongside an opposing WR/TE.
+  var RB_FAV_MAX_UNDERDOG = 3;
+  function isClearUnderdogRb(p){ return p.position === 'RB' && p.teamSpread != null && p.teamSpread > RB_FAV_MAX_UNDERDOG; }
+  function scriptClash(cand, ignoreKey){
+    if (!stackSettings.rbFavOnly) return false;
+    return activeSLOT_DEFS.some(function(s){
+      var q = lineup[s.key];
+      if (!q || s.key === ignoreKey || q.id === cand.id) return false;
+      if (isClearUnderdogRb(cand) && (q.position === 'WR' || q.position === 'TE') && cand.oppTeam && q.team === cand.oppTeam) return true;
+      if ((cand.position === 'WR' || cand.position === 'TE') && isClearUnderdogRb(q) && q.oppTeam && cand.team === q.oppTeam) return true;
+      return false;
+    });
+  }
+  function badPair(cand, ignoreKey){ return defClash(cand, ignoreKey) || dupClash(cand, ignoreKey) || scriptClash(cand, ignoreKey); }
+
   // Shared by bring-back (below) and Stack Suggestions - the tags that
   // represent a genuinely favorable game script worth correlating around.
   var GOOD_SCRIPT_TAGS = {onslaught:true, shootout:true, live:true};
@@ -5113,7 +5163,7 @@
           var fits = function(pl){ return pl.team === team && role.pos.indexOf(pl.position) !== -1 && !picks[pl.id]; };
           var cands = pool.filter(fits);
           if (!cands.length) cands = fullPool.filter(fits);
-          cands = cands.filter(function(pl){ return secFreeSlot(pl.position) && !defClash(pl, null); });
+          cands = cands.filter(function(pl){ return secFreeSlot(pl.position) && !badPair(pl, null); });
           if (!cands.length){ ok = false; break; }
           var bestC = cands.reduce(function(m,pl){
             var pExp = exposureCount[pl.id] || 0, mExp = exposureCount[m.id] || 0;
@@ -5140,6 +5190,9 @@
             if (secUsedGames[g.id]) return;
             var sd = gameSides(g);
             [[sd.away, sd.home], [sd.home, sd.away]].forEach(function(pr){
+              // Rule 2: the RB's team must be the favorite (or within 3) for RB+DEF and RB+opposing WR/TE.
+              if (stackSettings.rbFavOnly && (combo.key === 'rbDef' || combo.key === 'rbOppPC') &&
+                  g.favorite !== 'pick' && !pr[0].isFav && Math.abs(g.spread || 0) > RB_FAV_MAX_UNDERDOG) return;
               orients.push({ g: g, A: pr[0].team, B: pr[1].team, score: secScore(combo.key, pr[0], pr[1], g) });
             });
           });
@@ -5185,7 +5238,7 @@
         });
       }
       if (!candidates.length){ unfilled.push(slot.label); return; }
-      var noClash = candidates.filter(function(p){ return !defClash(p, slot.key); });
+      var noClash = candidates.filter(function(p){ return !badPair(p, slot.key); });
       if (noClash.length) candidates = noClash;
       var cheapest = candidates.reduce(function(m,p){ return p.salary<m.salary?p:m; }, candidates[0]);
       picks[cheapest.id] = true;
@@ -5220,7 +5273,7 @@
           if (slotPositionLock[slot.key] && p.position !== slotPositionLock[slot.key]) return false;
           if (slotPosAllowed[slot.key] && slotPosAllowed[slot.key].indexOf(p.position) === -1) return false;
           if (slotRequireGoodScript[slot.key] && !GOOD_SCRIPT_TAGS[p.tag]) return false;
-          if (defClash(p, slot.key)) return false;
+          if (badPair(p, slot.key)) return false;
           return slot.eligible.indexOf(p.position)!==-1;
         });
         opts.forEach(function(cand){
@@ -5265,7 +5318,7 @@
           if (slotPositionLock[slot.key] && p.position !== slotPositionLock[slot.key]) return false;
           if (slotPosAllowed[slot.key] && slotPosAllowed[slot.key].indexOf(p.position) === -1) return false;
           if (slotRequireGoodScript[slot.key] && !GOOD_SCRIPT_TAGS[p.tag]) return false;
-          if (defClash(p, slot.key)) return false;
+          if (badPair(p, slot.key)) return false;
           return slot.eligible.indexOf(p.position)!==-1;
         });
         opts.forEach(function(cand){
@@ -6608,11 +6661,15 @@
     list.innerHTML = SEC_COMBOS.map(function(c){
       return '<label><input type="checkbox" data-sec="' + c.key + '"> ' + c.label + '</label>';
     }).join('') + '<div class="sec-sep"></div>' +
-      '<label title="Rules out a DEF whose opponent is one of your offensive players (and the reverse) - that pairing is negatively correlated."><input type="checkbox" id="avoidDefOppChk"> Never roster a DEF against my own players</label>';
+      '<label title="Rules out a DEF whose opponent is one of your offensive players (and the reverse) - that pairing is negatively correlated."><input type="checkbox" id="avoidDefOppChk"> Never roster a DEF against my own players</label>' +
+      '<label title="Teammates split the same carries and touchdowns. Applies to two RBs from one team always, and two WRs or two TEs unless that team is your QB\'s game."><input type="checkbox" id="noDupChk"> No two RBs (or WR/WR, TE/TE) from one team</label>' +
+      '<label title="An RB on a clear underdog (more than 3 points) loses touches when his team trails. RB + DEF and RB + opposing WR/TE are only built with a favorite (or near pick\'em) RB, and an underdog RB is never rostered with an opposing pass catcher."><input type="checkbox" id="rbFavChk"> RB must be on the favorite (or within 3)</label>';
     list.addEventListener('change', function(e){
       var t = e.target;
       if (t.getAttribute('data-sec')) stackSettings.secCombos[t.getAttribute('data-sec')] = t.checked;
       else if (t.id === 'avoidDefOppChk') stackSettings.avoidDefOpp = t.checked;
+      else if (t.id === 'noDupChk') stackSettings.noSameTeamDup = t.checked;
+      else if (t.id === 'rbFavChk') stackSettings.rbFavOnly = t.checked;
       saveState();
     });
   }
@@ -6620,6 +6677,8 @@
     var sel = document.getElementById('secCountSel'); if (sel) sel.value = String(stackSettings.secCount || 0);
     document.querySelectorAll('#secList input[data-sec]').forEach(function(cb){ cb.checked = !!stackSettings.secCombos[cb.getAttribute('data-sec')]; });
     var av = document.getElementById('avoidDefOppChk'); if (av) av.checked = !!stackSettings.avoidDefOpp;
+    var nd = document.getElementById('noDupChk'); if (nd) nd.checked = !!stackSettings.noSameTeamDup;
+    var rf = document.getElementById('rbFavChk'); if (rf) rf.checked = !!stackSettings.rbFavOnly;
   }
   buildSecondaryUI();
   syncSecondaryUI();
