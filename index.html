@@ -238,9 +238,6 @@
   .mk-s{color:var(--teal);background:var(--teal-bg);}
   .mk-b{color:var(--amber);background:var(--amber-bg);}
   .mk-n{color:var(--teal);background:var(--teal-bg);min-width:15px;text-align:center;padding:0 3px;}
-  .lc-r-stack{box-shadow:inset 3px 0 0 var(--teal);}
-  .lc-r-bb{box-shadow:inset 3px 0 0 var(--amber);}
-  .lc-r-sec{box-shadow:inset 3px 0 0 var(--line);}
   .lc-warn{color:var(--brick);margin-left:6px;cursor:help;}
   .lc-actual-line{font-size:11px;color:var(--muted);padding:5px 10px;border-bottom:1px solid var(--line);background:var(--panel-2);}
   .lc-actual-line strong{color:var(--gold);font-weight:700;}
@@ -249,12 +246,17 @@
   .lc-card-hdr .lc-proj{color:var(--gold);font-weight:700;}
   .lc-row{display:grid;grid-template-columns:32px 1fr 44px;gap:6px;align-items:center;padding:5px 10px;font-size:12px;border-bottom:1px solid var(--line);}
   .lc-row:last-child{border-bottom:none;}
-  .lc-pos{font-size:10px;font-weight:700;color:var(--muted);}
+  .lc-pos{font-size:10px;font-weight:700;color:var(--muted);text-align:center;padding:3px 0;border-radius:6px;}
+  .lc-pos.pos-QB{color:#E58A74;background:var(--brick-bg);}
+  .lc-pos.pos-RB{color:var(--green);background:var(--green-bg);}
+  .lc-pos.pos-WR{color:#7FB0EA;background:var(--blue-bg);}
+  .lc-pos.pos-TE{color:var(--amber);background:var(--amber-bg);}
+  .lc-pos.pos-FLEX{color:var(--violet);background:#221F36;}
+  .lc-pos.pos-DEF{color:#B4BCC8;background:var(--gray-bg);}
   .lc-name{color:var(--chalk);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .lc-sub{font-size:10px;color:var(--muted);}
   .lc-proj-val{text-align:right;color:var(--chalk);font-variant-numeric:tabular-nums;}
   .lc-empty{color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:3px 8px;text-align:center;font-size:11px;}
-  .lc-diff{background:rgba(212,175,55,.12);}
   .lc-card{cursor:pointer;}
   .lc-active{border-color:var(--gold);}
   .lc-rm{margin-left:6px;opacity:.5;cursor:pointer;}
@@ -4270,7 +4272,7 @@
       var rowsHtml = slotDefs.map(function(s){
         var p = lu[s.key];
         if (!p){
-          return '<div class="lc-row"><div class="lc-pos">'+s.label+'</div><div class="lc-empty">+ empty</div><div></div></div>';
+          return '<div class="lc-row"><div class="lc-pos pos-'+s.label.replace(/[^A-Za-z]/g,'')+'">'+s.label+'</div><div class="lc-empty">+ empty</div><div></div></div>';
         }
         var basePlayer = baseline ? baseline[s.key] : null;
         var differs = idx > 0 && (!basePlayer || basePlayer.id !== p.id);
@@ -4297,7 +4299,7 @@
           else if (r.t === 'bb'){ mk += '<span class="mk mk-b">BACK</span>'; rcls = ' lc-r-bb'; }
           else if (r.t === 'sec'){ mk += '<span class="mk mk-n">' + r.n + '</span>'; if (!rcls) rcls = ' lc-r-sec'; }
         });
-        return '<div class="lc-row'+(differs?' lc-diff':'')+rcls+'"><div class="lc-pos">'+s.label+'</div>'+
+        return '<div class="lc-row"><div class="lc-pos pos-'+s.label.replace(/[^A-Za-z]/g,'')+'">'+s.label+'</div>'+
           '<div><div class="lc-name" title="'+p.name+'"><span class="lc-nm">'+p.name+'</span>'+mk+'</div><div class="lc-sub">'+p.team+(oppText?(' '+oppText):'')+' &middot; '+money(rowSalary)+'</div></div>'+
           '<div class="lc-proj-val">'+rowProj.toFixed(1)+rowActualHtml+rmBtn+'</div></div>';
       }).join('');
