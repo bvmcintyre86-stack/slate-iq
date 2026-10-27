@@ -221,7 +221,18 @@
   .lc-best .lc-card-hdr{background:linear-gradient(90deg, var(--amber-bg), var(--panel-2));}
   .lc-best-badge{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--gold);font-weight:700;margin-left:6px;}
   .lc-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);font-size:12px;}
-  .lc-construction{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;padding:4px 10px;border-bottom:1px solid var(--line);}
+  .lc-construction{padding:7px 10px;border-bottom:1px solid var(--line);}
+  .cs-wrap{display:flex;flex-direction:column;gap:6px;margin-bottom:6px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:8px;}
+  .cs-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;}
+  .cs-row + .cs-row{margin-top:5px;}
+  .cs-row.cs-top{align-items:flex-start;}
+  .cs-k{width:34px;flex-shrink:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);}
+  .cs-stack{font-size:12px;font-weight:700;padding:2px 9px;border-radius:10px;white-space:nowrap;}
+  .cs-bb{font-size:11px;font-weight:600;color:var(--green);white-space:nowrap;}
+  .cs-list{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;}
+  .cs-item{display:flex;align-items:baseline;gap:8px;font-size:12px;min-width:0;}
+  .cs-kind{flex:0 0 78px;font-size:10px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.03em;white-space:nowrap;}
+  .cs-names{color:var(--chalk);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .lc-actual-line{font-size:11px;color:var(--muted);padding:5px 10px;border-bottom:1px solid var(--line);background:var(--panel-2);}
   .lc-actual-line strong{color:var(--gold);font-weight:700;}
   .lc-card-hdr .lc-idx{font-weight:700;color:var(--chalk);}
@@ -598,7 +609,7 @@
 
       <div class="bar-divider"></div>
 
-      <div class="field-inline" id="stackSettings" style="align-self:center;margin-top:auto;margin-bottom:auto;">
+      <div class="field-inline" id="stackSettings" style="align-self:center;margin-top:auto;margin-bottom:auto;align-items:flex-end;">
         <div class="field">
           <label>Stack level</label>
           <select id="stackLevelSel" style="width:23ch;">
@@ -632,13 +643,6 @@
 
       <div class="bar-divider"></div>
 
-      <div style="display:flex;flex-direction:column;gap:8px;align-self:center;margin-top:auto;margin-bottom:auto;">
-        <button id="optimizeBtn" class="primary">Optimize remaining</button>
-        <button id="clearLineupBtn">Clear lineup</button>
-      </div>
-
-      <div class="bar-divider"></div>
-
       <div style="display:flex;align-items:center;gap:10px;align-self:center;margin-top:auto;margin-bottom:auto;">
         <span class="bar-group-label">Bulk build</span>
         <input id="bulkCountInput" type="number" min="1" max="200" value="5" style="width:46px;">
@@ -648,8 +652,7 @@
         </div>
       </div>
 
-      <div class="bar-divider"></div>
-      <label class="stack-chk" title="When on, Optimize and Generate lineups only ever pick from Top Players - a slot with no eligible Top Players option is left unfilled rather than reaching into the rest of the pool.">
+      <label class="stack-chk" style="flex-basis:100%;" title="When on, Generate lineups only ever pick from Top Players - a slot with no eligible Top Players option is left unfilled rather than reaching into the rest of the pool.">
         <input type="checkbox" id="restrictToTopPlayersChk"> Only use Top Players
       </label>
     </div>
@@ -3481,22 +3484,24 @@
       if (qbEntry){ skipTeams[qbEntry.player.team] = true; if (qbEntry.player.oppTeam) skipTeams[qbEntry.player.oppTeam] = true; }
       var sp = filled.map(function(f){ return f.player; }).filter(function(pl){ return pl.position !== 'QB' && !skipTeams[pl.team]; });
       var seenSec = {};
-      var addSec = function(label, a, b){
+      result.secondaryItems = [];
+      var addSec = function(label, a, b, pa, pb){
         var ids = (b && b !== a) ? [a, b].sort().join('/') : a, k = label + '|' + ids;
         if (seenSec[k]) return; seenSec[k] = true;
         result.secondary.push(label + ' ' + ids);
+        result.secondaryItems.push({ kind: label, a: pa, b: pb });
       };
       var isPC = function(q){ return q.position === 'WR' || q.position === 'TE'; };
       sp.forEach(function(a){
         sp.forEach(function(b){
           if (a.id === b.id) return;
           if (a.position === 'RB'){
-            if (b.position === 'DEF' && b.team === a.team) addSec('RB+DEF', a.team);
-            if (isPC(b) && b.team === a.team) addSec('RB+WR/TE', a.team);
-            if (isPC(b) && a.oppTeam && b.team === a.oppTeam) addSec('RB+opp WR/TE', a.team, b.team);
-            if (b.position === 'RB' && a.oppTeam && b.team === a.oppTeam) addSec('RB+opp RB', a.team, b.team);
+            if (b.position === 'DEF' && b.team === a.team) addSec('RB+DEF', a.team, null, a, b);
+            if (isPC(b) && b.team === a.team) addSec('RB+WR/TE', a.team, null, a, b);
+            if (isPC(b) && a.oppTeam && b.team === a.oppTeam) addSec('RB+opp WR/TE', a.team, b.team, a, b);
+            if (b.position === 'RB' && a.oppTeam && b.team === a.oppTeam) addSec('RB+opp RB', a.team, b.team, a, b);
           }
-          if (a.position === 'WR' && isPC(b) && a.oppTeam && b.team === a.oppTeam) addSec('WR+opp WR/TE', a.team, b.team);
+          if (a.position === 'WR' && isPC(b) && a.oppTeam && b.team === a.oppTeam) addSec('WR+opp WR/TE', a.team, b.team, a, b);
         });
       });
       result.warnings = [];
@@ -3542,9 +3547,6 @@
     } else if (qbEntry){
       result.label = 'Naked QB (' + qbEntry.player.team + ', no stack)';
     }
-    if (slateMode === 'main' && result.secondary.length){
-      result.label += ' \u00b7 2nd: ' + result.secondary.slice(0, 3).join(', ') + (result.secondary.length > 3 ? ' +' + (result.secondary.length - 3) + ' more' : '');
-    }
 
     return result;
   }
@@ -3557,13 +3559,38 @@
     return { color: 'var(--muted)', bg: 'var(--panel-2)' };
   }
 
+  function lastName(n){
+    var parts = String(n).trim().split(/\s+/).filter(function(x){ return !/^(jr\.?|sr\.?|ii|iii|iv|v)$/i.test(x); });
+    return parts[parts.length - 1] || n;
+  }
+  function secPlayerText(q){ return q.position === 'DEF' ? q.team + ' D' : lastName(q.name); }
+  // Stack and secondary stacks as labelled rows instead of one long string.
+  function constructionRowsHtml(c){
+    var colors = constructionBadgeColor(c);
+    var stackText, stackSub = '';
+    if (c.onslaught || c.shootoutBuild || !c.stackTeam){ stackText = c.label; }
+    else {
+      stackText = c.stackTeam + ' &middot; QB+' + c.stackCount;
+      if (c.stackCount === 0) stackText = c.stackTeam + ' &middot; QB only';
+      if (c.bringBack) stackSub = '<span class="cs-bb">&harr; ' + c.bringBackTeam + ' bring-back</span>';
+    }
+    var html = '<div class="cs-row"><span class="cs-k">Stack</span><span class="cs-stack" style="color:'+colors.color+';background:'+colors.bg+';">'+stackText+'</span>'+stackSub+'</div>';
+    if (c.secondaryItems && c.secondaryItems.length){
+      html += '<div class="cs-row cs-top"><span class="cs-k">2nd</span><div class="cs-list">' +
+        c.secondaryItems.map(function(it){
+          var names = it.b ? secPlayerText(it.a) + ' + ' + secPlayerText(it.b) : secPlayerText(it.a);
+          return '<div class="cs-item"><span class="cs-kind">' + it.kind.replace('WR/TE','WR/TE') + '</span><span class="cs-names">' + names + '</span></div>';
+        }).join('') + '</div></div>';
+    }
+    return html;
+  }
+
   function renderConstructionBadge(){
     var el = document.getElementById('constructionBadge');
     if (!el) return;
     var c = lineupConstruction();
     if (!c){ el.innerHTML = ''; return; }
-    var colors = constructionBadgeColor(c);
-    var html = '<span class="cb-main" style="color:'+colors.color+';background:'+colors.bg+';">'+c.label+'</span>';
+    var html = '<div class="cs-wrap">' + constructionRowsHtml(c) + '</div>';
     if (c.defClash){ html += '<span class="cb-note" style="color:var(--brick);">DEF faces one of your own players - that pairing works against you.</span>'; }
     if (c.warnings && c.warnings.length){ html += '<span class="cb-note" style="color:var(--brick);">' + c.warnings.join('; ') + '.</span>'; }
     if (c.envNote){ html += '<span class="cb-note">'+c.envNote.note+'</span>'; }
@@ -4254,8 +4281,7 @@
       var construction = lineupConstruction(lu);
       var constructionHtml = '';
       if (construction){
-        var cColors = constructionBadgeColor(construction);
-        constructionHtml = '<div class="lc-construction" style="color:'+cColors.color+';background:'+cColors.bg+';">'+construction.label+'</div>';
+        constructionHtml = '<div class="lc-construction">' + constructionRowsHtml(construction) + '</div>';
       }
 
       var cc = computed[idx];
@@ -6751,7 +6777,6 @@
     });
   });
 
-  document.getElementById('optimizeBtn').addEventListener('click', optimizeRemaining);
   document.getElementById('bulkGenerateBtn').addEventListener('click', function(){
     var n = parseInt(document.getElementById('bulkCountInput').value, 10);
     bulkGenerateLineups(n);
@@ -6851,7 +6876,6 @@
     rd.readAsText(f);
     this.value = '';
   });
-  document.getElementById('clearLineupBtn').addEventListener('click', clearLineup);
   // copyLineupBtn removed from the UI per request - copyLineup() itself is
   // left defined but unused, in case it's wanted again later.
   document.getElementById('capInput').addEventListener('change', function(){
