@@ -221,18 +221,27 @@
   .lc-best .lc-card-hdr{background:linear-gradient(90deg, var(--amber-bg), var(--panel-2));}
   .lc-best-badge{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--gold);font-weight:700;margin-left:6px;}
   .lc-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);font-size:12px;}
-  .lc-construction{padding:7px 10px;border-bottom:1px solid var(--line);min-height:var(--lc-cs-h,140px);box-sizing:border-box;}
-  .cs-wrap{display:flex;flex-direction:column;gap:6px;margin-bottom:6px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:8px;}
-  .cs-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;}
-  .cs-row + .cs-row{margin-top:5px;}
-  .cs-row.cs-top{align-items:flex-start;}
+  .lc-construction{padding:8px 10px 6px;border-bottom:1px solid var(--line);min-height:var(--lc-cs-h,152px);box-sizing:border-box;}
+  .cs-row{display:flex;align-items:center;gap:6px;min-height:21px;font-size:12px;}
   .cs-k{width:34px;flex-shrink:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);}
-  .cs-stack{font-size:12px;font-weight:700;padding:2px 9px;border-radius:10px;white-space:nowrap;}
-  .cs-bb{font-size:11px;font-weight:600;color:var(--green);white-space:nowrap;}
-  .cs-list{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;}
-  .cs-item{display:flex;align-items:baseline;gap:8px;font-size:12px;min-width:0;}
-  .cs-kind{flex:0 0 78px;font-size:10px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.03em;white-space:nowrap;}
-  .cs-names{color:var(--chalk);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cs-team{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;flex-shrink:0;}
+  .cs-team-bb{color:var(--amber);background:var(--amber-bg);}
+  .cs-stack{font-size:12px;font-weight:700;padding:2px 9px;border-radius:10px;}
+  .cs-names{color:var(--chalk);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  .cs-names b{font-weight:700;}
+  .cs-none{color:var(--muted);font-size:11px;font-style:italic;}
+  .cs-num{width:16px;height:16px;border-radius:50%;background:var(--teal-bg);color:var(--teal);font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .cs-kind{font-size:9px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.03em;margin-right:3px;}
+  .lc-name{display:flex;align-items:center;gap:4px;min-width:0;}
+  .lc-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  .mk{flex-shrink:0;font-size:9px;font-weight:700;border-radius:8px;padding:0 5px;line-height:15px;}
+  .mk-s{color:var(--teal);background:var(--teal-bg);}
+  .mk-b{color:var(--amber);background:var(--amber-bg);}
+  .mk-n{color:var(--teal);background:var(--teal-bg);min-width:15px;text-align:center;padding:0 3px;}
+  .lc-r-stack{box-shadow:inset 3px 0 0 var(--teal);}
+  .lc-r-bb{box-shadow:inset 3px 0 0 var(--amber);}
+  .lc-r-sec{box-shadow:inset 3px 0 0 var(--line);}
+  .lc-warn{color:var(--brick);margin-left:6px;cursor:help;}
   .lc-actual-line{font-size:11px;color:var(--muted);padding:5px 10px;border-bottom:1px solid var(--line);background:var(--panel-2);}
   .lc-actual-line strong{color:var(--gold);font-weight:700;}
   .lc-card-hdr .lc-idx{font-weight:700;color:var(--chalk);}
@@ -656,7 +665,6 @@
         <input type="checkbox" id="restrictToTopPlayersChk"> Only use Top Players
       </label>
     </div>
-    <div class="construction-badge" id="constructionBadge"></div>
     <div class="lineup-msg" id="lineupMsg"></div>
     <div id="exposureTrackerView"></div>
     <div id="lineupCompareView"></div>
@@ -3452,6 +3460,7 @@
       onslaught: false, onslaughtTeam: null,
       shootoutBuild: false,
       envNote: null,
+      stackPlayers: [], bbPlayers: [], roles: {},
       label: 'No stack'
     };
 
@@ -3463,6 +3472,9 @@
           ['WR','TE','RB'].indexOf(f.player.position) !== -1;
       });
       result.stackCount = passCatchers.length;
+      result.stackPlayers = passCatchers.map(function(f){ return f.player; });
+      result.roles[qb.id] = (result.roles[qb.id] || []).concat([{ t: 'qb' }]);
+      result.stackPlayers.forEach(function(q){ result.roles[q.id] = (result.roles[q.id] || []).concat([{ t: 'stack' }]); });
       result.stackTeam = qb.team;
       // Reverted to requiring the QB's own opponent specifically, per the
       // tournament-winning-lineup study - a true bring-back is a same-game
@@ -3472,7 +3484,10 @@
         result.bringBack = bb.length > 0;
         result.bringBackTeam = qb.oppTeam;
         result.bringBackCount = bb.length;
+        result.bbPlayers = bb.map(function(f){ return f.player; }).filter(function(q){ return q.position !== 'DEF'; });
+        result.bbPlayers.forEach(function(q){ result.roles[q.id] = (result.roles[q.id] || []).concat([{ t: 'bb' }]); });
       }
+      result.qbName = lastName(qb.name);
       if (qb.tag && TAGS[qb.tag]) result.envNote = TAGS[qb.tag];
     }
 
@@ -3503,6 +3518,9 @@
           }
           if (a.position === 'WR' && isPC(b) && a.oppTeam && b.team === a.oppTeam) addSec('WR+opp WR/TE', a.team, b.team, a, b);
         });
+      });
+      result.secondaryItems.slice(0, 3).forEach(function(it, ix){
+        [it.a, it.b].forEach(function(q){ if (q) result.roles[q.id] = (result.roles[q.id] || []).concat([{ t: 'sec', n: ix + 1 }]); });
       });
       result.warnings = [];
       var rbTeams = {}, posTeams = {};
@@ -3567,35 +3585,32 @@
   // Stack and secondary stacks as labelled rows instead of one long string.
   function constructionRowsHtml(c){
     var colors = constructionBadgeColor(c);
-    var stackText, stackSub = '';
-    if (c.onslaught || c.shootoutBuild || !c.stackTeam){ stackText = c.label; }
-    else {
-      stackText = c.stackTeam + ' &middot; QB+' + c.stackCount;
-      if (c.stackCount === 0) stackText = c.stackTeam + ' &middot; QB only';
-      if (c.bringBack) stackSub = '<span class="cs-bb">&harr; ' + c.bringBackTeam + ' bring-back</span>';
+    var names = function(arr){ return arr.length ? arr.map(secPlayerText).join(' &middot; ') : ''; };
+    var html = '';
+    if (c.onslaught || c.shootoutBuild || !c.stackTeam){
+      html += '<div class="cs-row"><span class="cs-k">Build</span><span class="cs-stack" style="color:'+colors.color+';background:'+colors.bg+';">'+c.label+'</span></div>';
+    } else {
+      html += '<div class="cs-row"><span class="cs-k">Stack</span><span class="cs-team" style="color:'+colors.color+';background:'+colors.bg+';">'+c.stackTeam+'</span>' +
+        '<span class="cs-names">' + (c.qbName ? '<b>' + c.qbName + '</b>' : '') + (c.stackPlayers.length ? ' + ' + names(c.stackPlayers) : '') + '</span></div>';
+      html += '<div class="cs-row">' + (c.bbPlayers.length
+        ? '<span class="cs-k">Back</span><span class="cs-team cs-team-bb">' + c.bringBackTeam + '</span><span class="cs-names">' + names(c.bbPlayers) + '</span>'
+        : '<span class="cs-k">Back</span><span class="cs-none">no bring-back</span>') + '</div>';
     }
-    var html = '<div class="cs-row"><span class="cs-k">Stack</span><span class="cs-stack" style="color:'+colors.color+';background:'+colors.bg+';">'+stackText+'</span>'+stackSub+'</div>';
     if (c.secondaryItems && c.secondaryItems.length){
-      html += '<div class="cs-row cs-top"><span class="cs-k">2nd</span><div class="cs-list">' +
-        c.secondaryItems.slice(0, 4).map(function(it){
-          var names = it.b ? secPlayerText(it.a) + ' + ' + secPlayerText(it.b) : secPlayerText(it.a);
-          return '<div class="cs-item"><span class="cs-kind">' + it.kind.replace('WR/TE','WR/TE') + '</span><span class="cs-names">' + names + '</span></div>';
-        }).join('') + (c.secondaryItems.length > 4 ? '<div class="cs-item"><span class="cs-kind">+' + (c.secondaryItems.length - 4) + ' more</span></div>' : '') + '</div></div>';
+      var items = c.secondaryItems.slice(0, 3).map(function(it, ix){
+        var nm = it.b ? secPlayerText(it.a) + ' + ' + secPlayerText(it.b) : secPlayerText(it.a);
+        return '<div class="cs-row"><span class="cs-k">' + (ix === 0 ? '2nd' : '') + '</span><span class="cs-num">' + (ix + 1) + '</span><span class="cs-names"><span class="cs-kind">' + it.kind + '</span> ' + nm + '</span></div>';
+      }).join('');
+      html += items + (c.secondaryItems.length > 3 ? '<div class="cs-row"><span class="cs-k"></span><span class="cs-none">+' + (c.secondaryItems.length - 3) + ' more</span></div>' : '');
+    } else if (slateMode === 'main'){
+      html += '<div class="cs-row"><span class="cs-k">2nd</span><span class="cs-none">none</span></div>';
     }
     return html;
   }
 
-  function renderConstructionBadge(){
-    var el = document.getElementById('constructionBadge');
-    if (!el) return;
-    var c = lineupConstruction();
-    if (!c){ el.innerHTML = ''; return; }
-    var html = '<div class="cs-wrap">' + constructionRowsHtml(c) + '</div>';
-    if (c.defClash){ html += '<span class="cb-note" style="color:var(--brick);">DEF faces one of your own players - that pairing works against you.</span>'; }
-    if (c.warnings && c.warnings.length){ html += '<span class="cb-note" style="color:var(--brick);">' + c.warnings.join('; ') + '.</span>'; }
-    if (c.envNote){ html += '<span class="cb-note">'+c.envNote.note+'</span>'; }
-    el.innerHTML = html;
-  }
+
+  function renderConstructionBadge(){ /* the live box was removed; cards carry this info now */ }
+
 
   var TEAM_ALIASES = {
     'JAX':'JAC', 'WSH':'WAS', 'WFT':'WAS',
@@ -4250,6 +4265,8 @@
       var totalSalary = computed[idx].totalSalary;
       var totalProj = computed[idx].totalProj;
 
+      var construction = lineupConstruction(lu);
+      var rolesMap = (construction && construction.roles) || {};
       var rowsHtml = slotDefs.map(function(s){
         var p = lu[s.key];
         if (!p){
@@ -4273,13 +4290,22 @@
           var raColor = rowActual >= rowProj ? 'var(--teal)' : 'var(--brick)';
           rowActualHtml = '<div style="color:'+raColor+';font-size:11px;">'+rowActual.toFixed(1)+'</div>';
         }
-        return '<div class="lc-row'+(differs?' lc-diff':'')+'"><div class="lc-pos">'+s.label+'</div>'+
-          '<div><div class="lc-name" title="'+p.name+'">'+p.name+'</div><div class="lc-sub">'+p.team+(oppText?(' '+oppText):'')+' &middot; '+money(rowSalary)+'</div></div>'+
+        var rls = rolesMap[p.id] || [], mk = '', rcls = '';
+        rls.forEach(function(r){
+          if (r.t === 'qb'){ mk += '<span class="mk mk-s">QB</span>'; rcls = ' lc-r-stack'; }
+          else if (r.t === 'stack'){ mk += '<span class="mk mk-s">STACK</span>'; rcls = ' lc-r-stack'; }
+          else if (r.t === 'bb'){ mk += '<span class="mk mk-b">BACK</span>'; rcls = ' lc-r-bb'; }
+          else if (r.t === 'sec'){ mk += '<span class="mk mk-n">' + r.n + '</span>'; if (!rcls) rcls = ' lc-r-sec'; }
+        });
+        return '<div class="lc-row'+(differs?' lc-diff':'')+rcls+'"><div class="lc-pos">'+s.label+'</div>'+
+          '<div><div class="lc-name" title="'+p.name+'"><span class="lc-nm">'+p.name+'</span>'+mk+'</div><div class="lc-sub">'+p.team+(oppText?(' '+oppText):'')+' &middot; '+money(rowSalary)+'</div></div>'+
           '<div class="lc-proj-val">'+rowProj.toFixed(1)+rowActualHtml+rmBtn+'</div></div>';
       }).join('');
 
-      var construction = lineupConstruction(lu);
       var constructionHtml = '';
+      var warnList = construction ? (construction.warnings || []).slice() : [];
+      if (construction && construction.defClash) warnList.push('DEF faces one of your own players');
+      var warnHtml = warnList.length ? ' <span class="lc-warn" title="'+warnList.join('; ').replace(/"/g,'')+'">&#9888;</span>' : '';
       if (construction){
         constructionHtml = '<div class="lc-construction">' + constructionRowsHtml(construction) + '</div>';
       }
@@ -4295,7 +4321,7 @@
       }
 
       return '<div class="lc-card'+(isActive?' lc-active':'')+(isBest?' lc-best':'')+'" data-lc-card="'+idx+'">'+
-        '<div class="lc-card-hdr"><span class="lc-idx">Lineup '+(idx+1)+(isActive?' (editing)':'')+(isBest?'<span class="lc-best-badge">&#9733; Best</span>':'')+'</span>'+
+        '<div class="lc-card-hdr"><span class="lc-idx">Lineup '+(idx+1)+(isActive?' (editing)':'')+(isBest?'<span class="lc-best-badge">&#9733; Best</span>':'')+warnHtml+'</span>'+
         '<span class="lc-salary">'+money(totalSalary)+'</span>'+
         scoreHtml+'</div>'+
         actualLineHtml+
