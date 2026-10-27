@@ -5071,6 +5071,14 @@
         }, 0);
         var affordableQbs = qbCandidates.filter(function(p){ return p.salary + otherSlotsMinCost <= salaryCap; });
         var qbPool = affordableQbs.length ? affordableQbs : qbCandidates;
+        // With Bring-back on, favor QBs whose opponent actually has a WR available
+        // in the pool (a Top Players-only pool often has none for some games).
+        if (stackSettings.bringBack){
+          var withBB = qbPool.filter(function(q){
+            return q.oppTeam && pool.some(function(p){ return p.team === q.oppTeam && p.position === 'WR' && !picks[p.id]; });
+          });
+          if (withBB.length) qbPool = withBB;
+        }
 
         var bestQb = qbPool.reduce(function(m,p){ return playerScore(p) > playerScore(m) ? p : m; }, qbPool[0]);
         lineup.QB = bestQb;
@@ -5459,7 +5467,7 @@
     var stoppedEarly = false;
     var stoppedReason = '';
     for (var i = 0; i < n; i++){
-      var attempt = 0, sig, overCap, incomplete;
+      var attempt = 0, sig, overCap, incomplete, noBB;
       do {
         lineup = Object.assign({}, template); // fresh copy - locked slots intact, rest empty
         lineups[i] = lineup;
@@ -5469,6 +5477,14 @@
         sig = lineupSignature(lineup);
         overCap = salaryUsed() > salaryCap;
         var incomplete = restrictToTopPlayers && activeSLOT_DEFS.some(function(s){ return !lineup[s.key]; });
+        // Bring-back checked = every lineup must have one (a WR from the QB's
+        // opponent, and from Top Players when that restriction is on).
+        noBB = false;
+        if (slateMode === 'main' && stackSettings.bringBack && lineup.QB && lineup.QB.oppTeam &&
+            !(stackSettings.onslaughtOnly && lineup.QB.tag !== 'onslaught')){
+          var qOpp = lineup.QB.oppTeam;
+          noBB = !activeSLOT_DEFS.some(function(s2){ var q2 = lineup[s2.key]; return q2 && q2.team === qOpp && q2.position === 'WR'; });
+        }
         attempt++;
 
         // A lineup that's a duplicate, over the salary cap, OR left with an
@@ -5477,21 +5493,22 @@
         // doesn't undo anything, so this is the actual point where an
         // invalid/incomplete lineup would otherwise slip into the batch
         // unnoticed.
-        if ((seenSignatures[sig] || overCap || incomplete) && attempt <= 15){
+        if ((seenSignatures[sig] || overCap || incomplete || noBB) && attempt <= 15){
           activeSLOT_DEFS.forEach(function(s){
             var p = lineup[s.key];
             var wasLocked = !!template[s.key];
             if (p && !wasLocked) exposureCount[p.id] = (exposureCount[p.id] || 0) + 25;
           });
         }
-      } while ((seenSignatures[sig] || overCap || incomplete) && attempt <= 15);
+      } while ((seenSignatures[sig] || overCap || incomplete || noBB) && attempt <= 15);
 
-      if (seenSignatures[sig] || overCap || incomplete){
+      if (seenSignatures[sig] || overCap || incomplete || noBB){
         // Couldn't find a genuinely unique, cap-legal, fully-complete lineup
         // after 15 retries. Stop here rather than pad the batch out with an
         // invalid or incomplete one.
         stoppedEarly = true;
-        stoppedReason = overCap ? 'stayed over the salary cap'
+        stoppedReason = noBB ? 'had no bring-back WR' + (lineup.QB && lineup.QB.oppTeam ? ' (' + lineup.QB.oppTeam + ')' : '') + (restrictToTopPlayers ? ' in your Top Players' : ' available')
+          : overCap ? 'stayed over the salary cap'
           : incomplete ? 'couldn\'t fill every slot from Top Players alone'
           : 'kept duplicating an existing lineup';
         break;
@@ -5516,6 +5533,18 @@
     exposureCount = {}; // clear so a later single-lineup Optimize isn't affected
     secComboUse = {}; secTeamUse = {};
 
+    var bbNote = '';
+    if (slateMode === 'main' && stackSettings.bringBack && newLineups.length){
+      var missingBB = {}, missCount = 0;
+      newLineups.forEach(function(lu){
+        var c = lineupConstruction(lu);
+        if (c && c.stackTeam && !c.bringBack){ missCount++; missingBB[c.bringBackTeam || (lu.QB && lu.QB.oppTeam) || '?'] = true; }
+      });
+      if (missCount){
+        bbNote = ' ' + missCount + ' of them have no bring-back (no ' + Object.keys(missingBB).join('/') + ' WR available' +
+          (restrictToTopPlayers ? ' in Top Players - add one, or untick "Only use Top Players"' : ' in the pool') + ').';
+      }
+    }
     var msg;
     if (stoppedEarly){
       msg = 'Generated ' + newLineups.length + ' of the ' + n + ' requested lineup' + (n>1?'s':'') +
@@ -5523,7 +5552,7 @@
     } else {
       msg = 'Generated ' + newLineups.length + ' lineup' + (newLineups.length>1?'s':'') + '.';
     }
-    setMsg(msg);
+    setMsg(msg + bbNote);
     saveState();
     renderLuTabs();
     refreshLineupUI();
