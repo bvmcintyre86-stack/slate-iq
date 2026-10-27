@@ -221,7 +221,7 @@
   .lc-best .lc-card-hdr{background:linear-gradient(90deg, var(--amber-bg), var(--panel-2));}
   .lc-best-badge{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--gold);font-weight:700;margin-left:6px;}
   .lc-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);font-size:12px;}
-  .lc-construction{padding:7px 10px;border-bottom:1px solid var(--line);}
+  .lc-construction{padding:7px 10px;border-bottom:1px solid var(--line);min-height:var(--lc-cs-h,140px);box-sizing:border-box;}
   .cs-wrap{display:flex;flex-direction:column;gap:6px;margin-bottom:6px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:8px;}
   .cs-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;}
   .cs-row + .cs-row{margin-top:5px;}
@@ -3577,10 +3577,10 @@
     var html = '<div class="cs-row"><span class="cs-k">Stack</span><span class="cs-stack" style="color:'+colors.color+';background:'+colors.bg+';">'+stackText+'</span>'+stackSub+'</div>';
     if (c.secondaryItems && c.secondaryItems.length){
       html += '<div class="cs-row cs-top"><span class="cs-k">2nd</span><div class="cs-list">' +
-        c.secondaryItems.map(function(it){
+        c.secondaryItems.slice(0, 4).map(function(it){
           var names = it.b ? secPlayerText(it.a) + ' + ' + secPlayerText(it.b) : secPlayerText(it.a);
           return '<div class="cs-item"><span class="cs-kind">' + it.kind.replace('WR/TE','WR/TE') + '</span><span class="cs-names">' + names + '</span></div>';
-        }).join('') + '</div></div>';
+        }).join('') + (c.secondaryItems.length > 4 ? '<div class="cs-item"><span class="cs-kind">+' + (c.secondaryItems.length - 4) + ' more</span></div>' : '') + '</div></div>';
     }
     return html;
   }
