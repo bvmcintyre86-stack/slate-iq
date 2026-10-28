@@ -221,7 +221,7 @@
   .lc-best .lc-card-hdr{background:linear-gradient(90deg, var(--amber-bg), var(--panel-2));}
   .lc-best-badge{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--gold);font-weight:700;margin-left:6px;}
   .lc-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);font-size:12px;}
-  .lc-construction{padding:8px 10px 6px;border-bottom:1px solid var(--line);min-height:var(--lc-cs-h,152px);box-sizing:border-box;}
+  .lc-construction{padding:8px 10px 6px;border-bottom:1px solid var(--line);box-sizing:border-box;}
   .cs-row{display:flex;align-items:center;gap:6px;min-height:21px;font-size:12px;}
   .cs-k{width:34px;flex-shrink:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);}
   .cs-team{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;flex-shrink:0;}
@@ -231,6 +231,7 @@
   .cs-names b{font-weight:700;}
   .cs-none{color:var(--muted);font-size:11px;font-style:italic;}
   .cs-num{width:16px;height:16px;border-radius:50%;background:var(--teal-bg);color:var(--teal);font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .cs-num-off{background:var(--panel-2);color:var(--muted);}
   .cs-kind{font-size:9px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.03em;margin-right:3px;}
   .lc-name{display:flex;align-items:center;gap:4px;min-width:0;}
   .lc-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
@@ -3521,7 +3522,7 @@
           if (a.position === 'WR' && isPC(b) && a.oppTeam && b.team === a.oppTeam) addSec('WR+opp WR/TE', a.team, b.team, a, b);
         });
       });
-      result.secondaryItems.slice(0, 3).forEach(function(it, ix){
+      result.secondaryItems.slice(0, 2).forEach(function(it, ix){
         [it.a, it.b].forEach(function(q){ if (q) result.roles[q.id] = (result.roles[q.id] || []).concat([{ t: 'sec', n: ix + 1 }]); });
       });
       result.warnings = [];
@@ -3598,14 +3599,19 @@
         ? '<span class="cs-k">Back</span><span class="cs-team cs-team-bb">' + c.bringBackTeam + '</span><span class="cs-names">' + names(c.bbPlayers) + '</span>'
         : '<span class="cs-k">Back</span><span class="cs-none">no bring-back</span>') + '</div>';
     }
-    if (c.secondaryItems && c.secondaryItems.length){
-      var items = c.secondaryItems.slice(0, 3).map(function(it, ix){
-        var nm = it.b ? secPlayerText(it.a) + ' + ' + secPlayerText(it.b) : secPlayerText(it.a);
-        return '<div class="cs-row"><span class="cs-k">' + (ix === 0 ? '2nd' : '') + '</span><span class="cs-num">' + (ix + 1) + '</span><span class="cs-names"><span class="cs-kind">' + it.kind + '</span> ' + nm + '</span></div>';
-      }).join('');
-      html += items + (c.secondaryItems.length > 3 ? '<div class="cs-row"><span class="cs-k"></span><span class="cs-none">+' + (c.secondaryItems.length - 3) + ' more</span></div>' : '');
-    } else if (slateMode === 'main'){
-      html += '<div class="cs-row"><span class="cs-k">2nd</span><span class="cs-none">none</span></div>';
+    if (slateMode === 'main'){
+      var list = c.secondaryItems || [];
+      for (var ix = 0; ix < 2; ix++){
+        var it = list[ix], inner;
+        if (it){
+          var nm = it.b ? secPlayerText(it.a) + ' + ' + secPlayerText(it.b) : secPlayerText(it.a);
+          inner = '<span class="cs-num">' + (ix + 1) + '</span><span class="cs-names"><span class="cs-kind">' + it.kind + '</span> ' + nm +
+            (ix === 1 && list.length > 2 ? ' <span class="cs-none">+' + (list.length - 2) + ' more</span>' : '') + '</span>';
+        } else {
+          inner = '<span class="cs-num cs-num-off">' + (ix + 1) + '</span><span class="cs-none">' + (ix === 0 ? 'no secondary stack' : 'none') + '</span>';
+        }
+        html += '<div class="cs-row"><span class="cs-k">' + (ix === 0 ? '2nd' : '') + '</span>' + inner + '</div>';
+      }
     }
     return html;
   }
