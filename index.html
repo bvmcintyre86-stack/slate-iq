@@ -231,6 +231,7 @@
   .cs-names b{font-weight:700;}
   .cs-none{color:var(--muted);font-size:11px;font-style:italic;}
   .cs-num{width:16px;height:16px;border-radius:50%;background:var(--teal-bg);color:var(--teal);font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .cs-more{color:var(--muted);font-size:11px;font-style:italic;cursor:help;text-decoration:underline dotted;}
   .cs-num-off{background:var(--panel-2);color:var(--muted);}
   .cs-kind{font-size:9px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.03em;margin-right:3px;}
   .lc-name{display:flex;align-items:center;gap:4px;min-width:0;}
@@ -3606,7 +3607,7 @@
         if (it){
           var nm = it.b ? secPlayerText(it.a) + ' + ' + secPlayerText(it.b) : secPlayerText(it.a);
           inner = '<span class="cs-num">' + (ix + 1) + '</span><span class="cs-names"><span class="cs-kind">' + it.kind + '</span> ' + nm +
-            (ix === 1 && list.length > 2 ? ' <span class="cs-none">+' + (list.length - 2) + ' more</span>' : '') + '</span>';
+            (ix === 1 && list.length > 2 ? ' <span class="cs-more" title="' + list.slice(2).map(function(x, k){ return (k + 3) + '. ' + x.kind + ': ' + (x.b ? secPlayerText(x.a) + ' + ' + secPlayerText(x.b) : secPlayerText(x.a)); }).join('&#10;') + '">+' + (list.length - 2) + ' more</span>' : '') + '</span>';
         } else {
           inner = '<span class="cs-num cs-num-off">' + (ix + 1) + '</span><span class="cs-none">' + (ix === 0 ? 'no secondary stack' : 'none') + '</span>';
         }
