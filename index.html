@@ -235,6 +235,18 @@
   .cs-num-off{background:var(--panel-2);color:var(--muted);}
   .cs-kind{font-size:9px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.03em;margin-right:3px;}
   .lc-name{display:flex;align-items:center;gap:4px;min-width:0;}
+  [data-gl]{cursor:help;}
+  #glTip{position:fixed;z-index:9999;display:none;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.45);padding:10px 12px;font-size:12px;color:var(--chalk);max-width:92vw;}
+  #glTip .gl-h{display:flex;justify-content:space-between;gap:16px;margin-bottom:6px;}
+  #glTip .gl-h b{font-size:13px;}
+  #glTip .gl-h span{color:var(--muted);font-size:11px;}
+  #glTip table{border-collapse:collapse;font-variant-numeric:tabular-nums;}
+  #glTip th{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;text-align:right;border-bottom:1px solid var(--line);}
+  #glTip td{padding:2px 8px;text-align:right;white-space:nowrap;}
+  #glTip th:first-child,#glTip td:first-child,#glTip th:nth-child(2),#glTip td:nth-child(2){text-align:left;}
+  #glTip tr.gl-off td{color:var(--muted);}
+  #glTip tr.gl-avg td{border-top:1px solid var(--line);font-weight:700;color:var(--gold);}
+  #glTip td.gl-fp{color:var(--gold);font-weight:700;}
   .lc-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
   .mk{flex-shrink:0;font-size:9px;font-weight:700;border-radius:8px;padding:0 5px;line-height:15px;}
   .mk-s{color:var(--teal);background:var(--teal-bg);}
@@ -700,6 +712,7 @@
 </div>
 
 <script src="nfl_rosters_2026.js"></script>
+<script src="gamelogs_2026.js" onerror="void 0"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script>
 (function(){
@@ -4307,7 +4320,7 @@
           else if (r.t === 'sec'){ mk += '<span class="mk mk-n">' + r.n + '</span>'; if (!rcls) rcls = ' lc-r-sec'; }
         });
         return '<div class="lc-row"><div class="lc-pos pos-'+s.label.replace(/[^A-Za-z]/g,'')+'">'+s.label+'</div>'+
-          '<div><div class="lc-name" title="'+p.name+'"><span class="lc-nm">'+p.name+'</span>'+mk+'</div><div class="lc-sub">'+p.team+(oppText?(' '+oppText):'')+' &middot; '+money(rowSalary)+'</div></div>'+
+          '<div><div class="lc-name" title="'+p.name+'"><span class="lc-nm"'+glAttr(p)+'>'+p.name+'</span>'+mk+'</div><div class="lc-sub">'+p.team+(oppText?(' '+oppText):'')+' &middot; '+money(rowSalary)+'</div></div>'+
           '<div class="lc-proj-val">'+rowProj.toFixed(1)+rowActualHtml+rmBtn+'</div></div>';
       }).join('');
 
@@ -4721,7 +4734,7 @@
       return '<div class="slot-card filled'+mvpClass2+'">'+
         '<button class="slot-remove" data-slot="'+s.key+'" title="Remove">&times;</button>'+
         '<div class="slot-key">'+s.label+mvpLabel2+'</div>'+
-        '<div class="slot-name">'+p.name+'</div>'+
+        '<div class="slot-name"'+glAttr(p)+'>'+p.name+'</div>'+
         '<div class="slot-meta mono">'+p.team+' &middot; '+money(p.salary)+' &middot; '+p.fppg.toFixed(1)+' pts</div>'+
       '</div>';
     }).join('');
@@ -5746,7 +5759,7 @@
           (projSource === 'blend' ? ' (50/50 blend of fppg ' + p.fppg.toFixed(1) + ' and market avg)' : '') +
           ' - ' + (cmp ? combinedMarketProjectionNote(cmp) : 'no Unabated/Kalshi/Polymarket data yet for this player, falling back to fppg');
       return '<tr>'+
-        '<td style="text-align:left;">'+p.name+'</td>'+
+        '<td style="text-align:left;"'+glAttr(p)+'>'+p.name+'</td>'+
         '<td class="pos-pill">'+p.position+'</td>'+
         '<td class="mono">'+p.team+'</td>'+
         '<td class="num">'+money(p.salary)+'</td>'+
@@ -5848,6 +5861,94 @@
     });
   }
 
+
+  // ── Player game logs (hover) ──────────────────────────────────────────────
+  var glIndex = null;
+  function glBuild(){
+    glIndex = {};
+    if (typeof NFL_GAMELOGS === 'undefined') return;
+    Object.keys(NFL_GAMELOGS.players).forEach(function(k){
+      var e = NFL_GAMELOGS.players[k];
+      glIndex[normalizeName(e.n) + '|' + e.p] = e;
+    });
+  }
+  function glAttr(p){
+    if (!p || !p.name || p.position === 'DEF') return '';
+    return ' data-gl="' + String(p.name).replace(/"/g, '&quot;') + '|' + p.position + '|' + (p.team || '') + '"';
+  }
+  function glFind(name, pos, team){
+    if (!glIndex) glBuild();
+    var e = glIndex[normalizeName(name) + '|' + pos];
+    if (!e && pos === 'FLEX') e = glIndex[normalizeName(name) + '|RB'];
+    return e || null;
+  }
+  function glFpts(r, plat){
+    var cmp = r[2], att = r[3], pY = r[4], pT = r[5], it = r[6], ru = r[8], rT = r[9], rec = r[11], reY = r[12], reT = r[13], fl = r[14], two = r[15];
+    var pts = pY*0.04 + pT*4 - it + ru*0.1 + rT*6 + rec*(plat === 'dk' ? 1 : 0.5) + reY*0.1 + reT*6 - fl*(plat === 'dk' ? 1 : 2) + two*2;
+    if (plat === 'dk'){ if (pY >= 300) pts += 3; if (ru >= 100) pts += 3; if (reY >= 100) pts += 3; }
+    return pts;
+  }
+  var GL_COLS = {
+    QB: [['C/A', function(r){ return r[2] + '/' + r[3]; }, null], ['PaYd', 4], ['PaTD', 5], ['INT', 6], ['RuYd', 8], ['RuTD', 9]],
+    RB: [['Car', 7], ['RuYd', 8], ['RuTD', 9], ['Tgt', 10], ['Rec', 11], ['ReYd', 12], ['ReTD', 13]],
+    WR: [['Tgt', 10], ['Rec', 11], ['ReYd', 12], ['ReTD', 13], ['Car', 7], ['RuYd', 8]],
+    TE: [['Tgt', 10], ['Rec', 11], ['ReYd', 12], ['ReTD', 13]]
+  };
+  function glHtml(e){
+    var cols = GL_COLS[e.p] || GL_COLS.WR;
+    var through = NFL_GAMELOGS.meta.throughWeek;
+    var byWeek = {}; e.w.forEach(function(r){ byWeek[r[0]] = r; });
+    var head = '<tr><th>Wk</th><th>Opp</th>' + cols.map(function(c){ return '<th>' + c[0] + '</th>'; }).join('') + '<th>' + (platform === 'dk' ? 'DK' : 'FD') + ' Pts</th></tr>';
+    var body = '', sums = cols.map(function(){ return 0; }), fpSum = 0, g = 0;
+    for (var wk = 1; wk <= through; wk++){
+      var r = byWeek[wk];
+      if (!r){ body += '<tr class="gl-off"><td>' + wk + '</td><td>&mdash;</td>' + cols.map(function(){ return '<td></td>'; }).join('') + '<td></td></tr>'; continue; }
+      g++;
+      var fp = glFpts(r, platform); fpSum += fp;
+      body += '<tr><td>' + wk + '</td><td>' + r[1] + '</td>' + cols.map(function(c, ci){
+        if (c[2] === null){ return '<td>' + c[1](r) + '</td>'; }
+        sums[ci] += r[c[1]]; return '<td>' + r[c[1]] + '</td>';
+      }).join('') + '<td class="gl-fp">' + fp.toFixed(1) + '</td></tr>';
+    }
+    if (g){
+      body += '<tr class="gl-avg"><td>Avg</td><td>' + g + 'g</td>' + cols.map(function(c, ci){
+        return c[2] === null ? '<td></td>' : '<td>' + (sums[ci] / g).toFixed(1) + '</td>';
+      }).join('') + '<td>' + (fpSum / g).toFixed(1) + '</td></tr>';
+    }
+    return '<div class="gl-h"><b>' + e.n + '</b><span>' + e.t + ' &middot; ' + e.p + ' &middot; through Week ' + through + '</span></div><table>' + head + body + '</table>';
+  }
+  (function glWire(){
+    var tip = document.createElement('div'); tip.id = 'glTip'; document.body.appendChild(tip);
+    var cur = null;
+    function place(ev){
+      var pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+      var x = ev.clientX + pad, y = ev.clientY + pad;
+      if (x + w > window.innerWidth - 8) x = Math.max(8, ev.clientX - w - pad);
+      if (y + h > window.innerHeight - 8) y = Math.max(8, ev.clientY - h - pad);
+      tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    }
+    document.addEventListener('mouseover', function(ev){
+      var el = ev.target.closest ? ev.target.closest('[data-gl]') : null;
+      if (!el){ return; }
+      if (el === cur){ return; }
+      cur = el;
+      var parts = el.getAttribute('data-gl').split('|');
+      var e = (typeof NFL_GAMELOGS === 'undefined') ? null : glFind(parts[0], parts[1], parts[2]);
+      if (!e){
+        tip.innerHTML = '<div class="gl-h"><b>' + parts[0] + '</b></div><div style="color:var(--muted);">' +
+          (typeof NFL_GAMELOGS === 'undefined' ? 'gamelogs_2026.js not found next to this page.' : 'No game log yet this season.') + '</div>';
+      } else { tip.innerHTML = glHtml(e); }
+      tip.style.display = 'block'; place(ev);
+    });
+    document.addEventListener('mousemove', function(ev){ if (cur) place(ev); });
+    document.addEventListener('mouseout', function(ev){
+      if (!cur) return;
+      var to = ev.relatedTarget;
+      if (to && to.closest && to.closest('[data-gl]') === cur) return;
+      cur = null; tip.style.display = 'none';
+    });
+  })();
+
   // ── Load rosters ──────────────────────────────────────────────────────────
   function loadRosters(){
     if (typeof NFL_ROSTERS === 'undefined'){
@@ -5897,7 +5998,7 @@
       return '<td class="mono" style="color:'+color+';font-weight:'+(valueDelta<=0?'700':'400')+';">'+(valueDelta > 0 ? '+' : '')+valueDelta.toFixed(1)+'</td>';
     })();
     var matchupCells = renderMatchupCells(p);
-    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name">'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+kalshiCell+polymktCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+matchupCells+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
+    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name"'+glAttr(p)+'>'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+kalshiCell+polymktCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+matchupCells+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
   }
 
   // The two "extra separator" columns from nflverse matchup data: how the
