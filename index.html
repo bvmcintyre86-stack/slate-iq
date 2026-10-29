@@ -4867,13 +4867,14 @@
     unmatched: 0
   };
 
+  var scoreNoise = {};   // per-attempt random jitter so retries can reach different lineups
   function playerScore(p){
     var tier = p.tier || 0;
     var tierBonus = tier===1 ? 100 : tier===2 ? 50 : tier===3 ? 20 : 0;
     var rank = p.rank || 0;
     var exposurePenalty = (exposureCount[p.id] || 0) * EXPOSURE_PENALTY_PER_USE;
     var scriptBonus = SCRIPT_BONUS[p.tag] || 0;
-    return effectiveFppg(p) + tierBonus - (rank * 1.5) - exposurePenalty + scriptBonus;
+    return effectiveFppg(p) + tierBonus - (rank * 1.5) - exposurePenalty + scriptBonus + (scoreNoise[p.id] || 0);
   }
 
   // The "Market" number behind the Projection Source toggle - a simple
@@ -5034,6 +5035,93 @@
     return (p.position === 'WR' || p.position === 'TE') ? 10 : 0;
   }
 
+
+  // Single Game builder. The Main Slate optimizer is greedy and deterministic,
+  // which on a two-team pool kept landing on the same lineup (so a bulk build
+  // stopped after one or two). Here: many random starting lineups, each
+  // improved by single-swap hill-climbing on projected points (MVP counts
+  // 1.5x) while staying under the cap and near the salary floor. Exposure
+  // penalties and per-attempt jitter inside playerScore() steer each lineup
+  // in a batch somewhere new.
+  function sgFill(emptySlots, pool, fullPool){
+    var cap = salaryCap, floor = salaryCap - 300;
+    var used = {};
+    activeSLOT_DEFS.forEach(function(s){ if (lineup[s.key]) used[lineup[s.key].id] = true; });
+    var base = 0;
+    activeSLOT_DEFS.forEach(function(s){ if (lineup[s.key]) base += slotSalary(s, lineup[s.key]); });
+    var unfilled = [];
+    var slots = [], cands = {};
+    emptySlots.forEach(function(slot){
+      var c = pool.filter(function(p){ return slot.eligible.indexOf(p.position) !== -1 && !used[p.id] && slotSalary(slot, p) > 0; });
+      if (!c.length) c = fullPool.filter(function(p){ return slot.eligible.indexOf(p.position) !== -1 && !used[p.id] && slotSalary(slot, p) > 0; });
+      if (!c.length){ unfilled.push(slot.label); return; }
+      slots.push(slot); cands[slot.key] = c;
+    });
+    if (!slots.length){ setMsg(unfilled.length ? 'Could not fill: ' + unfilled.join(', ') : ''); refreshLineupUI(); return; }
+    var sc = {};
+    function pts(slot, p){ var k = slot.key + '|' + p.id; if (sc[k] === undefined) sc[k] = playerScore(p) * (slot.mvp ? 1.5 : 1); return sc[k]; }
+    var minSal = {}; slots.forEach(function(slot){ minSal[slot.key] = Math.min.apply(null, cands[slot.key].map(function(p){ return slotSalary(slot, p); })); });
+    function total(asg){ var t = base; slots.forEach(function(sl){ t += slotSalary(sl, asg[sl.key]); }); return t; }
+    function objective(asg){
+      var t = total(asg), v = 0;
+      slots.forEach(function(sl){ v += pts(sl, asg[sl.key]); });
+      return v - 10 * Math.max(0, floor - t);
+    }
+    function randomStart(){
+      var order = slots.slice().sort(function(){ return Math.random() - 0.5; });
+      var asg = {}, taken = {}, cur = base;
+      for (var i = 0; i < order.length; i++){
+        var sl = order[i], restMin = 0;
+        for (var j = i + 1; j < order.length; j++) restMin += minSal[order[j].key];
+        var ok = cands[sl.key].filter(function(p){ return !taken[p.id] && cur + slotSalary(sl, p) + restMin <= cap; });
+        if (!ok.length) return null;
+        var pick = ok[Math.floor(Math.random() * ok.length)];
+        asg[sl.key] = pick; taken[pick.id] = true; cur += slotSalary(sl, pick);
+      }
+      return asg;
+    }
+    function climb(asg){
+      var cur = objective(asg), rounds = 0, improved = true;
+      while (improved && rounds++ < 60){
+        improved = false;
+        var taken = {}; slots.forEach(function(sl){ taken[asg[sl.key].id] = true; });
+        var t0 = total(asg), best = null;
+        slots.forEach(function(sl){
+          var old = asg[sl.key];
+          cands[sl.key].forEach(function(p){
+            if (taken[p.id]) return;
+            var t1 = t0 - slotSalary(sl, old) + slotSalary(sl, p);
+            if (t1 > cap) return;
+            asg[sl.key] = p;
+            var v = objective(asg);
+            if (v > cur + 1e-9 && (!best || v > best.v)) best = { sl: sl, p: p, v: v };
+            asg[sl.key] = old;
+          });
+        });
+        if (best){ asg[best.sl.key] = best.p; cur = best.v; improved = true; }
+      }
+      return cur;
+    }
+    var bestAsg = null, bestV = -Infinity;
+    for (var trial = 0; trial < 40; trial++){
+      var a = randomStart();
+      if (!a) continue;
+      var v = climb(a);
+      if (v > bestV){ bestV = v; bestAsg = a; }
+    }
+    if (!bestAsg){
+      setMsg('Even the cheapest eligible players exceed the salary cap - check your player pool.');
+      refreshLineupUI();
+      return;
+    }
+    slots.forEach(function(sl){ lineup[sl.key] = bestAsg[sl.key]; });
+    var parts = [];
+    if (unfilled.length) parts.push('Could not fill: ' + unfilled.join(', '));
+    if (salaryUsed() < floor) parts.push('Could not reach the ' + money(floor) + ' salary floor - no higher-priced eligible replacements available.');
+    setMsg(parts.join(' '));
+    refreshLineupUI();
+  }
+
   function optimizeRemaining(){
     var emptySlots = activeSLOT_DEFS.filter(function(s){return !lineup[s.key];});
     // Use Top Players as the candidate pool if any are starred, otherwise use full player pool
@@ -5055,6 +5143,8 @@
     // (fullPool === pool) - a slot with no eligible Top Players option is
     // left unfilled instead of reaching outside Top Players at all.
     var fullPool = restrictToTopPlayers ? pool : players.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
+
+    if (slateMode === 'sg'){ sgFill(emptySlots, pool, fullPool); return; }
 
     var picks = {};
     var slotTeamConstraint = {};
@@ -5491,6 +5581,13 @@
     for (var i = 0; i < n; i++){
       var attempt = 0, sig, overCap, incomplete, noBB;
       do {
+        // Jitter scores a little each attempt, and more on every retry. Without
+        // it the optimizer is deterministic, so a small pool (Single Game
+        // especially) rebuilt the same lineup again and again and stopped
+        // after one or two. Single Game gets a light jitter on every lineup.
+        var noiseAmp = (slateMode === 'sg' ? 3 : 0) + attempt * 3;
+        scoreNoise = {};
+        if (noiseAmp > 0) players.forEach(function(pl){ scoreNoise[pl.id] = (Math.random() - 0.5) * 2 * noiseAmp; });
         lineup = Object.assign({}, template); // fresh copy - locked slots intact, rest empty
         lineups[i] = lineup;
         activeIdx = i;
@@ -5549,6 +5646,7 @@
       newLineups.push(lineup);
     }
 
+    scoreNoise = {};
     lineups = newLineups.length ? newLineups : [emptyLineup()];
     activeIdx = 0;
     lineup = lineups[0];
