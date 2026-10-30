@@ -4275,7 +4275,7 @@
     });
     if (stackFilterTeam) filterDescriptions.push('Stack: ' + stackFilterTeam);
     if (secFilterKind === '__NONE__') filterDescriptions.push('No secondary stacks');
-    else if (secFilterKind) filterDescriptions.push('2nd: ' + secFilterKind);
+    else if (secFilterKind) filterDescriptions.push(secFilterLabel || 'Secondary stack');
     if (bringBackFilterTeam === '__NONE__') filterDescriptions.push('No bring-back');
     else if (bringBackFilterTeam) filterDescriptions.push('Bring-back: ' + bringBackFilterTeam);
     if (filterDescriptions.length){
@@ -4404,12 +4404,15 @@
   // player was actually drafted - c.bringBack is the real signal).
   var stackFilterTeam = null;
   var bringBackFilterTeam = null;
+  var secFilterLabel = '';
   var secFilterKind = null;   // null (any), '__NONE__' (no secondary stacks), or a pair type like 'RB+DEF'
+  function secPairKey(it){ return it.kind + '|' + it.a.id + '|' + (it.b ? it.b.id : ''); }
+  function secPairLabel(it){ return it.kind + ': ' + (it.b ? secPlayerText(it.a) + ' + ' + secPlayerText(it.b) : secPlayerText(it.a)); }
   function secMatches(c){
     if (!secFilterKind) return true;
     var items = (c && c.secondaryItems) || [];
     if (secFilterKind === '__NONE__') return items.length === 0;
-    return items.some(function(it){ return it.kind === secFilterKind; });
+    return items.some(function(it){ return secPairKey(it) === secFilterKind; });
   }
 
   // Indices of lineups that satisfy ALL currently-selected exposure filters
@@ -4532,21 +4535,26 @@
     var bbTeamOptions = Object.keys(bbTeamsSeen).sort();
     if (bringBackFilterTeam && bringBackFilterTeam !== '__NONE__' && bbTeamOptions.indexOf(bringBackFilterTeam) === -1) bringBackFilterTeam = null;
 
-    var secKindCounts = {}, secNoneCount = 0, secScope = scopedIndicesExcluding(false, false, true);
+    var secKindCounts = {}, secKindLabels = {}, secNoneCount = 0, secScope = scopedIndicesExcluding(false, false, true);
     secScope.forEach(function(idx){
       var c = lineupConstruction(lineups[idx]);
       var items = (c && c.secondaryItems) || [];
       if (!items.length){ secNoneCount++; return; }
       var seenK = {};
-      items.forEach(function(it){ if (!seenK[it.kind]){ seenK[it.kind] = true; secKindCounts[it.kind] = (secKindCounts[it.kind] || 0) + 1; } });
+      items.forEach(function(it){
+        var k = secPairKey(it);
+        if (!seenK[k]){ seenK[k] = true; secKindCounts[k] = (secKindCounts[k] || 0) + 1; secKindLabels[k] = secPairLabel(it); }
+      });
     });
-    var secKindOptions = Object.keys(secKindCounts).sort();
+    var secKindOptions = Object.keys(secKindCounts).sort(function(a, b){
+      return (secKindCounts[b] - secKindCounts[a]) || secKindLabels[a].localeCompare(secKindLabels[b]);
+    });
     if (secFilterKind && secFilterKind !== '__NONE__' && secKindOptions.indexOf(secFilterKind) === -1) secFilterKind = null;
     var secFilterHtml = (slateMode === 'main' && (secKindOptions.length || secFilterKind)) ?
       '<select id="secTypeFilter" style="font-size:12px;margin-bottom:8px;margin-left:8px;">' +
         '<option value="">Any secondary stack</option>' +
         '<option value="__NONE__"'+(secFilterKind==='__NONE__'?' selected':'')+'>No secondary stacks (' + secNoneCount + ')</option>' +
-        secKindOptions.map(function(k){ return '<option value="'+k+'"'+(secFilterKind===k?' selected':'')+'>2nd: '+k+' ('+secKindCounts[k]+')</option>'; }).join('') +
+        secKindOptions.map(function(k){ return '<option value="'+k.replace(/"/g,'&quot;')+'"'+(secFilterKind===k?' selected':'')+'>2nd - '+secKindLabels[k].replace(/&/g,'&amp;')+' ('+secKindCounts[k]+')</option>'; }).join('') +
       '</select>' : '';
 
     var stackFilterHtml = stackTeamOptions.length ?
@@ -4678,6 +4686,7 @@
     var secFilterSel = document.getElementById('secTypeFilter');
     if (secFilterSel) secFilterSel.addEventListener('change', function(){
       secFilterKind = this.value || null;
+      secFilterLabel = secFilterKind && secFilterKind !== '__NONE__' ? this.options[this.selectedIndex].text.replace(/^2nd - /, '2nd: ').replace(/ \(\d+\)$/, '') : '';
       renderExposureTracker();
       renderLineupCompare();
     });
