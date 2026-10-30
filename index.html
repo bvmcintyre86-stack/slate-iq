@@ -3536,7 +3536,7 @@
           if (a.position === 'WR' && isPC(b) && a.oppTeam && b.team === a.oppTeam) addSec('WR+opp WR/TE', a.team, b.team, a, b);
         });
       });
-      result.secondaryItems.slice(0, 2).forEach(function(it, ix){
+      result.secondaryItems.slice(0, 4).forEach(function(it, ix){
         [it.a, it.b].forEach(function(q){ if (q) result.roles[q.id] = (result.roles[q.id] || []).concat([{ t: 'sec', n: ix + 1 }]); });
       });
       result.warnings = [];
@@ -3600,7 +3600,8 @@
   }
   function secPlayerText(q){ return q.position === 'DEF' ? q.team + ' D' : lastName(q.name); }
   // Stack and secondary stacks as labelled rows instead of one long string.
-  function constructionRowsHtml(c){
+  function constructionRowsHtml(c, secRows){
+    secRows = secRows || 2;
     var colors = constructionBadgeColor(c);
     var names = function(arr){ return arr.length ? arr.map(secPlayerText).join(' &middot; ') : ''; };
     var html = '';
@@ -3615,12 +3616,12 @@
     }
     if (slateMode === 'main'){
       var list = c.secondaryItems || [];
-      for (var ix = 0; ix < 2; ix++){
+      for (var ix = 0; ix < secRows; ix++){
         var it = list[ix], inner;
         if (it){
           var nm = it.b ? secPlayerText(it.a) + ' + ' + secPlayerText(it.b) : secPlayerText(it.a);
           inner = '<span class="cs-num">' + (ix + 1) + '</span><span class="cs-names"><span class="cs-kind">' + it.kind + '</span> ' + nm +
-            (ix === 1 && list.length > 2 ? ' <span class="cs-more" title="' + list.slice(2).map(function(x, k){ return (k + 3) + '. ' + x.kind + ': ' + (x.b ? secPlayerText(x.a) + ' + ' + secPlayerText(x.b) : secPlayerText(x.a)); }).join('&#10;') + '">+' + (list.length - 2) + ' more</span>' : '') + '</span>';
+            (ix === secRows - 1 && list.length > secRows ? ' <span class="cs-more" title="' + list.slice(secRows).map(function(x, k){ return (k + secRows + 1) + '. ' + x.kind + ': ' + (x.b ? secPlayerText(x.a) + ' + ' + secPlayerText(x.b) : secPlayerText(x.a)); }).join('&#10;') + '">+' + (list.length - secRows) + ' more</span>' : '') + '</span>';
         } else {
           inner = '<span class="cs-num cs-num-off">' + (ix + 1) + '</span><span class="cs-none">' + (ix === 0 ? 'no secondary stack' : 'none') + '</span>';
         }
@@ -4273,12 +4274,22 @@
       return exposureFilterIds[id] === 'mvp' ? (nm + ' (as MVP)') : nm;
     });
     if (stackFilterTeam) filterDescriptions.push('Stack: ' + stackFilterTeam);
+    if (secFilterKind === '__NONE__') filterDescriptions.push('No secondary stacks');
+    else if (secFilterKind) filterDescriptions.push('2nd: ' + secFilterKind);
     if (bringBackFilterTeam === '__NONE__') filterDescriptions.push('No bring-back');
     else if (bringBackFilterTeam) filterDescriptions.push('Bring-back: ' + bringBackFilterTeam);
     if (filterDescriptions.length){
       filterBannerHtml = '<div class="sub" style="margin-bottom:10px;">Showing ' + visibleIndices.length + ' of ' + lineups.length +
         ' lineups matching: <strong>' + filterDescriptions.join(', ') + '</strong></div>';
     }
+
+    // Every card shows the same number of secondary rows (2 minimum, 4 max) so
+    // they stay one size - it grows only when a visible lineup has 3 or 4.
+    var secRowsN = 2;
+    visibleIndices.forEach(function(ix){
+      var cc0 = lineupConstruction(lineups[ix]);
+      if (cc0 && cc0.secondaryItems) secRowsN = Math.max(secRowsN, Math.min(4, cc0.secondaryItems.length));
+    });
 
     var cardsHtml = visibleIndices.map(function(idx){
       var lu = lineups[idx];
@@ -4329,7 +4340,7 @@
       if (construction && construction.defClash) warnList.push('DEF faces one of your own players');
       var warnHtml = warnList.length ? ' <span class="lc-warn" title="'+warnList.join('; ').replace(/"/g,'')+'">&#9888;</span>' : '';
       if (construction){
-        constructionHtml = '<div class="lc-construction">' + constructionRowsHtml(construction) + '</div>';
+        constructionHtml = '<div class="lc-construction">' + constructionRowsHtml(construction, secRowsN) + '</div>';
       }
 
       var cc = computed[idx];
@@ -4393,6 +4404,13 @@
   // player was actually drafted - c.bringBack is the real signal).
   var stackFilterTeam = null;
   var bringBackFilterTeam = null;
+  var secFilterKind = null;   // null (any), '__NONE__' (no secondary stacks), or a pair type like 'RB+DEF'
+  function secMatches(c){
+    if (!secFilterKind) return true;
+    var items = (c && c.secondaryItems) || [];
+    if (secFilterKind === '__NONE__') return items.length === 0;
+    return items.some(function(it){ return it.kind === secFilterKind; });
+  }
 
   // Indices of lineups that satisfy ALL currently-selected exposure filters
   // (not just any one) - shared by both the tracker's own stats and the
@@ -4423,7 +4441,7 @@
 
   function getExposureFilteredIndices(){
     var base = getPlayerFilteredIndices();
-    if (!stackFilterTeam && !bringBackFilterTeam) return base;
+    if (!stackFilterTeam && !bringBackFilterTeam && !secFilterKind) return base;
     return base.filter(function(idx){
       var c = lineupConstruction(lineups[idx]);
       if (!c) return false;
@@ -4433,6 +4451,7 @@
       } else if (bringBackFilterTeam){
         if (!c.bringBack || c.bringBackTeam !== bringBackFilterTeam) return false;
       }
+      if (!secMatches(c)) return false;
       return true;
     });
   }
@@ -4478,7 +4497,7 @@
     // three filters (players, stack, bring-back) narrow each other mutually:
     // locking a player narrows both dropdowns, and picking a stack team also
     // narrows which bring-backs are even still possible, and vice versa.
-    function scopedIndicesExcluding(excludeStack, excludeBringBack){
+    function scopedIndicesExcluding(excludeStack, excludeBringBack, excludeSec){
       return getPlayerFilteredIndices().filter(function(idx){
         var c = lineupConstruction(lineups[idx]);
         if (!c) return false;
@@ -4487,12 +4506,13 @@
           if (bringBackFilterTeam === '__NONE__'){ if (c.bringBack) return false; }
           else if (!c.bringBack || c.bringBackTeam !== bringBackFilterTeam) return false;
         }
+        if (!excludeSec && !secMatches(c)) return false;
         return true;
       });
     }
 
     var stackTeamsSeen = {};
-    scopedIndicesExcluding(true, false).forEach(function(idx){
+    scopedIndicesExcluding(true, false, false).forEach(function(idx){
       var c = lineupConstruction(lineups[idx]);
       if (c && c.stackTeam) stackTeamsSeen[c.stackTeam] = true;
     });
@@ -4505,12 +4525,29 @@
     if (stackFilterTeam && stackTeamOptions.indexOf(stackFilterTeam) === -1) stackFilterTeam = null;
 
     var bbTeamsSeen = {};
-    scopedIndicesExcluding(false, true).forEach(function(idx){
+    scopedIndicesExcluding(false, true, false).forEach(function(idx){
       var c = lineupConstruction(lineups[idx]);
       if (c && c.bringBack && c.bringBackTeam) bbTeamsSeen[c.bringBackTeam] = true;
     });
     var bbTeamOptions = Object.keys(bbTeamsSeen).sort();
     if (bringBackFilterTeam && bringBackFilterTeam !== '__NONE__' && bbTeamOptions.indexOf(bringBackFilterTeam) === -1) bringBackFilterTeam = null;
+
+    var secKindCounts = {}, secNoneCount = 0, secScope = scopedIndicesExcluding(false, false, true);
+    secScope.forEach(function(idx){
+      var c = lineupConstruction(lineups[idx]);
+      var items = (c && c.secondaryItems) || [];
+      if (!items.length){ secNoneCount++; return; }
+      var seenK = {};
+      items.forEach(function(it){ if (!seenK[it.kind]){ seenK[it.kind] = true; secKindCounts[it.kind] = (secKindCounts[it.kind] || 0) + 1; } });
+    });
+    var secKindOptions = Object.keys(secKindCounts).sort();
+    if (secFilterKind && secFilterKind !== '__NONE__' && secKindOptions.indexOf(secFilterKind) === -1) secFilterKind = null;
+    var secFilterHtml = (slateMode === 'main' && (secKindOptions.length || secFilterKind)) ?
+      '<select id="secTypeFilter" style="font-size:12px;margin-bottom:8px;margin-left:8px;">' +
+        '<option value="">Any secondary stack</option>' +
+        '<option value="__NONE__"'+(secFilterKind==='__NONE__'?' selected':'')+'>No secondary stacks (' + secNoneCount + ')</option>' +
+        secKindOptions.map(function(k){ return '<option value="'+k+'"'+(secFilterKind===k?' selected':'')+'>2nd: '+k+' ('+secKindCounts[k]+')</option>'; }).join('') +
+      '</select>' : '';
 
     var stackFilterHtml = stackTeamOptions.length ?
       '<select id="stackTeamFilter" style="font-size:12px;margin-bottom:8px;margin-left:8px;">' +
@@ -4608,12 +4645,12 @@
       '</tr>';
     }).join('');
 
-    var filterCount = Object.keys(exposureFilterIds).length + (stackFilterTeam ? 1 : 0) + (bringBackFilterTeam ? 1 : 0);
+    var filterCount = Object.keys(exposureFilterIds).length + (stackFilterTeam ? 1 : 0) + (bringBackFilterTeam ? 1 : 0) + (secFilterKind ? 1 : 0);
     var filterNote = filterCount
       ? '<div class="sub" style="margin-bottom:8px;">Showing only lineups matching ALL selected filters - stats above are scoped to those lineups too. <button id="exposureClearFilterBtn" style="margin-left:6px;">Clear filter (' + filterCount + ')</button></div>'
-      : '<div class="sub" style="margin-bottom:8px;">Click a player to drill into lineups that include them' + (showMvpCol ? ', or click their "As MVP" cell to filter to lineups where they\'re specifically the MVP' : '') + ', or use the Stack/Bring-back dropdowns' + (stackTeamOptions.length||bbTeamOptions.length?'':' (once you\'ve generated some lineups)') + ' - combine as many filters as you like.</div>';
+      : '<div class="sub" style="margin-bottom:8px;">Click a player to drill into lineups that include them' + (showMvpCol ? ', or click their "As MVP" cell to filter to lineups where they\'re specifically the MVP' : '') + ', or use the Stack/Bring-back/Secondary dropdowns' + (stackTeamOptions.length||bbTeamOptions.length?'':' (once you\'ve generated some lineups)') + ' - combine as many filters as you like.</div>';
 
-    view.innerHTML = headerHtml + posFilterHtml + stackFilterHtml + bbFilterHtml + filterNote +
+    view.innerHTML = headerHtml + posFilterHtml + stackFilterHtml + bbFilterHtml + secFilterHtml + filterNote +
       '<table style="width:100%;margin-bottom:20px;">' +
         '<thead><tr>' +
           headerCell('name', 'Player') + headerCell('position', 'Pos') + headerCell('team', 'Team') +
@@ -4634,6 +4671,13 @@
     var stackFilterSel = document.getElementById('stackTeamFilter');
     if (stackFilterSel) stackFilterSel.addEventListener('change', function(){
       stackFilterTeam = this.value || null;
+      renderExposureTracker();
+      renderLineupCompare();
+    });
+
+    var secFilterSel = document.getElementById('secTypeFilter');
+    if (secFilterSel) secFilterSel.addEventListener('change', function(){
+      secFilterKind = this.value || null;
       renderExposureTracker();
       renderLineupCompare();
     });
@@ -4691,6 +4735,7 @@
       exposureFilterPlayers = {};
       stackFilterTeam = null;
       bringBackFilterTeam = null;
+      secFilterKind = null;
       renderExposureTracker();
       renderLineupCompare();
     });
@@ -6791,7 +6836,7 @@
     exposureFilterIds = {};
     exposureFilterPlayers = {};
     stackFilterTeam = null;
-    bringBackFilterTeam = null;
+    bringBackFilterTeam = null; secFilterKind = null;
     // Switch
     slateMode = mode;
     activeSLOT_DEFS = mode === 'sg' ? SG_SLOT_DEFS : SLOT_DEFS;
@@ -6861,7 +6906,7 @@
     exposureFilterIds = {};
     exposureFilterPlayers = {};
     stackFilterTeam = null;
-    bringBackFilterTeam = null;
+    bringBackFilterTeam = null; secFilterKind = null;
 
     platform = newPlatform;
     applyPlatformSlotDefs();
