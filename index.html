@@ -250,6 +250,9 @@
   #glTip .gl-uc{display:flex;flex-direction:column;}
   #glTip .gl-uc span{font-size:10px;color:var(--muted);}
   #glTip .gl-uc b{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;}
+  #glTip .gl-uc.ug2 b{color:#5fd08a;} #glTip .gl-uc.ug1 b{color:#a3d9b5;} #glTip .gl-uc.ur1 b{color:#e6a595;} #glTip .gl-uc.ur2 b{color:#f27a63;}
+  #glTip .gl-leg{margin-top:6px;font-size:10px;color:var(--muted);display:flex;align-items:center;gap:3px;}
+  #glTip .gl-leg i{display:inline-block;width:9px;height:9px;border-radius:2px;} #glTip .gl-leg i.ug2{background:#5fd08a;} #glTip .gl-leg i.ug1{background:#a3d9b5;} #glTip .gl-leg i.ur1{background:#e6a595;} #glTip .gl-leg i.ur2{background:#f27a63;margin-right:4px;}
   #glTip .gl-xtd{margin-top:7px;padding-top:6px;border-top:1px dashed var(--line);font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;}
   #glTip .gl-xtd b{color:var(--text,inherit);font-variant-numeric:tabular-nums;}
   #glTip .gl-xtd .xt{font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:1px 6px;border-radius:8px;}
@@ -3244,36 +3247,57 @@
     var d = act - exp;
     return { exp: exp, act: act, tag: d <= -1 ? 'due' : (d >= 1 ? 'hot' : '') };
   }
+  // Percentile cut points (p10..p90) per position and stat, from 2022-25 full-season PFF fantasy-stats files (qualified players).
+  var USAGE_BENCH = {"WR":{"tpg":[1.938,2.4,2.857,3.5,4.353,5.067,6.0,6.812,8.118],"catch":[51.8,56.5,59.5,62.5,64.7,67.1,69.2,72.2,75.8],"depth":[7.04,8.71,9.72,10.65,11.51,12.24,12.75,13.89,15.19],"rac":[2.3,2.83,3.21,3.55,3.89,4.38,4.85,5.51,6.44],"rzpg":[0.375,0.529,0.647,0.824,1.0,1.188,1.412,1.647,1.941],"ezpg":[0.062,0.125,0.188,0.25,0.312,0.375,0.5,0.6,0.765],"rztdpg":[0.0,0.062,0.091,0.125,0.176,0.222,0.294,0.353,0.471],"dropspg":[0.0,0.062,0.1,0.133,0.176,0.231,0.25,0.312,0.412],"pps":[0.08,0.1,0.12,0.14,0.16,0.17,0.19,0.22,0.25]},"TE":{"tpg":[1.733,2.047,2.512,2.976,3.641,4.086,4.877,5.567,6.119],"catch":[63.8,68.26,71.07,72.8,74.0,76.2,78.4,80.72,83.3],"depth":[4.403,5.278,5.841,6.228,6.9,7.35,7.889,8.402,9.557],"rac":[3.36,3.904,4.304,4.512,4.81,5.174,5.573,5.962,6.686],"rzpg":[0.273,0.433,0.5,0.588,0.706,0.846,0.939,1.207,1.529],"ezpg":[0.059,0.091,0.118,0.167,0.207,0.274,0.333,0.402,0.529],"rztdpg":[0.0,0.062,0.108,0.125,0.167,0.179,0.235,0.308,0.4],"dropspg":[0.0,0.059,0.077,0.118,0.133,0.176,0.222,0.25,0.335],"pps":[0.08,0.09,0.1,0.12,0.14,0.15,0.17,0.18,0.21]},"RB":{"cpg":[3.871,4.937,5.921,7.203,9.216,11.457,12.918,14.652,16.025],"rzcpg":[0.497,0.73,0.941,1.25,1.5,1.805,2.118,2.5,3.006],"i5cpg":[0.062,0.154,0.228,0.294,0.423,0.566,0.692,0.786,1.0],"i5tdpg":[0.0,0.059,0.075,0.125,0.167,0.188,0.25,0.333,0.438],"ppt":[0.55,0.618,0.667,0.7,0.73,0.76,0.79,0.85,0.931],"tpg":[1.688,1.941,2.2,2.4,2.643,2.941,3.312,3.778,4.6],"catch":[70.8,75.6,77.4,79.8,82.1,83.9,85.5,87.8,90.9],"rzpg":[0.083,0.143,0.2,0.273,0.312,0.4,0.471,0.588,0.706],"dropspg":[0.0,0.062,0.071,0.118,0.125,0.176,0.231,0.25,0.333]},"QB":{"dbpg":[27.417,29.6,31.765,33.667,34.588,35.8,37.059,38.353,40.118],"adot":[7.0,7.4,7.7,7.9,8.2,8.4,8.8,9.1,9.5],"sackpct":[4.11,4.861,5.38,5.773,6.164,6.667,7.589,8.44,9.574],"ezpg":[1.0,1.25,1.308,1.6,1.824,2.0,2.118,2.294,2.562],"eztd":[1.3,1.6,2.0,2.2,2.4,2.6,2.7,3.0,3.5],"ppdb":[0.35,0.38,0.4,0.43,0.45,0.48,0.5,0.54,0.6],"rushpg":[1.7,2.0,2.364,2.778,3.118,3.588,4.154,4.882,6.667],"rzrushpg":[0.2,0.333,0.412,0.444,0.538,0.688,0.846,1.091,1.571],"i5rushpg":[0.0,0.0,0.1,0.125,0.154,0.2,0.273,0.353,0.556]},"DEF":{"sacks":[1.88,2.059,2.176,2.294,2.412,2.541,2.7,2.824,3.076],"tkaw":[0.824,1.0,1.059,1.176,1.235,1.353,1.465,1.578,1.706],"tds":[0.0,0.059,0.059,0.059,0.118,0.118,0.118,0.176,0.194],"pa":[18.5,19.84,20.6,21.5,22.1,22.72,23.89,24.9,25.98],"pyds":[204.5,211.56,221.63,228.0,233.2,240.62,244.47,252.08,262.36],"ryds":[94.82,102.22,106.66,113.34,117.95,122.62,126.2,132.46,139.53],"ppg":[4.221,5.18,5.656,6.0,6.38,6.82,7.464,8.168,8.683]}};
+  function usageRate(pos, key, v, inverse, games){
+    var B = USAGE_BENCH[pos] && USAGE_BENCH[pos][key];
+    if (!B || v == null || isNaN(v) || games < 3) return null;
+    var pct;
+    if (v <= B[0]) pct = 5; else if (v >= B[8]) pct = 95;
+    else { for (var i = 0; i < 8; i++){ if (v <= B[i + 1]){ var span = B[i + 1] - B[i]; pct = 10 + i * 10 + (span > 0 ? (v - B[i]) / span * 10 : 5); break; } } }
+    if (inverse) pct = 100 - pct;
+    var cls = pct >= 80 ? 'ug2' : pct >= 60 ? 'ug1' : pct <= 20 ? 'ur2' : pct <= 40 ? 'ur1' : '';
+    var tip = (pos === 'DEF' ? 'Among defenses' : 'Among ' + pos + 's') + ': better than ~' + Math.round(pct) + '% (median ' + (Math.round(B[4] * 100) / 100) + (inverse ? ', lower is better' : '') + ')';
+    return { cls: cls, tip: tip };
+  }
   function usageHtml(u, pos){
     var r = u.row, G = Math.max(1, r.games || 1);
     function f1(v){ return (v == null || isNaN(v)) ? '-' : (Math.round(v * 10) / 10).toFixed(1); }
     function pc(v){ return (v == null || isNaN(v)) ? '-' : Math.round(v * 10) / 10 + '%'; }
     function cnt(n, p){ return (n == null ? '-' : n) + (p != null && n ? ' (' + Math.round(p) + '%)' : ''); }
+    // Each cell: [label, display text, benchmark key, raw value for coloring, lower-is-better?]
+    var bp = u.kind === 'dst' ? 'DEF' : u.kind === 'qb' ? 'QB' : u.kind === 'rb' ? 'RB' : (r.position === 'TE' ? 'TE' : 'WR');
     var cells;
     if (u.kind === 'dst'){
-      cells = [['Sacks/G', f1(r.sacks / G)], ['Takeaways/G', f1(((r.interceptions || 0) + (r.fumbleRecoveries || 0)) / G)], ['Def TDs', r.defenseTouchdowns || 0],
-               ['PA/G', f1(r.paPerGame)], ['Pass yds/G', f1(r.passYdsPerGame)], ['Run yds/G', f1(r.runYdsPerGame)], ['Pts/G', f1(r.fantasyPpg)]];
+      var tk = ((r.interceptions || 0) + (r.fumbleRecoveries || 0)) / G;
+      cells = [['Sacks/G', f1(r.sacks / G), 'sacks', r.sacks / G], ['Takeaways/G', f1(tk), 'tkaw', tk], ['Def TDs', r.defenseTouchdowns || 0, 'tds', (r.defenseTouchdowns || 0) / G],
+               ['PA/G', f1(r.paPerGame), 'pa', r.paPerGame, 1], ['Pass yds/G', f1(r.passYdsPerGame), 'pyds', r.passYdsPerGame, 1], ['Run yds/G', f1(r.runYdsPerGame), 'ryds', r.runYdsPerGame, 1], ['Pts/G', f1(r.fantasyPpg), 'ppg', r.fantasyPpg]];
     } else if (u.kind === 'qb'){
       var db = r.dropbacks || 0;
-      cells = [['Dropbacks/G', f1(db / G)], ['aDOT', f1(r.depthAim)], ['Sack %', db ? pc(r.sks / db * 100) : '-'],
-               ['EZ att', cnt(r.ezAtt, r.ezPct)], ['EZ TD %', pc(r.ezTdPct)], ['Pts/dropback', (r.ptsPerDb == null ? '-' : r.ptsPerDb)],
-               ['Rush/G', f1(r.rushCarries / G)], ['RZ rush', cnt(r.rzRushCarries, r.rzRushPct)], ['In-5 rush', cnt(r.i5RushCarries, r.i5RushPct)]];
+      cells = [['Dropbacks/G', f1(db / G), 'dbpg', db / G], ['aDOT', f1(r.depthAim), 'adot', r.depthAim], ['Sack %', db ? pc(r.sks / db * 100) : '-', 'sackpct', db ? r.sks / db * 100 : null, 1],
+               ['EZ att', cnt(r.ezAtt, r.ezPct), 'ezpg', (r.ezAtt || 0) / G], ['EZ TD %', pc(r.ezTdPct), 'eztd', (r.ezAtt || 0) >= 5 ? r.ezTdPct : null], ['Pts/dropback', (r.ptsPerDb == null ? '-' : r.ptsPerDb), 'ppdb', r.ptsPerDb],
+               ['Rush/G', f1(r.rushCarries / G), 'rushpg', r.rushCarries / G], ['RZ rush', cnt(r.rzRushCarries, r.rzRushPct), 'rzrushpg', (r.rzRushCarries || 0) / G], ['In-5 rush', cnt(r.i5RushCarries, r.i5RushPct), 'i5rushpg', (r.i5RushCarries || 0) / G]];
     } else if (u.kind === 'rb'){
-      cells = [['Carries/G', f1(r.rushCarries / G)], ['RZ carries', cnt(r.rzRushCarries, r.rzRushPct)], ['In-5 carries', cnt(r.i5RushCarries, r.i5RushPct)],
-               ['In-5 TDs', r.i5RushTds || 0], ['Tgts/G', f1(r.recTarg / G)], ['Catch %', pc(r.catch)],
-               ['RZ tgts', cnt(r.rzRecTarg, r.rzRecTargPct)], ['Pts/touch', (r.ptsPerTouch == null ? '-' : r.ptsPerTouch)], ['Drops', r.recDrops || 0]];
+      cells = [['Carries/G', f1(r.rushCarries / G), 'cpg', r.rushCarries / G], ['RZ carries', cnt(r.rzRushCarries, r.rzRushPct), 'rzcpg', (r.rzRushCarries || 0) / G], ['In-5 carries', cnt(r.i5RushCarries, r.i5RushPct), 'i5cpg', (r.i5RushCarries || 0) / G],
+               ['In-5 TDs', r.i5RushTds || 0, 'i5tdpg', (r.i5RushTds || 0) / G], ['Tgts/G', f1(r.recTarg / G), 'tpg', r.recTarg / G], ['Catch %', pc(r.catch), 'catch', (r.recTarg || 0) >= 8 ? r.catch : null],
+               ['RZ tgts', cnt(r.rzRecTarg, r.rzRecTargPct), 'rzpg', (r.rzRecTarg || 0) / G], ['Pts/touch', (r.ptsPerTouch == null ? '-' : r.ptsPerTouch), 'ppt', r.ptsPerTouch], ['Drops', r.recDrops || 0, 'dropspg', (r.recDrops || 0) / G, 1]];
     } else {
-      cells = [['Tgts/G', f1(r.recTarg / G)], ['Catch %', pc(r.catch)], ['aDOT', f1(r.depth)],
-               ['YAC/rec', f1(r.rac)], ['RZ tgts', cnt(r.rzRecTarg, r.rzRecTargPct)], ['EZ tgts', cnt(r.ezRecTarg, r.ezRecTargPct)],
-               ['RZ TDs', r.rzRecTds || 0], ['Drops', r.recDrops || 0], ['Pts/snap', (r.ptsPerSnap == null ? '-' : r.ptsPerSnap)]];
+      cells = [['Tgts/G', f1(r.recTarg / G), 'tpg', r.recTarg / G], ['Catch %', pc(r.catch), 'catch', (r.recTarg || 0) >= 8 ? r.catch : null], ['aDOT', f1(r.depth), 'depth', r.depth],
+               ['YAC/rec', f1(r.rac), 'rac', r.rac], ['RZ tgts', cnt(r.rzRecTarg, r.rzRecTargPct), 'rzpg', (r.rzRecTarg || 0) / G], ['EZ tgts', cnt(r.ezRecTarg, r.ezRecTargPct), 'ezpg', (r.ezRecTarg || 0) / G],
+               ['RZ TDs', r.rzRecTds || 0, 'rztdpg', (r.rzRecTds || 0) / G], ['Drops', r.recDrops || 0, 'dropspg', (r.recDrops || 0) / G, 1], ['Pts/snap', (r.ptsPerSnap == null ? '-' : r.ptsPerSnap), 'pps', r.ptsPerSnap]];
     }
+    var cellHtml = cells.map(function(c){
+      var rate = usageRate(bp, c[2], c[3], c[4], r.games || 0);
+      return '<div class="gl-uc' + (rate && rate.cls ? ' ' + rate.cls : '') + '"' + (rate ? ' title="' + rate.tip + '"' : '') + '><span>' + c[0] + '</span><b>' + c[1] + '</b></div>';
+    }).join('');
     var xt = u.kind === 'dst' ? null : usageXtd(u), xtHtml = '';
     if (xt){
       xtHtml = '<div class="gl-xtd"><span>' + (u.kind === 'qb' ? 'Rush TDs' : 'TDs') + '</span><b>' + xt.act + '</b><span>vs</span><b>' + f1(xt.exp) + '</b><span>expected</span>' +
         (xt.tag ? '<span class="xt ' + xt.tag + '">' + (xt.tag === 'due' ? 'due' : 'running hot') + '</span>' : '') + '</div>';
     }
     return '<div class="gl-usage"><div class="gl-ut">Season usage &middot; ' + (r.games || 0) + ' games</div><div class="gl-ug">' +
-      cells.map(function(c){ return '<div class="gl-uc"><span>' + c[0] + '</span><b>' + c[1] + '</b></div>'; }).join('') + '</div>' + xtHtml + '</div>';
+      cellHtml + '</div>' + xtHtml +
+      '<div class="gl-leg"><i class="ug2"></i><i class="ug1"></i><i class="ur1"></i><i class="ur2"></i> vs ' + bp + 's, 2022-25 (green = better, red = worse)</div></div>';
   }
   // Short pass-rush note for a QB's team vs the opposing DEF, for the matchup card.
   function usagePressureNote(qbTeam, defTeam){
