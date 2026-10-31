@@ -1609,6 +1609,39 @@
     return { pages: out, failed: failed };
   }
 
+  var KALSHI_MAX_SPREAD = 0.15;   // widest bid/ask gap (in dollars) still treated as a real quote
+  var kalshiCleanDiag = { multiGame: 0, wideDropped: 0, names: [] };
+  // One player plays one game a week, so a ladder must come from ONE game, and only from
+  // rungs with a real two-sided market (or at worst a recent trade). Picks the player's own
+  // team's game (earliest date if several are open), then drops wide/no-bid midpoints.
+  function kalshiCleanList(list, normName){
+    if (!list || !list.length) return list;
+    var out = list;
+    var withEv = out.filter(function(c){ return c.date != null; });
+    if (withEv.length){
+      var codes = null;
+      for (var i = 0; i < players.length; i++){
+        if (normalizeName(players[i].name) === normName){ codes = teamCodeSet(players[i].team); break; }
+      }
+      var pool = withEv;
+      if (codes && codes.length){
+        var mine = withEv.filter(function(c){ return c.teams && codes.some(function(t){ return c.teams.indexOf(t) === 0 || c.teams.slice(-t.length) === t; }); });
+        if (mine.length) pool = mine;
+      }
+      var minDate = Math.min.apply(null, pool.map(function(c){ return c.date; }));
+      var games = {};
+      pool.forEach(function(c){ games[c.date + '|' + c.teams] = 1; });
+      if (Object.keys(games).length > 1){
+        kalshiCleanDiag.multiGame++;
+        if (kalshiCleanDiag.names.length < 8) kalshiCleanDiag.names.push(normName);
+      }
+      out = pool.filter(function(c){ return c.date === minDate; });
+    }
+    var good = out.filter(function(c){ return c.q <= 1; });
+    if (good.length && good.length < out.length) kalshiCleanDiag.wideDropped += out.length - good.length;
+    return good.length ? good : out;
+  }
+
   async function fetchKalshiProjections(){
     var workerUrl = (document.getElementById('kalshiWorkerUrl').value||'').trim().replace(/\/+$/,'');
     if (!workerUrl){ setKalshiStatus('Set your Kalshi Proxy URL above first.'); return; }
@@ -1747,7 +1780,21 @@
             var norm = normalizeName(name);
             if (!candidates[norm]) candidates[norm] = {};
             if (!candidates[norm][rs.key]) candidates[norm][rs.key] = [];
-            candidates[norm][rs.key].push({ threshold: threshold, prob: prob, kind: rs.kind });
+            // Remember WHICH game this rung belongs to and how trustworthy its quote is.
+            // Without this, rungs from two open games (this week + a later one) or from
+            // empty books (bid 0 / ask 90c -> a fake 45% midpoint) all pooled into one ladder,
+            // and the "closest to 50%" pick latched onto the junk.
+            var evTk = /-(\d{2})([A-Z]{3})(\d{2})([A-Z]+)$/.exec(ev.event_ticker || '') || /-(\d{2})([A-Z]{3})(\d{2})([A-Z]+)-/.exec(mkt.ticker || '');
+            var evDate = null, evTeams = null;
+            if (evTk){
+              var MON = { JAN:0, FEB:1, MAR:2, APR:3, MAY:4, JUN:5, JUL:6, AUG:7, SEP:8, OCT:9, NOV:10, DEC:11 };
+              if (MON[evTk[2]] !== undefined) evDate = Date.UTC(2000 + parseInt(evTk[1], 10), MON[evTk[2]], parseInt(evTk[3], 10));
+              evTeams = evTk[4];
+            }
+            var haveBoth = bid != null && !isNaN(bid) && ask != null && !isNaN(ask) && (bid > 0 && ask > 0);
+            var quality = haveBoth ? ((ask - bid) <= KALSHI_MAX_SPREAD ? 0 : 2) : 2;
+            if (!haveBoth && last != null && !isNaN(last) && last > 0 && last < 1) quality = 1; // traded recently, no live two-sided quote
+            candidates[norm][rs.key].push({ threshold: threshold, prob: prob, kind: rs.kind, bid: bid, ask: ask, q: quality, date: evDate, teams: evTeams });
           });
         });
       });
@@ -1781,6 +1828,7 @@
       return;
     }
     kalshiProjections = {};
+    kalshiCleanDiag = { multiGame: 0, wideDropped: 0, names: [] };
     var matched = 0;
     for (var normName in candidates){
       var fp = 0;
@@ -1791,7 +1839,7 @@
         // pick whichever is priced closest to a coinflip (50%) - the same
         // EV-proxy logic already used for Unabated's alt-line fallback: a
         // near-even-money line sits closest to the market's real expectation.
-        var list = stats[sk];
+        var list = kalshiCleanList(stats[sk], normName);
         var best = null, bestDist = Infinity;
         list.forEach(function(c){
           var dist = Math.abs(c.prob - 0.5);
@@ -1836,7 +1884,7 @@
       // silently showing no bonus at all.
       for (var bk in BONUS_CONFIG){
         var bonusCfg = BONUS_CONFIG[bk];
-        var bonusList = stats[bonusCfg.stat];
+        var bonusList = kalshiCleanList(stats[bonusCfg.stat], normName);
         if (!bonusList || !bonusList.length) continue;
         var bClosest = null, bClosestDist = Infinity;
         bonusList.forEach(function(c){
@@ -1872,6 +1920,7 @@
       matched++;
     }
 
+    console.log('Kalshi ladder cleanup: ' + kalshiCleanDiag.multiGame + ' player-stat ladders had rungs from 2+ games (kept the player\'s own / earliest game), ' + kalshiCleanDiag.wideDropped + ' wide-spread or no-bid rungs ignored.' + (kalshiCleanDiag.names.length ? ' e.g. ' + kalshiCleanDiag.names.join(', ') : ''));
     var kScope = restrictToPool(kalshiProjections);
     kalshiProjections = kScope.map; matched = kScope.kept;
     if (kScope.scoped) console.log('Kalshi scoped to the ' + (slateMode === 'sg' ? 'Single Game' : 'Main Slate') + ' pool: kept ' + kScope.kept + ', ignored ' + kScope.dropped + ' players outside it.');
