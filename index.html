@@ -244,6 +244,12 @@
   #glTip th{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;text-align:right;border-bottom:1px solid var(--line);}
   #glTip td{padding:2px 8px;text-align:right;white-space:nowrap;}
   #glTip th:first-child,#glTip td:first-child,#glTip th:nth-child(2),#glTip td:nth-child(2){text-align:left;}
+  #glTip .gl-usage{margin-top:8px;padding-top:7px;border-top:1px solid var(--line);}
+  #glTip .gl-ut{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;}
+  #glTip .gl-ug{display:grid;grid-template-columns:repeat(3,minmax(92px,1fr));gap:6px 14px;}
+  #glTip .gl-uc{display:flex;flex-direction:column;}
+  #glTip .gl-uc span{font-size:10px;color:var(--muted);}
+  #glTip .gl-uc b{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;}
   #glTip tr.gl-off td{color:var(--muted);}
   #glTip tr.gl-avg td{border-top:1px solid var(--line);font-weight:700;color:var(--gold);}
   #glTip td.gl-fp{color:var(--gold);font-weight:700;}
@@ -472,6 +478,9 @@
         <button id="teamGradesBtn" title="Upload PFF's team_overview.csv - powers the flip-over matchup view on each game card.">Upload team grades CSV</button>
         <input type="file" id="teamGradesFile" accept=".csv" style="display:none;">
         <span id="teamGradesStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+        <button id="usageBtn" title="Upload the weekly receiving, passing and DST fantasy-stats CSVs (select all three at once). Powers the season-usage block when you hover a player, and the pass-rush note on matchup cards.">Upload player usage CSVs</button>
+        <input type="file" id="usageFile" accept=".csv" multiple style="display:none;">
+        <span id="usageStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
         <span style="color:var(--line);padding:0 4px;">|</span>
         <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Week</label>
         <select id="unabatedWeek" style="font-size:12px;" title="Pick a week - the board reloads automatically with that week's games for the current mode."><option value="">Load from Unabated first</option></select>
@@ -3110,6 +3119,137 @@
     return (e.wd === 0 && mins >= 750 && mins < 1020) ? 'main' : 'sg';
   }
 
+
+  // ── Player usage CSVs (receiving / passing / DST fantasy stats) ───────
+  var usageData = { rec: {}, pass: {}, dst: {}, loadedAt: null };
+  var usageNameIdx = null;
+  var USAGE_FIELDS = {
+    rec:  ['games','position','recTarg','recRec','recYds','recTds','recDrops','catch','depth','ypr','rac','rzRecTarg','rzRecRec','rzRecTds','rzRecTargPct','ezRecTarg','ezRecTds','ezRecTargPct','rushCarries','rushYds','rushTds','rzRushCarries','rzRushTds','rzRushPct','i5RushCarries','i5RushTds','i5RushPct','fantasyPts','ptsPerSnap','ptsPerTouch'],
+    pass: ['games','dropbacks','att','comp','drops','yds','tds','ints','sks','depthAim','ezAtt','ezTds','ezPct','ezTdPct','rushCarries','rushYds','rushTds','rzRushCarries','rzRushTds','rzRushPct','i5RushCarries','i5RushTds','i5RushPct','fantasyPts','ptsPerDb'],
+    dst:  ['games','sacks','fumbleRecoveries','interceptions','defenseTouchdowns','safeties','paPerGame','passYdsPerGame','runYdsPerGame','fantasyPts','fantasyPpg']
+  };
+  function usageDetect(hdr){
+    if (hdr.indexOf('recTarg') >= 0) return 'rec';
+    if (hdr.indexOf('dropbacks') >= 0) return 'pass';
+    if (hdr.indexOf('paPerGame') >= 0) return 'dst';
+    return null;
+  }
+  function usageIngest(text){
+    var rows = parseSimpleCsv(text);
+    if (rows.length < 2) return { kind: null, n: 0 };
+    var hdr = rows[0].map(function(h){ return h.trim(); });
+    var kind = usageDetect(hdr);
+    if (!kind) return { kind: null, n: 0 };
+    var out = {}, n = 0;
+    rows.slice(1).forEach(function(r){
+      var o = {};
+      hdr.forEach(function(h, i){ o[h] = (r[i] || '').trim(); });
+      var key = kind === 'dst' ? normalizeTeam(o.team) : normalizeName(o.player) + '|' + normalizeTeam(o.team);
+      if (!key || key === '|') return;
+      var slim = {};
+      USAGE_FIELDS[kind].forEach(function(f){
+        var v = o[f];
+        slim[f] = (v !== '' && v !== undefined && !isNaN(v)) ? parseFloat(v) : (f === 'position' ? v : null);
+      });
+      out[key] = slim; n++;
+    });
+    usageData[kind] = out;
+    return { kind: kind, n: n };
+  }
+  function usageStatusText(){
+    var parts = [], mx = 0;
+    [['rec','receiving'],['pass','passing'],['dst','DST']].forEach(function(k){
+      var m = usageData[k[0]], c = Object.keys(m).length;
+      if (c){ parts.push(k[1] + ' ' + c); Object.keys(m).forEach(function(q){ if (m[q].games > mx) mx = m[q].games; }); }
+    });
+    if (!parts.length) return '';
+    return parts.join(' · ') + ' · through Week ' + mx + shortLoadStatus(1, usageData.loadedAt).replace(/^1 players?/, '');
+  }
+  function usageLoadFiles(files){
+    var st = document.getElementById('usageStatus');
+    var list = Array.prototype.slice.call(files || []);
+    if (!list.length) return;
+    var done = 0, bad = [], got = [];
+    list.forEach(function(f){
+      var rd = new FileReader();
+      rd.onload = function(){
+        var r = usageIngest(String(rd.result || ''));
+        if (r.kind) got.push(r.kind); else bad.push(f.name);
+        if (++done === list.length) finish();
+      };
+      rd.readAsText(f);
+    });
+    function finish(){
+      if (got.length){ usageData.loadedAt = Date.now(); usageNameIdx = null; saveState(); }
+      st.textContent = (got.length ? usageStatusText() : '') + (bad.length ? (got.length ? ' · ' : '') + 'Not recognized: ' + bad.join(', ') : '');
+      if (got.length){ renderGames(); }
+    }
+  }
+  function usageBuildIdx(){
+    usageNameIdx = { rec: {}, pass: {} };
+    ['rec','pass'].forEach(function(k){
+      Object.keys(usageData[k]).forEach(function(key){
+        var nm = key.split('|')[0];
+        (usageNameIdx[k][nm] = usageNameIdx[k][nm] || []).push(key);
+      });
+    });
+  }
+  function usageFor(name, pos, team){
+    var t = normalizeTeam(team), nm = normalizeName(name);
+    if (pos === 'DEF') return usageData.dst[t] ? { kind: 'dst', row: usageData.dst[t] } : null;
+    if (!usageNameIdx) usageBuildIdx();
+    var order = pos === 'QB' ? ['pass', 'rec'] : ['rec', 'pass'];
+    for (var i = 0; i < order.length; i++){
+      var k = order[i], m = usageData[k], row = m[nm + '|' + t];
+      if (!row){ var c = usageNameIdx[k][nm]; if (c && c.length === 1) row = m[c[0]]; }
+      if (row){
+        if (k === 'rec' && pos === 'QB' && !(row.recTarg > 0)) continue;
+        return { kind: k === 'pass' ? 'qb' : (pos === 'RB' ? 'rb' : 'rec'), row: row };
+      }
+    }
+    return null;
+  }
+  function usageHtml(u, pos){
+    var r = u.row, G = Math.max(1, r.games || 1);
+    function f1(v){ return (v == null || isNaN(v)) ? '-' : (Math.round(v * 10) / 10).toFixed(1); }
+    function pc(v){ return (v == null || isNaN(v)) ? '-' : Math.round(v * 10) / 10 + '%'; }
+    function cnt(n, p){ return (n == null ? '-' : n) + (p != null && n ? ' (' + Math.round(p) + '%)' : ''); }
+    var cells;
+    if (u.kind === 'dst'){
+      cells = [['Sacks/G', f1(r.sacks / G)], ['Takeaways/G', f1(((r.interceptions || 0) + (r.fumbleRecoveries || 0)) / G)], ['Def TDs', r.defenseTouchdowns || 0],
+               ['PA/G', f1(r.paPerGame)], ['Pass yds/G', f1(r.passYdsPerGame)], ['Run yds/G', f1(r.runYdsPerGame)], ['Pts/G', f1(r.fantasyPpg)]];
+    } else if (u.kind === 'qb'){
+      var db = r.dropbacks || 0;
+      cells = [['Dropbacks/G', f1(db / G)], ['aDOT', f1(r.depthAim)], ['Sack %', db ? pc(r.sks / db * 100) : '-'],
+               ['EZ att', cnt(r.ezAtt, r.ezPct)], ['EZ TD %', pc(r.ezTdPct)], ['Pts/dropback', (r.ptsPerDb == null ? '-' : r.ptsPerDb)],
+               ['Rush/G', f1(r.rushCarries / G)], ['RZ rush', cnt(r.rzRushCarries, r.rzRushPct)], ['In-5 rush', cnt(r.i5RushCarries, r.i5RushPct)]];
+    } else if (u.kind === 'rb'){
+      cells = [['Carries/G', f1(r.rushCarries / G)], ['RZ carries', cnt(r.rzRushCarries, r.rzRushPct)], ['In-5 carries', cnt(r.i5RushCarries, r.i5RushPct)],
+               ['In-5 TDs', r.i5RushTds || 0], ['Tgts/G', f1(r.recTarg / G)], ['Catch %', pc(r.catch)],
+               ['RZ tgts', cnt(r.rzRecTarg, r.rzRecTargPct)], ['Pts/touch', (r.ptsPerTouch == null ? '-' : r.ptsPerTouch)], ['Drops', r.recDrops || 0]];
+    } else {
+      cells = [['Tgts/G', f1(r.recTarg / G)], ['Catch %', pc(r.catch)], ['aDOT', f1(r.depth)],
+               ['YAC/rec', f1(r.rac)], ['RZ tgts', cnt(r.rzRecTarg, r.rzRecTargPct)], ['EZ tgts', cnt(r.ezRecTarg, r.ezRecTargPct)],
+               ['RZ TDs', r.rzRecTds || 0], ['Drops', r.recDrops || 0], ['Pts/snap', (r.ptsPerSnap == null ? '-' : r.ptsPerSnap)]];
+    }
+    return '<div class="gl-usage"><div class="gl-ut">Season usage &middot; ' + (r.games || 0) + ' games</div><div class="gl-ug">' +
+      cells.map(function(c){ return '<div class="gl-uc"><span>' + c[0] + '</span><b>' + c[1] + '</b></div>'; }).join('') + '</div></div>';
+  }
+  // Short pass-rush note for a QB's team vs the opposing DEF, for the matchup card.
+  function usagePressureNote(qbTeam, defTeam){
+    var d = usageData.dst[normalizeTeam(defTeam)];
+    if (!d || !d.games) return '';
+    var team = normalizeTeam(qbTeam), best = null;
+    Object.keys(usageData.pass).forEach(function(k){
+      if (k.split('|')[1] !== team) return;
+      var q = usageData.pass[k];
+      if (!best || (q.dropbacks || 0) > (best.dropbacks || 0)) best = q;
+    });
+    var parts = [defTeam + ' D ' + (Math.round(d.sacks / d.games * 10) / 10) + ' sacks/g'];
+    if (best && best.dropbacks >= 40) parts.push('QB sacked ' + (Math.round(best.sks / best.dropbacks * 1000) / 10) + '%');
+    return '(' + parts.join(', ') + ')';
+  }
+
   // ── PFF team grades (team_overview.csv) → flip-over matchup view ──────
   var teamGrades = {};            // normalized team code -> {grades_*, wins, losses, ties, points_scored, points_allowed}
   var teamGradesLoadedAt = null;
@@ -3245,8 +3385,9 @@
       if (dd[1] >= EDGE) lean.push(item(t + ' passing', dd[1], [qb, names(t, ['WR','TE'], 2)]));
       if (dd[3] >= EDGE) lean.push(item(t + ' run game', dd[3], [names(t, ['RB'], 2)]));
       if (dd[2] >= EDGE && dd[1] < EDGE) lean.push(item(t + ' QB clean pocket', dd[2], [qb]));
+      var oppT = opp[t], prNote = usagePressureNote(t, oppT);
       if (dd[1] <= -EDGE) watch.push(item(t + ' passing', dd[1], [qb, names(t, ['WR','TE'], 1)]));
-      if (dd[2] <= -EDGE) watch.push(item(t + ' QB pressure', dd[2], [qb]));
+      if (dd[2] <= -EDGE) watch.push(item(t + ' QB pressure', dd[2], [qb, prNote]));
       if (dd[3] <= -EDGE) watch.push(item(t + ' run game', dd[3], [names(t, ['RB'], 2)]));
       if (dd[4] <= -EDGE) watch.push(item(t + ' run blocking', dd[4], [names(t, ['RB'], 1)]));
     });
@@ -3683,6 +3824,7 @@
         matchupDataLoadedAt: matchupDataLoadedAt,
         teamGrades: teamGrades,
         teamGradesLoadedAt: teamGradesLoadedAt,
+        usageData: usageData,
         kalshiWorkerUrl: document.getElementById('kalshiWorkerUrl') ? document.getElementById('kalshiWorkerUrl').value : '',
         polymarketWorkerUrl: document.getElementById('polymarketWorkerUrl') ? document.getElementById('polymarketWorkerUrl').value : '',
         thresholds: {
@@ -3775,6 +3917,12 @@
       if (state.matchupWorkerUrl && document.getElementById('matchupWorkerUrl')) document.getElementById('matchupWorkerUrl').value = state.matchupWorkerUrl;
       if (state.kalshiWorkerUrl && document.getElementById('kalshiWorkerUrl')) document.getElementById('kalshiWorkerUrl').value = state.kalshiWorkerUrl;
       if (state.polymarketWorkerUrl && document.getElementById('polymarketWorkerUrl')) document.getElementById('polymarketWorkerUrl').value = state.polymarketWorkerUrl;
+      if (state.usageData && (state.usageData.rec || state.usageData.pass || state.usageData.dst)){
+        usageData = { rec: state.usageData.rec || {}, pass: state.usageData.pass || {}, dst: state.usageData.dst || {}, loadedAt: state.usageData.loadedAt || null };
+        usageNameIdx = null;
+        var usEl = document.getElementById('usageStatus');
+        if (usEl) usEl.textContent = usageStatusText();
+      }
       if (state.teamGrades && Object.keys(state.teamGrades).length){
         teamGrades = state.teamGrades;
         teamGradesLoadedAt = state.teamGradesLoadedAt || null;
@@ -6025,7 +6173,7 @@
     });
   }
   function glAttr(p){
-    if (!p || !p.name || p.position === 'DEF') return '';
+    if (!p || !p.name) return '';
     return ' data-gl="' + String(p.name).replace(/"/g, '&quot;') + '|' + p.position + '|' + (p.team || '') + '"';
   }
   function glFind(name, pos, team){
@@ -6085,11 +6233,18 @@
       if (el === cur){ return; }
       cur = el;
       var parts = el.getAttribute('data-gl').split('|');
-      var e = (typeof NFL_GAMELOGS === 'undefined') ? null : glFind(parts[0], parts[1], parts[2]);
-      if (!e){
-        tip.innerHTML = '<div class="gl-h"><b>' + parts[0] + '</b></div><div style="color:var(--muted);">' +
+      var isDef = parts[1] === 'DEF';
+      var e = (isDef || typeof NFL_GAMELOGS === 'undefined') ? null : glFind(parts[0], parts[1], parts[2]);
+      var u = usageFor(parts[0], parts[1], parts[2]);
+      var html = '';
+      if (e) html += glHtml(e);
+      if (u) html = (e ? html : '<div class="gl-h"><b>' + parts[0] + '</b><span>' + parts[2] + ' &middot; ' + parts[1] + '</span></div>') + usageHtml(u, parts[1]);
+      if (!html && !isDef){
+        html = '<div class="gl-h"><b>' + parts[0] + '</b></div><div style="color:var(--muted);">' +
           (typeof NFL_GAMELOGS === 'undefined' ? 'gamelogs_2026.js not found next to this page.' : 'No game log yet this season.') + '</div>';
-      } else { tip.innerHTML = glHtml(e); }
+      }
+      if (!html){ cur = el; tip.style.display = 'none'; return; }
+      tip.innerHTML = html;
       tip.style.display = 'block'; place(ev);
     });
     document.addEventListener('mousemove', function(ev){ if (cur) place(ev); });
@@ -7184,6 +7339,11 @@
     if (games.length && confirm('Clear all '+games.length+' games?')){
       games=[]; renderGames(); if(players.length) tagPlayers(); saveState();
     }
+  });
+  document.getElementById('usageBtn').addEventListener('click', function(){ document.getElementById('usageFile').click(); });
+  document.getElementById('usageFile').addEventListener('change', function(){
+    usageLoadFiles(this.files);
+    this.value = '';
   });
   document.getElementById('teamGradesBtn').addEventListener('click', function(){ document.getElementById('teamGradesFile').click(); });
   document.getElementById('teamGradesFile').addEventListener('change', function(){
