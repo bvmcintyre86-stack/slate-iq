@@ -191,12 +191,12 @@
   .polymkt-col,.polymkt-row{display:none !important;}
   /* Defense-only view: Team total, Kalshi, Opp and Role are all empty/unused for a D/ST. */
   #poolTable.hide-team-total th[data-key="teamImplied"], #poolTable.hide-team-total td.tt-cell,
-  #poolTable.hide-team-total th[data-key="kalshi"], #poolTable.hide-team-total th[data-key="opp"], #poolTable.hide-team-total th[data-key="role"],
-  /* td positions: Kalshi = 7, Opp = 14, Role = 15 (update if columns are added/reordered) */
-  #poolTable.hide-team-total tbody td:nth-child(7), #poolTable.hide-team-total tbody td:nth-child(14), #poolTable.hide-team-total tbody td:nth-child(15){display:none;}
-  /* Opp total + Sprd only matter for defenses: shown only in the DEF view. td positions: Opp total = 11, Sprd = 12 */
+  #poolTable.hide-team-total th[data-key="kalshi"], #poolTable.hide-team-total th[data-key="model"], #poolTable.hide-team-total th[data-key="opp"], #poolTable.hide-team-total th[data-key="role"],
+  /* td positions: Kalshi = 7, Model = 9, Opp = 15, Role = 16 (update if columns are added/reordered) */
+  #poolTable.hide-team-total tbody td:nth-child(7), #poolTable.hide-team-total tbody td:nth-child(9), #poolTable.hide-team-total tbody td:nth-child(15), #poolTable.hide-team-total tbody td:nth-child(16){display:none;}
+  /* Opp total + Sprd only matter for defenses: shown only in the DEF view. td positions: Opp total = 12, Sprd = 13 */
   #poolTable.hide-def-cols th[data-key="oppImplied"], #poolTable.hide-def-cols th[data-key="teamSpread"],
-  #poolTable.hide-def-cols tbody td:nth-child(11), #poolTable.hide-def-cols tbody td:nth-child(12){display:none;}
+  #poolTable.hide-def-cols tbody td:nth-child(12), #poolTable.hide-def-cols tbody td:nth-child(13){display:none;}
   .src-row-label{font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;min-width:0;}
   .src-row input[type=text],.src-row-half input[type=text]{flex:1;min-width:140px;font-size:12px;}
   .src-row .src-status,.src-row-half .src-status{font-size:12px;color:var(--muted);white-space:nowrap;}
@@ -250,6 +250,11 @@
   #glTip .gl-uc{display:flex;flex-direction:column;}
   #glTip .gl-uc span{font-size:10px;color:var(--muted);}
   #glTip .gl-uc b{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;}
+  #glTip .gl-xtd{margin-top:7px;padding-top:6px;border-top:1px dashed var(--line);font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;}
+  #glTip .gl-xtd b{color:var(--text,inherit);font-variant-numeric:tabular-nums;}
+  #glTip .gl-xtd .xt{font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:1px 6px;border-radius:8px;}
+  #glTip .gl-xtd .xt.due{background:rgba(46,157,91,.18);color:#2e9d5b;}
+  #glTip .gl-xtd .xt.hot{background:rgba(224,140,30,.18);color:#d9822b;}
   #glTip tr.gl-off td{color:var(--muted);}
   #glTip tr.gl-avg td{border-top:1px solid var(--line);font-weight:700;color:var(--gold);}
   #glTip td.gl-fp{color:var(--gold);font-weight:700;}
@@ -516,6 +521,7 @@
           <option value="fppg">FanDuel fppg</option>
           <option value="market">Market (Unabated+Kalshi+Polymarket avg)</option>
           <option value="blend">Blend (fppg + Market avg, 50/50)</option>
+          <option value="model">Model (Slate IQ game-log projection)</option>
         </select>
         <span class="src-panel-meta" id="dataSourcesMeta"></span>
       </summary>
@@ -598,6 +604,7 @@
             <th data-key="mkt">Mkt</th>
             <th data-key="kalshi" title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th>
             <th data-key="polymarket" class="polymkt-col" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th>
+            <th data-key="model" title="Slate IQ Model: recency-weighted usage x efficiency (shrunk toward league averages) from this season's game logs, tilted for this game's team total and spread. Backtested 2022-25: about 1-2% lower error than a plain trailing average. Does NOT know injuries or news.">Model</th>
             <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their combined Unabated+Kalshi+Polymarket projection (average of whichever are loaded). Smaller or negative = closer to or past that target.">3x &Delta;</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="oppImplied" title="Opponent's implied team total. Lower = better for that team's DEF (and a tougher scoring spot for its offense).">Opp total</th>
@@ -3209,6 +3216,34 @@
     }
     return null;
   }
+  // League TD conversion rates by position, pooled 2022-2025 (PFF fantasy-stats files).
+  // Per-player TD rates barely carry year to year, so expected TDs = opportunities x league rate.
+  var XTD_RATES = {
+    WR: { recRZ: 0.1883, recNon: 0.0072, i5: 0.4737, rz: 0.1434, non: 0.0125 },
+    TE: { recRZ: 0.2412, recNon: 0.0035, i5: 0.4286, rz: 0.1053, non: 0.0131 },
+    RB: { recRZ: 0.2098, recNon: 0.0060, i5: 0.3879, rz: 0.0567, non: 0.0054 },
+    QB: { i5: 0.4800, rz: 0.1086, non: 0.0032 }
+  };
+  // Expected vs actual TDs from usage (receiving + rushing; QBs rushing only). Returns null if not enough data.
+  function usageXtd(u){
+    var r = u.row, G = r.games || 0;
+    var pos = u.kind === 'qb' ? 'QB' : (u.kind === 'rb' ? 'RB' : (r.position === 'TE' ? 'TE' : (r.position === 'RB' ? 'RB' : 'WR')));
+    var R = XTD_RATES[pos];
+    if (!R || G < 3) return null;
+    function n(v){ return +v || 0; }
+    var exp = 0, act = 0;
+    if (pos !== 'QB'){
+      var tg = n(r.recTarg), rz = Math.min(tg, n(r.rzRecTarg));
+      exp += rz * R.recRZ + (tg - rz) * R.recNon;
+      act += n(r.recTds);
+    }
+    var car = n(r.rushCarries), rzc = Math.min(car, n(r.rzRushCarries)), i5 = Math.min(rzc, n(r.i5RushCarries));
+    exp += i5 * R.i5 + (rzc - i5) * R.rz + (car - rzc) * R.non;
+    act += n(r.rushTds);
+    if (exp < 0.4 && act < 1) return null;
+    var d = act - exp;
+    return { exp: exp, act: act, tag: d <= -1 ? 'due' : (d >= 1 ? 'hot' : '') };
+  }
   function usageHtml(u, pos){
     var r = u.row, G = Math.max(1, r.games || 1);
     function f1(v){ return (v == null || isNaN(v)) ? '-' : (Math.round(v * 10) / 10).toFixed(1); }
@@ -3232,8 +3267,13 @@
                ['YAC/rec', f1(r.rac)], ['RZ tgts', cnt(r.rzRecTarg, r.rzRecTargPct)], ['EZ tgts', cnt(r.ezRecTarg, r.ezRecTargPct)],
                ['RZ TDs', r.rzRecTds || 0], ['Drops', r.recDrops || 0], ['Pts/snap', (r.ptsPerSnap == null ? '-' : r.ptsPerSnap)]];
     }
+    var xt = u.kind === 'dst' ? null : usageXtd(u), xtHtml = '';
+    if (xt){
+      xtHtml = '<div class="gl-xtd"><span>' + (u.kind === 'qb' ? 'Rush TDs' : 'TDs') + '</span><b>' + xt.act + '</b><span>vs</span><b>' + f1(xt.exp) + '</b><span>expected</span>' +
+        (xt.tag ? '<span class="xt ' + xt.tag + '">' + (xt.tag === 'due' ? 'due' : 'running hot') + '</span>' : '') + '</div>';
+    }
     return '<div class="gl-usage"><div class="gl-ut">Season usage &middot; ' + (r.games || 0) + ' games</div><div class="gl-ug">' +
-      cells.map(function(c){ return '<div class="gl-uc"><span>' + c[0] + '</span><b>' + c[1] + '</b></div>'; }).join('') + '</div></div>';
+      cells.map(function(c){ return '<div class="gl-uc"><span>' + c[0] + '</span><b>' + c[1] + '</b></div>'; }).join('') + '</div>' + xtHtml + '</div>';
   }
   // Short pass-rush note for a QB's team vs the opposing DEF, for the matchup card.
   function usagePressureNote(qbTeam, defTeam){
@@ -5214,6 +5254,75 @@
       ' = ' + cmp.fp.toFixed(1) + ' pts';
   }
 
+  // ── Slate IQ Model projection ─────────────────────────────────────────
+  // Recency-weighted per-game usage (targets, carries, attempts) x efficiency shrunk
+  // toward league averages, then tilted for this game's team total / spread versus the
+  // totals the player's own games had. Settings fit and backtested on 2022-25 nflverse
+  // weekly data (leave-one-season-out): ~1-2% lower RMSE than a plain trailing average,
+  // consistent in every season. It cannot see injuries, role changes or news - that is
+  // what the market sources are for.
+  var MODEL = {
+    DEC: 0.88, WINDOW: 16, MIN_GAMES: 4, IMP: 0.029,
+    SPR: { QB: -0.008, RB: 0, WR: -0.010, TE: -0.005 },
+    LG: {
+      QB: { ypa: 7.0488, tda: 0.0434, inta: 0.0225, ypc: 4.4066, tdc: 0.0461 },
+      RB: { ypt: 5.7336, cr: 0.78, tdt: 0.0299, ypc: 4.3171, tdc: 0.0305 },
+      WR: { ypt: 7.9362, cr: 0.6305, tdt: 0.048, ypc: 5.65, tdc: 0.0427 },
+      TE: { ypt: 7.2856, cr: 0.7128, tdt: 0.0514, ypc: 4.1552, tdc: 0.069 }
+    }
+  };
+  function modelProjection(p){
+    if (!p || !MODEL.LG[p.position]) return null;
+    var e = glFind(p.name, p.position, p.team);
+    if (!e || !e.w) return null;
+    var hist = e.w.slice(-MODEL.WINDOW), n = hist.length;
+    if (n < MODEL.MIN_GAMES) return null;
+    var key = n + '|' + hist[n - 1][0] + '|' + platform + '|' + (p.teamImplied == null ? '' : p.teamImplied + ',' + p.teamSpread);
+    if (p._mdl && p._mdl.key === key) return p._mdl.val;
+    var L = MODEL.LG[p.position], isQB = p.position === 'QB';
+    var W = 0, tg = 0, ca = 0, at = 0, sT = 0, sC = 0, sA = 0, sRec = 0, sReY = 0, sReT = 0, sRuY = 0, sRuT = 0, sPY = 0, sPT = 0, sInt = 0;
+    var wI = 0, sI = 0, wS = 0, sS = 0;
+    hist.forEach(function(r, i){
+      var w = Math.pow(MODEL.DEC, n - 1 - i);
+      W += w; tg += w * r[10]; ca += w * r[7]; at += w * r[3];
+      sT += w * r[10]; sC += w * r[7]; sA += w * r[3];
+      sRec += w * r[11]; sReY += w * r[12]; sReT += w * r[13]; sRuY += w * r[8]; sRuT += w * r[9];
+      sPY += w * r[4]; sPT += w * r[5]; sInt += w * r[6];
+      if (r[16] != null){ wI += w; sI += w * r[16]; sS += w * r[17]; }
+    });
+    tg /= W; ca /= W; at /= W;
+    var recW = platform === 'dk' ? 1 : 0.5, pts = 0, parts = {};
+    if (!isQB){
+      var ypt = (sReY + 40 * L.ypt) / (sT + 40), cr = (sRec + 40 * L.cr) / (sT + 40), tdt = (sReT + 300 * L.tdt) / (sT + 300);
+      parts.rec = tg * (cr * recW + 0.1 * ypt + 6 * tdt);
+      pts += parts.rec;
+    }
+    var ypc = (sRuY + 100 * L.ypc) / (sC + 100), tdc = (sRuT + 250 * L.tdc) / (sC + 250);
+    parts.rush = ca * (0.1 * ypc + 6 * tdc);
+    pts += parts.rush;
+    if (isQB){
+      var ypa = (sPY + 200 * L.ypa) / (sA + 200), tda = (sPT + 300 * L.tda) / (sA + 300), ia = (sInt + 300 * L.inta) / (sA + 300);
+      parts.pass = at * (0.04 * ypa + 4 * tda - ia);
+      pts += parts.pass;
+    }
+    var mult = 1, envNote = '';
+    if (p.teamImplied != null && wI > 0){
+      var impH = sI / wI, sprH = sS / wI;
+      var dImp = p.teamImplied - impH, dSpr = (-(p.teamSpread || 0)) - sprH;
+      mult = Math.max(0.75, Math.min(1.3, 1 + MODEL.IMP * dImp + MODEL.SPR[p.position] * dSpr));
+      envNote = 'team total ' + p.teamImplied.toFixed(1) + ' vs ' + impH.toFixed(1) + ' in his recent games';
+    }
+    var val = { fp: Math.max(0, pts * mult), base: pts, mult: mult, tg: tg, ca: ca, at: at, n: n, env: envNote };
+    p._mdl = { key: key, val: val };
+    return val;
+  }
+  function modelTooltip(m, pos){
+    if (!m) return 'No Model projection: needs ' + MODEL.MIN_GAMES + '+ games of game-log data (QB/RB/WR/TE only).';
+    var vol = pos === 'QB' ? m.at.toFixed(1) + ' att/g, ' + m.ca.toFixed(1) + ' car/g' : m.tg.toFixed(1) + ' tgt/g' + (m.ca >= 1 ? ', ' + m.ca.toFixed(1) + ' car/g' : '');
+    return 'Slate IQ Model: ' + m.fp.toFixed(1) + ' pts. Recency-weighted over ' + m.n + ' games: ' + vol + '. Base ' + m.base.toFixed(1) +
+      (m.env ? ' x ' + m.mult.toFixed(2) + ' game environment (' + m.env + ')' : ' (no game entered for this team, no environment tilt)') + '. Does not know injuries or news.';
+  }
+
   // Blends FanDuel's own fppg with the market-derived projection, per the
   // Projection Source dropdown. "Market" and "Blend" both now pull from
   // combinedMarketProjection (all 3 sources averaged, not Unabated alone) -
@@ -5224,6 +5333,12 @@
   // have this player yet (partial props coverage is expected/common).
   function effectiveFppg(p){
     if (projSource === 'fppg') return p.fppg;
+    if (projSource === 'model'){
+      var mdl = modelProjection(p);
+      if (mdl) return mdl.fp;
+      var c0 = combinedMarketProjection(p);
+      return c0 ? c0.fp : p.fppg;
+    }
     var combined = combinedMarketProjection(p);
     if (!combined) return p.fppg;
     if (projSource === 'market') return combined.fp;
@@ -5987,6 +6102,10 @@
         var bkp = kalshiProjections[normalizeName(b.name)];
         av = akp ? akp.fp : -Infinity;
         bv = bkp ? bkp.fp : -Infinity;
+      } else if (sortKey === 'model'){
+        var amd = modelProjection(a), bmd = modelProjection(b);
+        av = amd ? amd.fp : -Infinity;
+        bv = bmd ? bmd.fp : -Infinity;
       } else if (sortKey === 'polymarket'){
         var app = polymarketProjections[normalizeName(a.name)];
         var bpp = polymarketProjections[normalizeName(b.name)];
@@ -6055,6 +6174,7 @@
       var cmp = combinedMarketProjection(p);
       var effFppgTitle = projSource === 'fppg'
         ? 'Projection Source = FanDuel fppg - using this number directly for ranking/lineups.'
+        : (projSource === 'model' && modelProjection(p)) ? 'Projection Source = Model: ' + modelTooltip(modelProjection(p), p.position)
         : 'Effective projection used for ranking/lineups: ' + effectiveFppg(p).toFixed(1) + ' pts' +
           (projSource === 'blend' ? ' (50/50 blend of fppg ' + p.fppg.toFixed(1) + ' and market avg)' : '') +
           ' - ' + (cmp ? combinedMarketProjectionNote(cmp) : 'no Unabated/Kalshi/Polymarket data yet for this player, falling back to fppg');
@@ -6079,6 +6199,10 @@
         })() : '—'))+'</td>'+
         '<td class="num" style="color:'+(kp?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kp,p.position).replace(/"/g,'&quot;')+'">'+(kp ? kalshiDisplayTotal(kp).toFixed(1) : '—')+'</td>'+
         '<td class="num polymkt-col" style="color:'+(pp?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(pp,p.position).replace(/"/g,'&quot;')+'">'+(pp ? polymarketDisplayTotal(pp).toFixed(1) : '—')+'</td>'+
+        (function(){
+          var md = modelProjection(p);
+          return '<td class="num" style="color:'+(md?'var(--blue)':'var(--muted)')+';cursor:help;" title="'+modelTooltip(md,p.position).replace(/"/g,'&quot;')+'">'+(md ? md.fp.toFixed(1) : '—')+'</td>';
+        })()+
         (function(){
           var delta = mkt3xDelta(p);
           if (delta === null) return '<td class="num" style="color:var(--muted);">—</td>';
