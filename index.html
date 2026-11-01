@@ -122,6 +122,14 @@
   .mu-num{width:26px;text-align:right;font-size:11px;}
   .mu-num.pos{color:var(--teal);} .mu-num.neg{color:var(--brick);} .mu-num.strong{font-weight:700;}
   .mu-empty{font-size:12px;color:var(--muted);padding:14px 0;}
+  .mu-bd{flex:0 0 auto;margin-top:9px;padding-top:7px;border-top:1px solid var(--line);}
+  .mu-bd-h{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;}
+  .mu-bd-grid{display:grid;grid-template-columns:64px 1fr 1fr;column-gap:8px;row-gap:4px;align-items:start;font-size:10.5px;line-height:1.3;}
+  .mu-bd-grid .l{color:var(--muted);font-size:10.5px;}
+  .mu-bd-grid .v{color:var(--chalk);min-width:0;}
+  .mu-bd-grid .v span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .mu-bd-grid .v .dim{color:var(--muted);}
+  .mu-bd-grid .v b{font-weight:600;}
   .mu-legend{font-size:10px;color:var(--muted);margin-top:7px;line-height:1.35;flex:0 0 auto;}
   @media (prefers-reduced-motion:reduce){ .game-card .flip-inner{transition:none;} }
   .game-card .remove{
@@ -3444,7 +3452,7 @@
 
   // Rule-based synopsis from the grade gaps (offense grade minus the
   // opposing defense grade). Deterministic - same inputs, same text.
-  var MU_BACK_H = 420; // every flipped card is exactly this tall
+  var MU_BACK_H = 480; // every flipped card is exactly this tall
   function shortName(n){
     var parts = String(n).trim().split(/\s+/);
     return parts.length < 2 ? n : parts[0].charAt(0) + '. ' + parts.slice(1).join(' ');
@@ -3510,6 +3518,61 @@
     return '<div class="mu-syn">' + out.join('') + '</div>';
   }
 
+  // ── Team tendencies for the flip card (from this season's game logs) ──
+  var tendCache = null;
+  function lastName(n){
+    var t = String(n).replace(/\b(jr|sr|ii|iii|iv)\b\.?/ig, '').trim().split(/\s+/);
+    return t[t.length - 1] || n;
+  }
+  function teamTendency(code){
+    if (typeof NFL_GAMELOGS === 'undefined') return null;
+    if (!tendCache || tendCache.through !== NFL_GAMELOGS.meta.throughWeek){
+      var T = {};
+      Object.keys(NFL_GAMELOGS.players).forEach(function(k){
+        var e = NFL_GAMELOGS.players[k], tc = normalizeTeam(e.t);
+        var o = T[tc] || (T[tc] = { att: 0, car: 0, tgt: 0, weeks: {}, pl: [] });
+        var tg = 0, ca = 0, at = 0;
+        e.w.forEach(function(r){ at += r[3]; ca += r[7]; tg += r[10]; o.weeks[r[0]] = 1; });
+        o.att += at; o.car += ca; o.tgt += tg;
+        o.pl.push({ n: e.n, p: e.p, tgt: tg, car: ca, g: e.w.length });
+      });
+      tendCache = { through: NFL_GAMELOGS.meta.throughWeek, T: T };
+    }
+    var o = tendCache.T[normalizeTeam(code)];
+    if (!o || !(o.att + o.car)) return null;
+    var games = Object.keys(o.weeks).length || 1;
+    function top(key, total, n, minShare){
+      return o.pl.filter(function(x){ return x[key] > 0 && total > 0; }).sort(function(a, b){ return b[key] - a[key]; }).slice(0, n)
+        .map(function(x){ return { n: lastName(x.n), pct: Math.round(x[key] / total * 100), per: x[key] / Math.max(1, x.g) }; });
+    }
+    return {
+      games: games,
+      passRate: Math.round(o.att / (o.att + o.car) * 100),
+      attPg: o.att / games, carPg: o.car / games,
+      tgt: top('tgt', o.tgt, 2), car: top('car', o.car, 2)
+    };
+  }
+  function matchupBreakdownHtml(g){
+    var s = gameSides(g), TA = teamTendency(g.away), TH = teamTendency(g.home);
+    var dA = usageData.dst[normalizeTeam(g.away)], dH = usageData.dst[normalizeTeam(g.home)];
+    function dline(d){ if (!d || !d.games) return null; return (Math.round(d.sacks / d.games * 10) / 10) + ' sk &middot; ' + (Math.round(((d.interceptions || 0) + (d.fumbleRecoveries || 0)) / d.games * 10) / 10) + ' TO'; }
+    function pl(list){ return list && list.length ? list.map(function(x){ return '<span><b>' + x.n + '</b> <span class="dim" style="display:inline">' + x.pct + '%</span></span>'; }).join('') : '<span class="dim">&mdash;</span>'; }
+    var rows = [];
+    function row(label, a, h){ rows.push('<span class="l">' + label + '</span><div class="v">' + a + '</div><div class="v">' + h + '</div>'); }
+    row('Implied', '<span><b>' + s.away.implied.toFixed(1) + '</b> <span class="dim" style="display:inline">pts</span></span>', '<span><b>' + s.home.implied.toFixed(1) + '</b> <span class="dim" style="display:inline">pts</span></span>');
+    if (TA || TH){
+      row('Pass rate', TA ? '<span><b>' + TA.passRate + '%</b> <span class="dim" style="display:inline">' + TA.attPg.toFixed(0) + ' / ' + TA.carPg.toFixed(0) + ' per g</span></span>' : '<span class="dim">&mdash;</span>',
+                       TH ? '<span><b>' + TH.passRate + '%</b> <span class="dim" style="display:inline">' + TH.attPg.toFixed(0) + ' / ' + TH.carPg.toFixed(0) + ' per g</span></span>' : '<span class="dim">&mdash;</span>');
+      row('Target share', pl(TA && TA.tgt), pl(TH && TH.tgt));
+      row('Carry share', pl(TA && TA.car), pl(TH && TH.car));
+    }
+    var a1 = dline(dH), h1 = dline(dA); // offense row shows the DEFENSE it faces
+    if (a1 || h1) row('Faces D', a1 ? '<span>' + a1 + '</span><span class="dim">' + g.home + ' D per game</span>' : '<span class="dim">&mdash;</span>', h1 ? '<span>' + h1 + '</span><span class="dim">' + g.away + ' D per game</span>' : '<span class="dim">&mdash;</span>');
+    var wk = NFL_GAMELOGS_THROUGH();
+    return '<div class="mu-bd"><div class="mu-bd-h">Breakdown' + (wk ? ' &middot; Weeks 1-' + wk : '') + '</div><div class="mu-bd-grid">' + rows.join('') + '</div></div>';
+  }
+  function NFL_GAMELOGS_THROUGH(){ return (typeof NFL_GAMELOGS !== 'undefined' && NFL_GAMELOGS.meta) ? NFL_GAMELOGS.meta.throughWeek : 0; }
+
   function matchupBackHtml(g){
     var A = teamGrades[normalizeTeam(g.away)], H = teamGrades[normalizeTeam(g.home)];
     var head = '<div class="mu-head"><span>' + g.away + ' @ ' + g.home + '</span><span class="hint">click to flip back</span></div>';
@@ -3529,7 +3592,7 @@
         '<div class="mu-track"><div class="mu-mid"></div><div class="mu-fill ' + cls + '" style="left:' + left + '%;width:' + w + '%;"></div></div>' +
         '<span class="mu-num mono ' + cls + (strong ? ' strong' : '') + '">' + (Math.round(d) === 0 ? '0' : (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(0)) + '</span></div>';
     }
-    var grid = '<div class="mu-grid"><span></span><span class="mu-colh">' + g.away + ' off</span><span class="mu-colh">' + g.home + ' off</span>';
+    var grid = '<div class="mu-grid" title="Each bar: that offense\'s PFF grade minus the opposing defense\'s. Green = offense edge, red = defense edge. Hover a bar for raw grades. Through Week ' + gradesThroughWeek() + '."><span></span><span class="mu-colh">' + g.away + ' off</span><span class="mu-colh">' + g.home + ' off</span>';
     MU_ROWS.forEach(function(r, i){
       var sA = i > 0 && Math.abs(da[i]) === maxAbs && maxAbs >= 8, sH = i > 0 && Math.abs(dh[i]) === maxAbs && maxAbs >= 8;
       grid += '<span class="mu-lbl' + (sA || sH ? ' strong' : '') + '">' + SHORT[i] + '</span>' +
@@ -3538,8 +3601,8 @@
     grid += '</div>';
     return '<div class="mu-wrap">' + head +
       '<div class="mu-rec mono">' + muRecord(A, g.away) + '<br>' + muRecord(H, g.home) + '</div>' +
-      matchupSynopsis(g, A, H) + grid +
-      '<div class="mu-legend">Each bar: that offense\'s PFF grade minus the opposing defense\'s. <span style="color:var(--teal)">Green</span> = offense edge, <span style="color:var(--brick)">red</span> = defense edge. Hover for raw grades. Through Week ' + gradesThroughWeek() + '.</div></div>';
+      matchupSynopsis(g, A, H) + grid + matchupBreakdownHtml(g) +
+      '</div>';
   }
 
   // Rebuild just the matchup side of each card (names depend on the Player
