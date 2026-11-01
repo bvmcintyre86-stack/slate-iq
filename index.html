@@ -640,7 +640,7 @@
     <div class="section-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div>
         <h2><span class="section-toggle" data-toggle-section="lineupsSection">&#9660;</span> Your lineups</h2>
-        <div class="sub" id="luSub">Build up to 200 lineups. Click a card below to edit it.</div>
+        <div class="sub" id="luSub">Build up to 300 lineups. Click a card below to edit it.</div>
       </div>
       <button id="exportCsvBtn" style="flex-shrink:0;">⬇ Export week to CSV</button>
     </div>
@@ -689,7 +689,7 @@
 
       <div style="display:flex;align-items:center;gap:10px;align-self:center;margin-top:auto;margin-bottom:auto;">
         <span class="bar-group-label">Bulk build</span>
-        <input id="bulkCountInput" type="number" min="1" max="200" value="5" style="width:46px;">
+        <input id="bulkCountInput" type="number" min="1" max="300" value="5" style="width:52px;">
         <div style="display:flex;flex-direction:column;gap:8px;">
           <button id="bulkGenerateBtn">Generate lineups</button>
           <button id="luDeleteAllBtn" style="color:#c00;">Delete all lineups</button>
@@ -752,7 +752,7 @@
     {key:'FLEX', label:'FLEX', eligible:['RB']},
     {key:'DEF', label:'DEF', eligible:['DEF']}
   ];
-  var MAX_LINEUPS = 200;
+  var MAX_LINEUPS = 300;
   // Two fixed "source" layouts for Single Game / Showdown - both FanDuel
   // and DraftKings use 1 Captain/MVP + 5 FLEX (6 total), same roster size,
   // just a different label for the 1.5x slot. Kept as two separate arrays
@@ -5925,7 +5925,7 @@
   // used a lot for the OPEN slots in this batch, so the filled-in portion
   // varies across lineups instead of repeating the same picks every time -
   // your locked players stay identical in all of them, as expected.
-  // Respects MAX_LINEUPS (100) and replaces lineup tabs 1 through N, so it
+  // Respects MAX_LINEUPS (300) and replaces lineup tabs 1 through N, so it
   // confirms first since that's destructive to anything else in those tabs.
   function bulkGenerateLineups(n){
     n = Math.max(1, Math.min(MAX_LINEUPS, Math.round(n) || 1));
