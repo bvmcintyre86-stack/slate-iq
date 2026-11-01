@@ -3452,7 +3452,7 @@
 
   // Rule-based synopsis from the grade gaps (offense grade minus the
   // opposing defense grade). Deterministic - same inputs, same text.
-  var MU_BACK_H = 480; // every flipped card is exactly this tall
+  var MU_BACK_H = 495; // every flipped card is exactly this tall
   function shortName(n){
     var parts = String(n).trim().split(/\s+/);
     return parts.length < 2 ? n : parts[0].charAt(0) + '. ' + parts.slice(1).join(' ');
@@ -3561,8 +3561,8 @@
     function row(label, a, h){ rows.push('<span class="l">' + label + '</span><div class="v">' + a + '</div><div class="v">' + h + '</div>'); }
     row('Implied', '<span><b>' + s.away.implied.toFixed(1) + '</b> <span class="dim" style="display:inline">pts</span></span>', '<span><b>' + s.home.implied.toFixed(1) + '</b> <span class="dim" style="display:inline">pts</span></span>');
     if (TA || TH){
-      row('Pass rate', TA ? '<span><b>' + TA.passRate + '%</b> <span class="dim" style="display:inline">' + TA.attPg.toFixed(0) + ' / ' + TA.carPg.toFixed(0) + ' per g</span></span>' : '<span class="dim">&mdash;</span>',
-                       TH ? '<span><b>' + TH.passRate + '%</b> <span class="dim" style="display:inline">' + TH.attPg.toFixed(0) + ' / ' + TH.carPg.toFixed(0) + ' per g</span></span>' : '<span class="dim">&mdash;</span>');
+      row('Pass rate', TA ? '<span><b>' + TA.passRate + '%</b> pass</span><span class="dim">' + TA.attPg.toFixed(0) + ' att &middot; ' + TA.carPg.toFixed(0) + ' car</span>' : '<span class="dim">&mdash;</span>',
+                       TH ? '<span><b>' + TH.passRate + '%</b> pass</span><span class="dim">' + TH.attPg.toFixed(0) + ' att &middot; ' + TH.carPg.toFixed(0) + ' car</span>' : '<span class="dim">&mdash;</span>');
       row('Target share', pl(TA && TA.tgt), pl(TH && TH.tgt));
       row('Carry share', pl(TA && TA.car), pl(TH && TH.car));
     }
