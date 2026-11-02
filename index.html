@@ -661,7 +661,8 @@
 
       <div class="bar-divider"></div>
 
-      <div class="field-inline" id="stackSettings" style="align-self:center;margin-top:auto;margin-bottom:auto;align-items:flex-end;">
+      <div id="stackSettings" style="display:flex;flex-direction:column;align-items:center;gap:20px;align-self:center;margin-top:auto;margin-bottom:auto;">
+      <div class="field-inline" style="align-items:flex-end;">
         <div class="field">
           <label>Stack level</label>
           <select id="stackLevelSel" style="width:23ch;">
@@ -681,6 +682,16 @@
           </select>
         </div>
         <details class="sec-details" id="secDetails"><summary>Types</summary><div class="sec-list" id="secList"></div></details>
+      </div>
+        <div class="field" style="flex-direction:row;align-items:center;gap:8px;">
+          <label style="white-space:nowrap;" title="Nudges lineup selection toward high-workload players in good matchups (PFF grade gap vs the opposing defense) and away from high-workload players in bad ones. Only changes who gets picked, never the projected points shown. Needs the PFF team grades CSV loaded. Off by default.">Matchup tilt</label>
+          <select id="tiltSel" style="width:15ch;">
+            <option value="0">Off</option>
+            <option value="1">Light (&plusmn;2%)</option>
+            <option value="2">Medium (&plusmn;3.5%)</option>
+            <option value="3">Heavy (&plusmn;5%)</option>
+          </select>
+        </div>
       </div>
 
       <div class="field field-inline" id="mvpFilterWrap" style="display:none;align-self:center;">
@@ -876,7 +887,7 @@
   var activeIdx  = 0;
   var lineup     = lineups[activeIdx];
   var salaryCap  = 60000;
-  var SEC_DEFAULTS = { secCount: 0, secCombos: { rbDef: true, rbOppPC: true, wrOppPC: true, rbSamePC: false, rbOppRb: false }, avoidDefOpp: true, noSameTeamDup: true, rbFavOnly: true };
+  var SEC_DEFAULTS = { tilt: 0, secCount: 0, secCombos: { rbDef: true, rbOppPC: true, wrOppPC: true, rbSamePC: false, rbOppRb: false }, avoidDefOpp: true, noSameTeamDup: true, rbFavOnly: true };
   var stackSettings = Object.assign({ level: 0, bringBack: false, onslaughtOnly: false }, JSON.parse(JSON.stringify(SEC_DEFAULTS)));
 
   // ── Market-based projections (Unabated player props) ─────────────────────
@@ -1275,6 +1286,16 @@
   // real, visible mismatch on players with several small contributions,
   // which is common for QBs). The precise mp.fp is still what actually
   // drives scoring/sorting/the optimizer - only the DISPLAY uses this.
+  // The number the Mkt column actually shows for a row (a DEF shows its line-based projection),
+  // so sorting matches what's on screen.
+  function mktSortValue(p){
+    if (p.position === 'DEF'){
+      var dl = defLineProjection(p);
+      if (dl !== null) return dl;
+    }
+    var mp = marketProjections[normalizeName(p.name)];
+    return mp ? mktDisplayTotal(mp) : -Infinity;
+  }
   function mktDisplayTotal(mp){
     if (!mp || !mp.breakdown) return 0;
     var sum = 0;
@@ -5252,7 +5273,44 @@
     var rank = p.rank || 0;
     var exposurePenalty = (exposureCount[p.id] || 0) * EXPOSURE_PENALTY_PER_USE;
     var scriptBonus = SCRIPT_BONUS[p.tag] || 0;
-    return effectiveFppg(p) + tierBonus - (rank * 1.5) - exposurePenalty + scriptBonus + (scoreNoise[p.id] || 0);
+    return effectiveFppg(p) + tierBonus - (rank * 1.5) - exposurePenalty + scriptBonus + matchupTiltBonus(p) + (scoreNoise[p.id] || 0);
+  }
+
+  // ── Matchup tilt (optional, off by default) ─────────────────────────────
+  // Bonus = max% x matchup edge x workload x projection. Edge comes from the PFF grade gap
+  // (this offense vs the opposing defense: passing vs coverage for QB/WR/TE, run game and run
+  // blocking vs run D for RB), scaled so a 30-point gap is the full +/-1. Workload scales it
+  // 0..1 from recent targets / touches / attempts, so only players who actually get the ball
+  // move much. It nudges selection only: shown and totaled projections are not changed.
+  var TILT_PCT = [0, 0.02, 0.035, 0.05];
+  function matchupEdge(p){
+    if (!p || !p.oppTeam || p.position === 'DEF') return 0;
+    var O = teamGrades[normalizeTeam(p.team)], D = teamGrades[normalizeTeam(p.oppTeam)];
+    if (!O || !D) return 0;
+    var d;
+    if (p.position === 'RB'){
+      d = ((O.grades_run - D.grades_run_defense) + (O.grades_run_block - D.grades_run_defense)) / 2;
+    } else {
+      d = O.grades_pass - D.grades_coverage_defense;
+    }
+    if (d == null || isNaN(d)) return 0;
+    return Math.max(-1, Math.min(1, d / 30));
+  }
+  function workloadFactor(p){
+    var m = null; try { m = modelProjection(p); } catch(e){}
+    if (!m) return 0.5;
+    var v, lo, hi;
+    if (p.position === 'QB'){ v = m.at; lo = 26; hi = 38; }
+    else if (p.position === 'RB'){ v = m.ca + m.tg; lo = 8; hi = 22; }
+    else { v = m.tg; lo = 3; hi = 9; }
+    return Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+  }
+  function matchupTiltBonus(p){
+    var pct = TILT_PCT[stackSettings.tilt || 0] || 0;
+    if (!pct) return 0;
+    var edge = matchupEdge(p);
+    if (!edge) return 0;
+    return pct * edge * workloadFactor(p) * effectiveFppg(p);
   }
 
   // The "Market" number behind the Projection Source toggle - a simple
@@ -6229,10 +6287,7 @@
     rows.sort(function(a,b){
       var av, bv;
       if (sortKey === 'mkt'){
-        var amp = marketProjections[normalizeName(a.name)];
-        var bmp = marketProjections[normalizeName(b.name)];
-        av = amp ? amp.fp : -Infinity;
-        bv = bmp ? bmp.fp : -Infinity;
+        av = mktSortValue(a); bv = mktSortValue(b);
       } else if (sortKey === 'kalshi'){
         var akp = kalshiProjections[normalizeName(a.name)];
         var bkp = kalshiProjections[normalizeName(b.name)];
@@ -6273,6 +6328,13 @@
       if (av === null) av = -Infinity;
       if (bv === null) bv = -Infinity;
       if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+      // For the projection columns, players with no number always sink to the bottom,
+      // whichever direction is picked (ascending used to float them to the top).
+      if (sortKey === 'mkt' || sortKey === 'kalshi' || sortKey === 'polymarket' || sortKey === 'model'){
+        var aMiss = (av === -Infinity), bMiss = (bv === -Infinity);
+        if (aMiss && !bMiss) return 1;
+        if (bMiss && !aMiss) return -1;
+      }
       if (av < bv) return sortDir === 'asc' ? -1 : 1;
       if (av > bv) return sortDir === 'asc' ? 1 : -1;
       return 0;
@@ -7433,6 +7495,7 @@
   }
   function syncSecondaryUI(){
     var sel = document.getElementById('secCountSel'); if (sel) sel.value = String(stackSettings.secCount || 0);
+    var tl = document.getElementById('tiltSel'); if (tl) tl.value = String(stackSettings.tilt || 0);
     document.querySelectorAll('#secList input[data-sec]').forEach(function(cb){ cb.checked = !!stackSettings.secCombos[cb.getAttribute('data-sec')]; });
     var av = document.getElementById('avoidDefOppChk'); if (av) av.checked = !!stackSettings.avoidDefOpp;
     var nd = document.getElementById('noDupChk'); if (nd) nd.checked = !!stackSettings.noSameTeamDup;
@@ -7440,6 +7503,10 @@
   }
   buildSecondaryUI();
   syncSecondaryUI();
+  document.getElementById('tiltSel').addEventListener('change', function(){
+    stackSettings.tilt = parseInt(this.value, 10) || 0;
+    saveState();
+  });
   document.getElementById('secCountSel').addEventListener('change', function(){
     stackSettings.secCount = parseInt(this.value, 10) || 0;
     saveState();
