@@ -1013,9 +1013,12 @@
   // separators" this data is for. Returns null pieces (not an error) when
   // matchup data hasn't been loaded yet or this player/team isn't in it.
   function getMatchupInfo(p){
-    if (!matchupData || !p) return null;
-    var role = matchupData.players[normalizeName(p.name)] || null;
-    var oppRank = (p.oppTeam && matchupData.defenseVsPosition[p.oppTeam])
+    if (!p) return null;
+    var role = (matchupData && matchupData.players[normalizeName(p.name)]) || null;
+    // Two-way players (e.g. Travis Hunter) are listed as defensive backs upstream, so the
+    // matchup feed drops them; fall back to the role numbers baked into the game-log file.
+    if (!role && typeof NFL_GAMELOGS !== 'undefined' && NFL_GAMELOGS.roleFallback) role = NFL_GAMELOGS.roleFallback[normalizeName(p.name)] || null;
+    var oppRank = (matchupData && p.oppTeam && matchupData.defenseVsPosition[p.oppTeam])
       ? (matchupData.defenseVsPosition[p.oppTeam][p.position] || null)
       : null;
     if (!role && !oppRank) return null;
