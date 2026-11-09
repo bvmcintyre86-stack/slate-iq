@@ -791,7 +791,6 @@
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button class="primary" id="propsRefreshAllBtn">Refresh all sources</button>
-      <button id="propsRecomputeBtn">Recompute</button>
       <span class="sub" id="propsCount"></span>
     </div>
     <div class="pp-bar" id="propsSrcStatus"></div>
@@ -3158,7 +3157,6 @@
       propsSaveLog(); propsRender();
     });
     $('propsExportBtn').addEventListener('click', propsExportLog);
-    $('propsRecomputeBtn').addEventListener('click', propsRender);
     $('propsRefreshAllBtn').addEventListener('click', async function(){
       var btn = this; btn.disabled = true; btn.textContent = 'Refreshing...';
       try {
