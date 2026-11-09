@@ -433,6 +433,8 @@
   .pp-controls input[type=text]{width:150px;}
   .pp-books{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin:6px 0 12px;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;}
   .pp-chk{display:inline-flex;align-items:center;gap:5px;cursor:pointer;}
+  .pp-bookgrp{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;width:100%;}
+  .pp-grplabel{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);min-width:150px;}
   .pp-chk input{padding:0;}
   .pp-dim{color:var(--muted);font-size:11px;}
   .pp-note{font-size:12px;color:var(--muted);line-height:1.5;margin:8px 0 14px;}
@@ -807,7 +809,7 @@
     </div>
     <div class="pp-books" id="propsBookList"></div>
     <details class="pp-note"><summary>How this is calculated</summary>
-      <div>Each selected book's over/under (or Yes) price is converted to a probability and its margin removed. Where a book posts the exact line a prediction-market rung uses, that is the fair number ("Posted line"). Otherwise the book's other lines are used to interpolate, or the curve is extended a short way with a normal (yardage, receptions) or Poisson (pass TDs) fit - those rows are labelled and deserve more skepticism. Fair value is the average across books; "Spread" is how much the books disagree. Anytime TD is only offered as a Yes price, so its margin is an assumption (the hold box above); a * marks those rows. Fees use 7% x p x (1-p) on Kalshi and the market's own fee coefficient on Polymarket (it reports 9.5% right now); hover Edge for the no-fee (resting order) figure. Bid/ask depth is not available here, so check size before trading. Rows more than 20¢ away from the market are hidden by default because that usually means the two markets are not the same bet (injury, different rules). Use the Log to track results and whether prices move toward your number; that is the real test of whether an edge exists.</div>
+      <div>Each selected sportsbook's over/under (or Yes) price is converted to a probability and its margin removed. Where a book posts the exact line a prediction-market rung uses, that is the fair number ("Posted line"). Otherwise the book's other lines are used to interpolate, or the curve is extended a short way with a normal (yardage, receptions) or Poisson (pass TDs) fit - those rows are labelled and deserve more skepticism. Fair value is the average across books; "Spread" is how much the books disagree. Anytime TD is only offered as a Yes price, so its margin is an assumption (the hold box above); a * marks those rows. Fees use 7% x p x (1-p) on Kalshi and the market's own fee coefficient on Polymarket (it reports 9.5% right now); hover Edge for the no-fee (resting order) figure. Bid/ask depth is not available here, so check size before trading. Rows more than 20¢ away from the market are hidden by default because that usually means the two markets are not the same bet (injury, different rules). Use the Log to track results and whether prices move toward your number; that is the real test of whether an edge exists.</div>
     </details>
     <div class="pp-wrap" id="propsTable"></div>
     <h3>Bet log</h3>
@@ -2716,7 +2718,24 @@
   var PROP_BT = {};
   Object.keys(PROP_STATS).forEach(function(k){ PROP_BT[PROP_STATS[k].bt] = k; });
   // Known sportsbook ids (from SPORTSBOOK_PRIORITY); any other source id is shown as "src N".
-  var PROP_BOOK_NAMES = { 1: 'DraftKings', 2: 'FanDuel', 86: 'Fanatics', 4: 'BetMGM', 20: 'Caesars', 36: 'theScore Bet' };
+  // Names come from the page's ALL_KNOWN_SOURCES table (defined further down). Which sources count
+  // toward the sportsbook consensus is decided by kind: only real sportsbooks are on by default.
+  // Pick'em/DFS apps post fixed-payout "prices" that are not true odds, and Kalshi/Polymarket are
+  // the very markets being compared, so counting them would make the comparison circular.
+  var PROP_KIND_BY_SRC = {
+    1: 'book', 2: 'book', 4: 'book', 17: 'book', 20: 'book', 25: 'book', 27: 'book', 36: 'book', 78: 'book', 86: 'book',
+    72: 'pickem', 73: 'pickem', 84: 'pickem', 90: 'pickem',
+    52: 'exchange', 66: 'exchange', 67: 'exchange', 89: 'exchange', 105: 'exchange', 107: 'exchange', 111: 'exchange',
+    49: 'consensus'
+  };
+  var PROP_KIND_LABEL = { book: 'Sportsbooks', pickem: "Pick'em / DFS apps", exchange: 'Exchanges & prediction markets', consensus: 'Derived consensus', other: 'Unidentified' };
+  function propsSrcName(src){ return (typeof ALL_KNOWN_SOURCES !== 'undefined' && ALL_KNOWN_SOURCES[src]) || ('Unidentified source ' + src); }
+  function propsSrcKind(src){ return PROP_KIND_BY_SRC[src] || 'other'; }
+  function propsBookOn(src){
+    var v = PROPS_CFG.books[src];
+    if (v === true || v === false) return v;
+    return propsSrcKind(src) === 'book';
+  }
   var PROPS_FEES = { kalshi: 0.07, poly: 0.07 }; // poly: only used if a market carries no fee of its own; real markets report one (0.095 seen on 2026-11-09) // taker coefficient: fee = coef * p * (1 - p) per contract
   var PROPS_CFG = { minEdge: 3, maxSpread: 10, minBooks: 2, hold1: 5, holdAttd: 8, venue: 'all', stat: 'all', side: 'all', search: '', suspect: false, books: {}, sortKey: 'ev', sortDir: 'desc' };
   var PROPS_LOG_KEY = 'slateIqPropsLog';
@@ -2847,7 +2866,7 @@
   function propsConsensus(ev, stat, L){
     var vals = [], worst = 'direct', srcs = [];
     for (var src in ev.books){
-      if (PROPS_CFG.books[src] === false) continue;
+      if (!propsBookOn(src)) continue;
       var bp = propsBookPoints(ev.books[src], stat);
       var r = propsCurveEval(bp.pts, stat, L);
       if (!r) continue;
@@ -3002,10 +3021,15 @@
       '<span>Polymarket: <b>' + propsPolyRungs.length + '</b> rungs, ' + propsAge(propsPolyAt) + '</span>' +
       '<span>Matched: <b>' + propsRows.length + '</b></span>';
     // book list
-    var bl = document.getElementById('propsBookList'), html = '';
-    Object.keys(propsSrcCounts).sort(function(a, b){ return propsSrcCounts[b] - propsSrcCounts[a]; }).forEach(function(s){
-      var nm = PROP_BOOK_NAMES[s] || ('src ' + s), on = PROPS_CFG.books[s] !== false;
-      html += '<label class="pp-chk"><input type="checkbox" data-src="' + s + '"' + (on ? ' checked' : '') + '> ' + propsEsc(nm) + ' <span class="pp-dim">(' + propsSrcCounts[s] + ')</span></label>';
+    var bl = document.getElementById('propsBookList'), html = '', groups = {};
+    Object.keys(propsSrcCounts).forEach(function(sr){ (groups[propsSrcKind(sr)] = groups[propsSrcKind(sr)] || []).push(sr); });
+    ['book', 'pickem', 'exchange', 'consensus', 'other'].forEach(function(kind){
+      if (!groups[kind]) return;
+      html += '<div class="pp-bookgrp"><span class="pp-grplabel">' + PROP_KIND_LABEL[kind] + (kind === 'book' ? '' : ' (off by default)') + '</span>';
+      groups[kind].sort(function(x, y){ return propsSrcCounts[y] - propsSrcCounts[x]; }).forEach(function(sr){
+        html += '<label class="pp-chk"><input type="checkbox" data-src="' + sr + '"' + (propsBookOn(sr) ? ' checked' : '') + '> ' + propsEsc(propsSrcName(sr)) + ' <span class="pp-dim">(' + propsSrcCounts[sr] + ')</span></label>';
+      });
+      html += '</div>';
     });
     bl.innerHTML = html || '<span class="pp-dim">No books loaded yet.</span>';
 
@@ -3033,7 +3057,7 @@
         '<td>' + propsC(r.cost) + '</td><td>' + propsPct(r.fair) + '</td>' +
         '<td class="pp-edge ' + (r.ev < 0 ? 'pp-neg' : '') + '" title="Taker fee ' + propsC(r.fee) + ' already deducted. Edge if filled as a resting (maker) order: ' + propsC(r.evMaker) + '">' + (r.ev * 100).toFixed(1) + '¢</td>' +
         '<td>' + (r.roi * 100).toFixed(1) + '%</td>' +
-        '<td title="' + propsEsc(r.srcs.map(function(s){ return PROP_BOOK_NAMES[s] || ('src ' + s); }).join(', ')) + '">' + r.n + '</td>' +
+        '<td title="' + propsEsc(r.srcs.map(propsSrcName).join(', ')) + '">' + r.n + '</td>' +
         '<td>' + (r.sd != null ? (r.sd * 100).toFixed(1) + '¢' : '-') + '</td>' +
         '<td class="pp-mode pp-' + r.mode + '" title="' + (r.oneSided ? 'Books post only a Yes price; their margin is removed with the assumed hold set above. ' : '') + '">' + PROP_MODE_TXT[r.mode] + (r.oneSided ? '*' : '') + '</td>' +
         '<td>' + (r.bid != null ? (r.bid * 100).toFixed(0) : '-') + '/' + (r.ask != null ? (r.ask * 100).toFixed(0) : '-') + '</td>' +
@@ -3109,7 +3133,7 @@
     $('pfSearch').addEventListener('input', function(){ PROPS_CFG.search = this.value; propsRender(); });
     $('pfSuspect').addEventListener('change', function(){ PROPS_CFG.suspect = this.checked; propsRender(); });
     $('propsBookList').addEventListener('change', function(ev){
-      var t = ev.target; if (t && t.getAttribute('data-src')){ PROPS_CFG.books[t.getAttribute('data-src')] = t.checked; propsRender(); }
+      var t = ev.target; if (t && t.getAttribute('data-src')){ PROPS_CFG.books[t.getAttribute('data-src')] = t.checked; try { localStorage.setItem('slateIqPropsBooks', JSON.stringify(PROPS_CFG.books)); } catch(e){} propsRender(); }
     });
     $('propsTable').addEventListener('click', function(ev){
       var t = ev.target;
@@ -3162,6 +3186,7 @@
     if (propsViewOn) propsRender();
   }
   propsLoadLog();
+  try { var sb = JSON.parse(localStorage.getItem('slateIqPropsBooks') || '{}'); if (sb && typeof sb === 'object') PROPS_CFG.books = sb; } catch(e){}
   // Exposed for testing/debugging in the console.
   window.__propsEngine = { curveEval: propsCurveEval, bookPoints: propsBookPoints, bestSide: propsBestSide, rungLine: propsRungLine, compute: propsCompute, cfg: PROPS_CFG,
     rows: function(){ return propsRows; }, setRungs: function(k, p){ propsKalshiRungs = k || []; propsPolyRungs = p || []; }, render: propsRender };
