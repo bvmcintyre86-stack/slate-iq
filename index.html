@@ -2960,6 +2960,15 @@
         });
       });
     });
+    // One row per bet: if a venue lists the same player/market/line twice (a thin duplicate listing next to the
+    // real one), keep the deeper one - most open interest, then the tighter bid/ask.
+    var bestBy = {};
+    rows.forEach(function(r){
+      var k = r.key + '|' + r.side, cur = bestBy[k];
+      var oi = isFinite(r.oi) ? r.oi : -1, coi = cur ? (isFinite(cur.oi) ? cur.oi : -1) : -2;
+      if (!cur || oi > coi || (oi === coi && (r.spread == null ? 9 : r.spread) < (cur.spread == null ? 9 : cur.spread))) bestBy[k] = r;
+    });
+    rows = rows.filter(function(r){ return bestBy[r.key + '|' + r.side] === r; });
     propsRows = rows;
     return rows;
   }
