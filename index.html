@@ -804,6 +804,9 @@
       <div class="field"><label>Player</label><input type="text" id="pfSearch" placeholder="search"></div>
       <div class="field"><label>Anytime-TD book hold %</label><input type="number" id="pfHoldAttd" value="8" step="1" title="Books post only a Yes price for anytime TD. This is the margin assumed to be inside it."></div>
       <div class="field"><label>One-sided hold %</label><input type="number" id="pfHold1" value="5" step="1" title="Margin assumed for alt lines and any book that posts only one side."></div>
+      <div class="field"><label>Min open interest</label><input type="number" id="pfMinOi" value="0" min="0" step="50" title="Hides rows whose market has fewer contracts outstanding than this. Rows with unknown open interest (Polymarket doesn't report it here) are hidden whenever this is above 0."></div>
+      <label class="pp-chk" style="padding-bottom:9px;"><input type="checkbox" id="pfHideExtrap" checked> Hide extrapolated rows</label>
+      <label class="pp-chk" style="padding-bottom:9px;"><input type="checkbox" id="pfBooksOnly" checked> Sportsbooks only</label>
       <label class="pp-chk" style="padding-bottom:9px;"><input type="checkbox" id="pfSuspect"> Show suspect (&gt;20¢ gap to market)</label>
     </div>
     <div class="pp-books" id="propsBookList"></div>
@@ -2731,12 +2734,13 @@
   function propsSrcName(src){ return (typeof ALL_KNOWN_SOURCES !== 'undefined' && ALL_KNOWN_SOURCES[src]) || ('Unidentified source ' + src); }
   function propsSrcKind(src){ return PROP_KIND_BY_SRC[src] || 'other'; }
   function propsBookOn(src){
+    if (PROPS_CFG.booksOnly && propsSrcKind(src) !== 'book') return false;
     var v = PROPS_CFG.books[src];
     if (v === true || v === false) return v;
     return propsSrcKind(src) === 'book';
   }
   var PROPS_FEES = { kalshi: 0.07, poly: 0.07 }; // poly: only used if a market carries no fee of its own; real markets report one (0.095 seen on 2026-11-09) // taker coefficient: fee = coef * p * (1 - p) per contract
-  var PROPS_CFG = { minEdge: 3, maxSpread: 10, minBooks: 2, hold1: 5, holdAttd: 8, venue: 'all', stat: 'all', side: 'all', search: '', suspect: false, books: {}, sortKey: 'ev', sortDir: 'desc' };
+  var PROPS_CFG = { minEdge: 3, maxSpread: 10, minBooks: 2, hold1: 5, holdAttd: 8, venue: 'all', stat: 'all', side: 'all', search: '', suspect: false, hideExtrap: true, booksOnly: true, minOi: 0, books: {}, sortKey: 'ev', sortDir: 'desc' };
   var PROPS_LOG_KEY = 'slateIqPropsLog';
   var propsLog = [];
   var propsRows = [];
@@ -3004,6 +3008,8 @@
       if (r.spread != null && r.spread * 100 > c.maxSpread) return false;
       if (r.ev * 100 < c.minEdge) return false;
       if (!c.suspect && r.gap > 0.20) return false;
+      if (c.hideExtrap && r.mode === 'extrap') return false;
+      if (c.minOi > 0 && !(isFinite(r.oi) && r.oi >= c.minOi)) return false;
       return true;
     });
   }
@@ -3023,7 +3029,7 @@
     var bl = document.getElementById('propsBookList'), html = '', groups = {};
     Object.keys(propsSrcCounts).forEach(function(sr){ (groups[propsSrcKind(sr)] = groups[propsSrcKind(sr)] || []).push(sr); });
     ['book', 'pickem', 'exchange', 'consensus', 'other'].forEach(function(kind){
-      if (!groups[kind]) return;
+      if (!groups[kind] || (PROPS_CFG.booksOnly && kind !== 'book')) return;
       html += '<div class="pp-bookgrp"><span class="pp-grplabel">' + PROP_KIND_LABEL[kind] + (kind === 'book' ? '' : ' (off by default)') + '</span>';
       groups[kind].sort(function(x, y){ return propsSrcCounts[y] - propsSrcCounts[x]; }).forEach(function(sr){
         html += '<label class="pp-chk"><input type="checkbox" data-src="' + sr + '"' + (propsBookOn(sr) ? ' checked' : '') + '> ' + propsEsc(propsSrcName(sr)) + ' <span class="pp-dim">(' + propsSrcCounts[sr] + ')</span></label>';
@@ -3130,6 +3136,9 @@
       $(p[0]).addEventListener('change', function(){ PROPS_CFG[p[1]] = this.value; propsRender(); });
     });
     $('pfSearch').addEventListener('input', function(){ PROPS_CFG.search = this.value; propsRender(); });
+    $('pfMinOi').addEventListener('input', function(){ var v = parseFloat(this.value); PROPS_CFG.minOi = isNaN(v) ? 0 : v; propsRender(); });
+    $('pfHideExtrap').addEventListener('change', function(){ PROPS_CFG.hideExtrap = this.checked; propsRender(); });
+    $('pfBooksOnly').addEventListener('change', function(){ PROPS_CFG.booksOnly = this.checked; propsRender(); });
     $('pfSuspect').addEventListener('change', function(){ PROPS_CFG.suspect = this.checked; propsRender(); });
     $('propsBookList').addEventListener('change', function(ev){
       var t = ev.target; if (t && t.getAttribute('data-src')){ PROPS_CFG.books[t.getAttribute('data-src')] = t.checked; try { localStorage.setItem('slateIqPropsBooks', JSON.stringify(PROPS_CFG.books)); } catch(e){} propsRender(); }
