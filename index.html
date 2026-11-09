@@ -199,7 +199,7 @@
   .polymkt-col,.polymkt-row{display:none !important;}
   /* Defense-only view: Team total, Kalshi, Opp and Role are all empty/unused for a D/ST. */
   #poolTable.hide-team-total th[data-key="teamImplied"], #poolTable.hide-team-total td.tt-cell,
-  #poolTable.hide-team-total th[data-key="kalshi"], #poolTable.hide-team-total th[data-key="model"], #poolTable.hide-team-total th[data-key="opp"], #poolTable.hide-team-total th[data-key="role"],
+  #poolTable.hide-team-total th[data-key="prediction"], #poolTable.hide-team-total th[data-key="model"], #poolTable.hide-team-total th[data-key="opp"], #poolTable.hide-team-total th[data-key="role"],
   /* td positions: Kalshi = 7, Model = 9, Opp = 15, Role = 16 (update if columns are added/reordered) */
   #poolTable.hide-team-total tbody td:nth-child(7), #poolTable.hide-team-total tbody td:nth-child(9), #poolTable.hide-team-total tbody td:nth-child(15), #poolTable.hide-team-total tbody td:nth-child(16){display:none;}
   /* Opp total + Sprd only matter for defenses: shown only in the DEF view. td positions: Opp total = 12, Sprd = 13 */
@@ -421,12 +421,45 @@
   .tp-card .tp-add-lu.full-lu{border-color:var(--muted);color:var(--muted);cursor:default;}
   .tp-card .tp-add-lu:hover{background:var(--primary,#1a73e8);color:#fff;}
   .tp-card .tp-add-lu.in-lu{border-color:#2e7d32;color:#2e7d32;}
+  /* ── Props tab ───────────────────────── */
+  .pp-bar{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:12px;color:var(--muted);margin:8px 0 12px;}
+  .pp-bar b{color:var(--chalk);}
+  .pp-controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;margin-bottom:10px;}
+  .pp-controls .field{display:flex;flex-direction:column;gap:4px;}
+  .pp-controls input[type=number]{width:74px;}
+  .pp-controls input[type=text]{width:150px;}
+  .pp-books{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin:6px 0 12px;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;}
+  .pp-chk{display:inline-flex;align-items:center;gap:5px;cursor:pointer;}
+  .pp-chk input{padding:0;}
+  .pp-dim{color:var(--muted);font-size:11px;}
+  .pp-note{font-size:12px;color:var(--muted);line-height:1.5;margin:8px 0 14px;}
+  .pp-note summary{cursor:pointer;color:var(--gold);}
+  .pp-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;max-height:640px;overflow-y:auto;}
+  .pp-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .pp-table th{position:sticky;top:0;background:var(--panel-2);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:7px 8px;text-align:center;white-space:nowrap;cursor:default;border-bottom:1px solid var(--line);}
+  .pp-table th[data-sort]{cursor:pointer;}
+  .pp-table td{padding:6px 8px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;}
+  .pp-table td.pp-l{text-align:left;font-family:'Inter',sans-serif;font-weight:500;}
+  .pp-table tr.pp-hot td{background:rgba(79,157,110,.10);}
+  .pp-edge{font-weight:700;color:var(--green);}
+  .pp-edge.pp-neg{color:var(--muted);}
+  .pp-side{padding:1px 7px;border-radius:10px;font-size:11px;}
+  .pp-yes{background:var(--green-bg);color:var(--green);}
+  .pp-no{background:var(--brick-bg);color:#e08a73;}
+  .pp-mode{font-family:'Inter',sans-serif !important;font-size:11px;}
+  .pp-extrap{color:#e0a43a;}
+  .pp-fit,.pp-interp{color:var(--chalk);}
+  .pp-direct{color:var(--green);}
+  .pp-empty{padding:26px;text-align:center;color:var(--muted);font-size:13px;}
+  .pp-log,.pp-res,.pp-del{font-size:11px;padding:2px 8px;margin-right:3px;}
+  #propsView h3{font-size:16px;text-transform:uppercase;letter-spacing:.05em;margin:26px 0 6px;}
   /* ── Mode Toggle ───────────────────────── */
   .mode-toggle{display:flex;border-radius:8px;overflow:hidden;border:1px solid var(--line);}
   .mode-btn{padding:6px 18px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
             background:transparent;border:none;cursor:pointer;color:var(--muted);}
   .mode-btn.active{background:var(--primary,#1a73e8);color:#fff;}
   .mode-btn:first-child{border-right:1px solid var(--line);}
+  .mode-btn:nth-child(2):not(:last-child){border-right:1px solid var(--line);}
 </style>
 </head>
 <body>
@@ -440,6 +473,7 @@
     <div class="mode-toggle">
       <button class="mode-btn active" id="mainSlateBtn">Main Slate</button>
       <button class="mode-btn" id="singleGameBtn">Single Game</button>
+      <button class="mode-btn" id="viewPropsBtn">Props</button>
     </div>
     <div class="mode-toggle" style="margin-left:10px;">
       <button class="mode-btn active" id="fdPlatformBtn">FanDuel</button>
@@ -447,6 +481,7 @@
     </div>
   </div>
 
+<div id="optView">
   <section id="gameEnvSection">
     <div class="section-head">
       <h2><span class="section-toggle" data-toggle-section="gameEnvSection">&#9660;</span> Game environment</h2>
@@ -528,9 +563,9 @@
       <summary>
         Data sources
         <label class="src-row-label" id="projSourceLabel" style="margin-left:auto;">Projection source</label>
-        <select id="projSourceSel" style="font-size:12px;" title="Market = average of whichever of Unabated/Kalshi/Polymarket are loaded for each player. Blend = 50/50 with FanDuel's own fppg.">
+        <select id="projSourceSel" style="font-size:12px;" title="Market = average of Unabated (sportsbooks) and the Prediction value (Kalshi+Polymarket averaged, counted once) for each player. Blend = 50/50 with FanDuel's own fppg.">
           <option value="fppg">FanDuel fppg</option>
-          <option value="market">Market (Unabated+Kalshi+Polymarket avg)</option>
+          <option value="market">Market (Unabated + Prediction avg)</option>
           <option value="blend">Blend (fppg + Market avg, 50/50)</option>
           <option value="model">Model (Slate IQ game-log projection)</option>
         </select>
@@ -557,7 +592,7 @@
           <span id="polymarketStatus" class="src-status"></span>
           <div class="src-url-wrap" id="polymarketUrlWrap">
             <label class="src-row-label">Proxy URL</label>
-            <input id="polymarketWorkerUrl" type="text" value="" placeholder="https://your-polymarket-proxy.deno.dev">
+            <input id="polymarketWorkerUrl" type="text" value="https://polymarket-proxy-deno.bvmcintyre86-stack.deno.net" placeholder="https://your-polymarket-proxy.deno.dev">
           </div>
         </div>
         <div class="src-row-half">
@@ -613,10 +648,10 @@
             <th data-key="salary">Salary</th>
             <th data-key="fppg">FPPG</th>
             <th data-key="mkt">Mkt</th>
-            <th data-key="kalshi" title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th>
+            <th data-key="prediction" title="Prediction-market projection: Kalshi and Polymarket averaged (or whichever one has the player). Counts as one source, half the Market average. Hover a value for each venue's number.">Pred</th>
             <th data-key="polymarket" class="polymkt-col" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th>
             <th data-key="model" title="Slate IQ Model: recency-weighted usage x efficiency (shrunk toward league averages) from this season's game logs, tilted for this game's team total and spread. Backtested 2022-25: about 1-2% lower error than a plain trailing average. Does NOT know injuries or news.">Model</th>
-            <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their combined Unabated+Kalshi+Polymarket projection (average of whichever are loaded). Smaller or negative = closer to or past that target.">3x &Delta;</th>
+            <th data-key="mkt3x" id="mkt3xHeader" title="Points needed to hit the salary-based DFS value target for this mode, minus their combined projection (Unabated and Prediction, Kalshi+Polymarket averaged, each counted once). Smaller or negative = closer to or past that target.">3x &Delta;</th>
             <th data-key="teamImplied">Team total</th>
             <th data-key="oppImplied" title="Opponent's implied team total. Lower = better for that team's DEF (and a tougher scoring spot for its offense).">Opp total</th>
             <th data-key="teamSpread" title="This team's spread (negative = favored). Favored defenses score more.">Sprd</th>
@@ -746,6 +781,43 @@
     </div>
     <div id="resultsHistoryView"></div>
   </section>
+</div><!-- /optView -->
+
+<div id="propsView" style="display:none;">
+  <section>
+    <div class="section-head">
+      <h2>Props edges</h2>
+      <div class="sub">Kalshi and Polymarket prices against the sportsbook consensus, at the price you could actually trade (buy Yes at the ask, or buy No at 1 - bid), after taker fees.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <button class="primary" id="propsRefreshAllBtn">Refresh all sources</button>
+      <button id="propsRecomputeBtn">Recompute</button>
+      <span class="sub" id="propsCount"></span>
+    </div>
+    <div class="pp-bar" id="propsSrcStatus"></div>
+    <div class="pp-controls">
+      <div class="field"><label>Min edge (¢)</label><input type="number" id="pfMinEdge" value="3" step="0.5"></div>
+      <div class="field"><label>Max bid/ask gap (¢)</label><input type="number" id="pfMaxSpread" value="10" step="1"></div>
+      <div class="field"><label>Min books</label><input type="number" id="pfMinBooks" value="2" min="1" step="1"></div>
+      <div class="field"><label>Venue</label><select id="pfVenue"><option value="all">Both</option><option value="K">Kalshi</option><option value="P">Polymarket</option></select></div>
+      <div class="field"><label>Market</label><select id="pfStat"><option value="all">All</option><option value="attd">Anytime TD</option><option value="passYards">Pass Yds</option><option value="passTD">Pass TD</option><option value="rushYards">Rush Yds</option><option value="recYards">Rec Yds</option><option value="receptions">Receptions</option></select></div>
+      <div class="field"><label>Bet</label><select id="pfSide"><option value="all">Yes + No</option><option value="Yes">Yes only</option><option value="No">No only</option></select></div>
+      <div class="field"><label>Player</label><input type="text" id="pfSearch" placeholder="search"></div>
+      <div class="field"><label>Anytime-TD book hold %</label><input type="number" id="pfHoldAttd" value="8" step="1" title="Books post only a Yes price for anytime TD. This is the margin assumed to be inside it."></div>
+      <div class="field"><label>One-sided hold %</label><input type="number" id="pfHold1" value="5" step="1" title="Margin assumed for alt lines and any book that posts only one side."></div>
+      <label class="pp-chk" style="padding-bottom:9px;"><input type="checkbox" id="pfSuspect"> Show suspect (&gt;20¢ gap to market)</label>
+    </div>
+    <div class="pp-books" id="propsBookList"></div>
+    <details class="pp-note"><summary>How this is calculated</summary>
+      <div>Each selected book's over/under (or Yes) price is converted to a probability and its margin removed. Where a book posts the exact line a prediction-market rung uses, that is the fair number ("Posted line"). Otherwise the book's other lines are used to interpolate, or the curve is extended a short way with a normal (yardage, receptions) or Poisson (pass TDs) fit - those rows are labelled and deserve more skepticism. Fair value is the average across books; "Spread" is how much the books disagree. Anytime TD is only offered as a Yes price, so its margin is an assumption (the hold box above); a * marks those rows. Fees use 7% x p x (1-p) on Kalshi and the market's own fee coefficient on Polymarket (it reports 9.5% right now); hover Edge for the no-fee (resting order) figure. Bid/ask depth is not available here, so check size before trading. Rows more than 20¢ away from the market are hidden by default because that usually means the two markets are not the same bet (injury, different rules). Use the Log to track results and whether prices move toward your number; that is the real test of whether an edge exists.</div>
+    </details>
+    <div class="pp-wrap" id="propsTable"></div>
+    <h3>Bet log</h3>
+    <div class="pp-bar" id="propsLogSummary"></div>
+    <div style="margin-bottom:8px;"><button id="propsExportBtn">Export log to CSV</button></div>
+    <div class="pp-wrap" id="propsLog"></div>
+  </section>
+</div>
 
 </div>
 
@@ -905,6 +977,9 @@
 
   // ── Kalshi (alongside Unabated's props, as a cross-check) ────────────────
   var kalshiProjections = {}; // normalized "first last" -> {fp, breakdown}
+  // Raw per-rung quotes for the Props tab. Deliberately NOT persisted: a stale
+  // bid/ask is worse than none when the whole point is executable prices.
+  var propsKalshiRungs = [], propsKalshiAt = null, propsPolyRungs = [], propsPolyAt = null;
   var kalshiProjectionsLoadedAt = null;
   // Team-level Kalshi markets for DEF rows: [{key:'teamSacks'|'teamDstAttd', event, alias, threshold, prob, bid, ask}]
   var kalshiTeamMkts = [];
@@ -1703,6 +1778,7 @@
 
     setKalshiStatus('Loading ' + relevantSeries.length + ' Kalshi prop market group(s)...');
     var candidates = {}; // normalizedName -> {statKey: [{threshold, prob, kind}, ...]}
+    var propsRawK = []; // every parsed rung with its live bid/ask, for the Props tab
     var completedCount = 0;
     var failedSeries = [];
     // Diagnostics only - lets us tell "nothing came back from Kalshi yet"
@@ -1827,6 +1903,12 @@
             var quality = haveBoth ? ((ask - bid) <= KALSHI_MAX_SPREAD ? 0 : 2) : 2;
             if (!haveBoth && last != null && !isNaN(last) && last > 0 && last < 1) quality = 1; // traded recently, no live two-sided quote
             candidates[norm][rs.key].push({ threshold: threshold, prob: prob, kind: rs.kind, bid: bid, ask: ask, q: quality, date: evDate, teams: evTeams });
+            try {
+            propsRawK.push({ n: norm, nm: name, k: rs.key, thr: threshold, bid: (bid != null && !isNaN(bid)) ? bid : null, ask: (ask != null && !isNaN(ask)) ? ask : null,
+                             last: (last != null && !isNaN(last)) ? last : null, date: evDate, teams: evTeams, tk: mkt.ticker || '',
+                             oi: parseFloat(mkt.open_interest_fp != null ? mkt.open_interest_fp : (mkt.open_interest != null ? mkt.open_interest : NaN)),
+                             vol: parseFloat(mkt.volume_24h_fp != null ? mkt.volume_24h_fp : (mkt.volume_24h != null ? mkt.volume_24h : (mkt.volume != null ? mkt.volume : NaN))) });
+            } catch(pe){ console.warn('Props capture (Kalshi) skipped one market:', pe); }
           });
         });
       });
@@ -1860,6 +1942,7 @@
       return;
     }
     kalshiProjections = {};
+    propsKalshiRungs = propsRawK; propsKalshiAt = Date.now();
     kalshiCleanDiag = { multiGame: 0, wideDropped: 0, names: [] };
     var matched = 0;
     for (var normName in candidates){
@@ -2081,6 +2164,41 @@
     }
     var eventIds = events.map(function(e){ return parseInt(e.id, 10); }).filter(function(n){ return !isNaN(n); });
 
+    // PRIMARY PATH: the proxy's /event-markets route returns a game's COMPLETE market list
+    // (every ladder rung), trimmed to what we use. The older /player-props call below only
+    // returns a fixed first page (~21 props per game, limit_per_event is ignored), which is
+    // what truncated ladders like Pass TD 1+/2+/3+/4+. If the proxy hasn't been updated yet
+    // (404), we fall back to that older call so loading still works.
+    var slimMarkets = [], viaEventRoute = false;
+    (function(){
+      var now = Date.now();
+      var inWindow = events.filter(function(e){
+        var t = e.startDate ? Date.parse(e.startDate) : NaN;
+        return isNaN(t) || (t > now - 20 * 3600000 && t < now + 8 * 86400000);
+      }).map(function(e){ return parseInt(e.id, 10); }).filter(function(n){ return !isNaN(n); });
+      if (inWindow.length) eventIds = inWindow;
+    })();
+    setPolymarketStatus('Loading full prop lists for ' + eventIds.length + ' Polymarket game(s)...');
+    var slimQueue = eventIds.slice(), slimOk = 0, slimFail = 0, slimMissingRoute = false;
+    async function slimWorker(){
+      while (slimQueue.length && !slimMissingRoute){
+        var sid = slimQueue.shift();
+        try {
+          var sr = await fetch(workerUrl + '/event-markets?id=' + sid + '&_cb=' + Date.now(), { cache: 'no-store' });
+          if (sr.status === 404){ slimMissingRoute = true; return; }
+          var sj = await sr.json().catch(function(){ return null; });
+          if (!sr.ok || !sj){ slimFail++; console.warn('Polymarket /event-markets failed for event ' + sid + ' (HTTP ' + sr.status + ')'); continue; }
+          var sm = sj.markets || [];
+          slimMarkets = slimMarkets.concat(sm);
+          lastRawPolymarketEventProps[sid] = { returned: sm.length, total: sj.totalMarkets };
+          slimOk++;
+        } catch(e){ slimFail++; console.warn('Polymarket /event-markets errored for event ' + sid + ':', e); }
+      }
+    }
+    await Promise.all([slimWorker(), slimWorker(), slimWorker(), slimWorker()]);
+    if (slimOk > 0 && slimMarkets.length){ viaEventRoute = true; }
+    else if (slimMissingRoute) console.warn('Polymarket proxy has no /event-markets route yet - using the older, truncated /player-props call. Redeploy the updated proxy to get full ladders.');
+
     setPolymarketStatus('Loading player props for ' + eventIds.length + ' Polymarket NFL event(s)...');
     // The endpoint caps requests at 25 event ids ("At most 25 event IDs are
     // allowed" - confirmed from a live 400 response), so this chunks into
@@ -2098,9 +2216,9 @@
     // types this app actually uses (passing/rushing/receiving yards,
     // receptions, TDs) - they consistently land inside that first ~50.
     var EVENT_BATCH_SIZE = 25;
-    var allMarkets = [];
+    var allMarkets = slimMarkets;
     var batchFailures = 0;
-    for (var bi = 0; bi < eventIds.length; bi += EVENT_BATCH_SIZE){
+    for (var bi = 0; bi < eventIds.length && !viaEventRoute; bi += EVENT_BATCH_SIZE){
       var batch = eventIds.slice(bi, bi + EVENT_BATCH_SIZE);
       try {
         var ppResp = await fetch(workerUrl + '/player-props', {
@@ -2203,6 +2321,7 @@
     var diag = { total: markets.length, unmatchedType: 0, noName: 0, noPrice: 0, kept: 0 };
     var unmatchedTypes = {};
     var candidates = {}; // normalizedName -> {statKey: [{threshold, prob, kind}, ...]}
+    var propsRawP = [];
 
     markets.forEach(function(mkt){
       var matcher = POLYMARKET_STAT_MATCHERS[mkt.sportsMarketType];
@@ -2212,6 +2331,13 @@
 
       var threshold = parseFloat(mkt.line);
       if (isNaN(threshold)) threshold = null;
+      // Polymarket's "N+" markets are X >= N, with `line` = N (so "5+ receptions" has line 5).
+      // Everything downstream reads a threshold as P(X > threshold), so a 5+ is really > 4.5.
+      // Without this, reception/yardage projections ran about half a unit high. Count stats
+      // (pass TD) keep the whole number: impliedTdMean already reads an integer as "at least k".
+      if (matcher.kind === 'yardage' && threshold != null && Number.isInteger(threshold) && /\+\s*$/.test((mkt.metadata && mkt.metadata.lineLabel) || '')) threshold -= 0.5;
+      // Anytime TD is the 1+ market only; the 2+ rung is a different bet.
+      if (matcher.key === 'attd' && threshold != null && threshold > 1) return;
 
       // bestBidQuote/bestAskQuote come back as STRINGS - see the comment
       // above fetchPolymarketProjections for why this is parsed explicitly
@@ -2242,7 +2368,22 @@
       var norm = normalizeName(name);
       if (!candidates[norm]) candidates[norm] = {};
       if (!candidates[norm][matcher.key]) candidates[norm][matcher.key] = [];
-      candidates[norm][matcher.key].push({ threshold: threshold, prob: prob, kind: matcher.kind });
+      // Same quote-quality + which-game tagging Kalshi gets (see kalshiCleanList).
+      var qSlug = String(mkt.slug || ''), qM = /-nfl-([a-z]{2,3})-([a-z]{2,3})-(\d{4})-(\d{2})-(\d{2})/.exec(qSlug);
+      var qDate = qM ? Date.UTC(+qM[3], +qM[4] - 1, +qM[5]) : null;
+      var qTeams = qM ? (qM[1] + qM[2]).toUpperCase() : null;
+      var qBoth = bid != null && !isNaN(bid) && ask != null && !isNaN(ask) && bid > 0 && ask > 0;
+      var qLevel = qBoth ? ((ask - bid) <= KALSHI_MAX_SPREAD ? 0 : 2) : 2;
+      candidates[norm][matcher.key].push({ threshold: threshold, prob: prob, kind: matcher.kind, bid: bid, ask: ask, q: qLevel, date: qDate, teams: qTeams });
+      try {
+      var pSlug = String(mkt.slug || mkt.marketSlug || ''), pD = /(\d{4})-(\d{2})-(\d{2})/.exec(pSlug), pDate = null;
+      if (!pD){ var pSide = (mkt.marketSides && mkt.marketSides[0] && mkt.marketSides[0].identifier) || ''; pD = /(\d{4})-(\d{2})-(\d{2})/.exec(pSide); }
+      if (pD) pDate = Date.UTC(+pD[1], +pD[2] - 1, +pD[3]);
+      var pLast = null; try { var pOut = JSON.parse(mkt.outcomes || '[]'), pPr = JSON.parse(mkt.outcomePrices || '[]'), pYi = pOut.indexOf('Yes'); if (pYi !== -1 && pPr[pYi] != null) pLast = parseFloat(pPr[pYi]); } catch(e){}
+      propsRawP.push({ n: norm, nm: name, k: matcher.key, thr: threshold, lineLabel: (mkt.metadata && mkt.metadata.lineLabel) || '',
+                       bid: (bid != null && !isNaN(bid)) ? bid : null, ask: (ask != null && !isNaN(ask)) ? ask : null, last: (pLast != null && !isNaN(pLast)) ? pLast : null,
+                       date: pDate, fee: parseFloat(mkt.feeCoefficient), tk: mkt.slug || mkt.marketSlug || '' });
+      } catch(pe){ console.warn('Props capture (Polymarket) skipped one market:', pe); }
     });
 
     if (loadPlat !== platform || loadMode !== slateMode){
@@ -2250,6 +2391,7 @@
       return;
     }
     polymarketProjections = {};
+    propsPolyRungs = propsRawP; propsPolyAt = Date.now();
     var matched = 0;
     for (var normName in candidates){
       var fp = 0;
@@ -2259,7 +2401,7 @@
         // Same EV-proxy pick as Kalshi/Unabated: whichever threshold is
         // priced closest to a coinflip is the best available expected-value
         // stand-in for that player/stat.
-        var list = stats[sk];
+        var list = kalshiCleanList(stats[sk], normName);
         var best = null, bestDist = Infinity;
         list.forEach(function(c){
           var dist = Math.abs(c.prob - 0.5);
@@ -2545,6 +2687,481 @@
       : Math.round(((1-avgProb)/avgProb) * 100);
     return { price: syntheticPrice, points: quotes[0].points, sourceId: quotes[0].sourceId, consensusCount: quotes.length, consensusProb: avgProb };
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PROPS TAB - prediction-market edges vs. sportsbook consensus
+  //
+  // For every Kalshi / Polymarket rung we can match to a sportsbook market we
+  // (1) build each book's de-vigged probability curve for that player/stat,
+  // (2) read the fair P(X > line) at the rung's line (exact line when a book
+  //     posts it, otherwise interpolated / extrapolated - flagged),
+  // (3) average across the selected books, and
+  // (4) price the bet at the EXECUTABLE side (buy Yes at the ask, buy No at
+  //     1 - bid), net of the venue's taker fee. Mid prices are never used.
+  // Nothing here touches the optimizer's projections or lineup scoring.
+  // ═══════════════════════════════════════════════════════════════════════
+  var PROP_STATS = {
+    passYards:  { bt: 14,  kind: 'cont', label: 'Pass Yds',   sd: 65,  mu0: 245 },
+    rushYards:  { bt: 12,  kind: 'cont', label: 'Rush Yds',   sd: 28,  mu0: 55 },
+    recYards:   { bt: 16,  kind: 'cont', label: 'Rec Yds',    sd: 28,  mu0: 55 },
+    receptions: { bt: 15,  kind: 'cont', label: 'Receptions', sd: 2.5, mu0: 4.5 },
+    passTD:     { bt: 65,  kind: 'cnt',  label: 'Pass TD' },
+    attd:       { bt: 216, kind: 'bin',  label: 'Anytime TD' }
+  };
+  var PROP_BT = {};
+  Object.keys(PROP_STATS).forEach(function(k){ PROP_BT[PROP_STATS[k].bt] = k; });
+  // Known sportsbook ids (from SPORTSBOOK_PRIORITY); any other source id is shown as "src N".
+  var PROP_BOOK_NAMES = { 1: 'DraftKings', 2: 'FanDuel', 86: 'Fanatics', 4: 'BetMGM', 20: 'Caesars', 36: 'theScore Bet' };
+  var PROPS_FEES = { kalshi: 0.07, poly: 0.07 }; // poly: only used if a market carries no fee of its own; real markets report one (0.095 seen on 2026-11-09) // taker coefficient: fee = coef * p * (1 - p) per contract
+  var PROPS_CFG = { minEdge: 3, maxSpread: 10, minBooks: 2, hold1: 5, holdAttd: 8, venue: 'all', stat: 'all', side: 'all', search: '', suspect: false, books: {}, sortKey: 'ev', sortDir: 'desc' };
+  var PROPS_LOG_KEY = 'slateIqPropsLog';
+  var propsLog = [];
+  var propsRows = [];
+  var propsBooksCache = null, propsBooksStamp = null;
+  var propsSrcCounts = {};
+
+  function propsClamp(x, lo, hi){ return Math.max(lo, Math.min(hi, x)); }
+
+  // ── Sportsbook side: parse the raw Unabated response, keeping BOTH sides ──
+  function propsBuildBooks(){
+    var out = {}, srcCounts = {};
+    for (var key in lastRawPregame){
+      var e = lastRawPregame[key], stat = PROP_BT[e.betTypeId];
+      if (!stat) continue;
+      var isAlt = !!e.betSubType;
+      var sides = e.sides || {};
+      for (var sk in sides){
+        var sd = sides[sk], person = lastRawPeople[sd.personId];
+        if (!person) continue;
+        var nm = normalizeName(person.firstName + ' ' + person.lastName);
+        var rec = out[nm] || (out[nm] = { name: person.firstName + ' ' + person.lastName, pos: e.playerPosition || '', stats: {} });
+        var st = rec.stats[stat] || (rec.stats[stat] = { events: {} });
+        var ev = st.events[e.eventId] || (st.events[e.eventId] = { start: e.eventStart, name: e.eventName, books: {} });
+        var msl = sd.marketSourceLines || {};
+        for (var src in msl){
+          var l = msl[src];
+          if (!l || l.statusId === 3) continue;
+          var b = ev.books[src] || (ev.books[src] = { pO: null, pU: null, over: null, under: null, yes: null, alts: [] });
+          var alts = l.alternateLines || [];
+          if (isAlt){
+            if (sd.sideIndex === 0) alts.forEach(function(a){
+              if (a.price != null && a.points != null && a.statusId !== 3) b.alts.push({ pts: a.points, price: a.price });
+            });
+            continue;
+          }
+          var a0 = alts.length ? alts[0] : l;
+          if (stat === 'attd'){
+            // Unabated lists anytime-TD as a Yes-only price; no Under exists.
+            if (sd.sideIndex === 0 && a0.price != null) b.yes = a0.price;
+            continue;
+          }
+          var pts = a0.points !== undefined ? a0.points : l.points;
+          var price = a0.price !== undefined ? a0.price : l.price;
+          if (pts == null || price == null) continue;
+          if (sd.sideIndex === 0){ b.pO = pts; b.over = price; } else { b.pU = pts; b.under = price; }
+        }
+      }
+    }
+    // Count live books so the UI can offer a per-book include list.
+    for (var nm2 in out) for (var s2 in out[nm2].stats) for (var e2 in out[nm2].stats[s2].events){
+      var bk = out[nm2].stats[s2].events[e2].books;
+      for (var sr in bk){
+        var bb = bk[sr];
+        if (bb.over != null || bb.under != null || bb.yes != null || bb.alts.length) srcCounts[sr] = (srcCounts[sr] || 0) + 1;
+      }
+    }
+    propsSrcCounts = srcCounts;
+    return out;
+  }
+
+  // One book's de-vigged curve for one stat: [{L, p}] where p = P(X > L).
+  function propsBookPoints(b, stat){
+    var pts = [], hold = null, h1 = PROPS_CFG.hold1 / 100;
+    if (stat === 'attd'){
+      var py = b.yes != null ? americanToProb(b.yes) : null;
+      if (py != null) pts.push({ L: 0.5, p: py / (1 + PROPS_CFG.holdAttd / 100), oneSided: true });
+      return { pts: pts, hold: null };
+    }
+    if (b.over != null || b.under != null){
+      var po = b.over != null ? americanToProb(b.over) : null;
+      var pu = b.under != null ? americanToProb(b.under) : null;
+      if (po != null && pu != null && b.pO === b.pU){
+        var h = po + pu - 1;
+        if (h > -0.03 && h < 0.30){ pts.push({ L: b.pO, p: po / (po + pu) }); hold = h; }
+      } else if (po != null && b.pO != null){
+        pts.push({ L: b.pO, p: po / (1 + h1), oneSided: true });
+      } else if (pu != null && b.pU != null){
+        pts.push({ L: b.pU, p: 1 - pu / (1 + h1), oneSided: true });
+      }
+    }
+    var hAlt = hold != null ? Math.max(hold, 0.03) : h1;
+    b.alts.forEach(function(a){
+      var pa = americanToProb(a.price);
+      if (pa == null) return;
+      for (var i = 0; i < pts.length; i++) if (Math.abs(pts[i].L - a.pts) < 1e-6) return; // main line wins
+      pts.push({ L: a.pts, p: pa / (1 + hAlt), oneSided: true, alt: true });
+    });
+    return { pts: pts, hold: hold };
+  }
+
+  // Fair P(X > L) from one book's curve. mode: direct < interp < fit < extrap.
+  function propsCurveEval(pts, stat, L){
+    var cfg = PROP_STATS[stat];
+    pts = pts.filter(function(q){ return q.p > 0.004 && q.p < 0.996; }).sort(function(a, b){ return a.L - b.L; });
+    if (!pts.length) return null;
+    for (var i = 0; i < pts.length; i++) if (Math.abs(pts[i].L - L) < 1e-6) return { p: pts[i].p, mode: 'direct' };
+    if (cfg.kind === 'cnt'){
+      // Count stat (pass TDs): Poisson back-out from the nearest posted line.
+      var near = pts.slice().sort(function(a, b){ return Math.abs(a.L - L) - Math.abs(b.L - L); })[0];
+      var lam = impliedTdMean(near.L, near.p);
+      if (lam == null) return null;
+      return { p: 1 - poissonCdf(Math.ceil(L) - 1, lam), mode: 'fit' };
+    }
+    var z = pts.map(function(q){ return invNormCdf(1 - q.p); });
+    for (var j = 0; j < pts.length - 1; j++){
+      if (L > pts[j].L && L < pts[j + 1].L){
+        var t = (L - pts[j].L) / (pts[j + 1].L - pts[j].L);
+        return { p: 1 - normalCdf(z[j] + t * (z[j + 1] - z[j])), mode: 'interp' };
+      }
+    }
+    var k = L < pts[0].L ? 0 : pts.length - 1;
+    var sigma0 = cfg.sd * propsClamp(pts[k].L / cfg.mu0, 0.5, 2);
+    var mu = pts[k].L - z[k] * sigma0;
+    var sigma = cfg.sd * propsClamp(mu / cfg.mu0, 0.5, 2);
+    if (pts.length >= 2){
+      var a = k === 0 ? 0 : pts.length - 2, bq = a + 1;
+      var slope = (z[bq] - z[a]) / (pts[bq].L - pts[a].L);
+      if (slope > 0.2 / sigma0 && slope < 5 / sigma0){ sigma = 1 / slope; mu = pts[k].L - z[k] * sigma; }
+    }
+    if (Math.abs(L - pts[k].L) / sigma > 1.25) return null; // too far from anything posted to trust
+    return { p: 1 - normalCdf((L - mu) / sigma), mode: 'extrap' };
+  }
+  var PROP_MODE_RANK = { direct: 0, interp: 1, fit: 2, extrap: 3 };
+
+  // Consensus across the enabled books for one player/stat/event at line L.
+  function propsConsensus(ev, stat, L){
+    var vals = [], worst = 'direct', srcs = [];
+    for (var src in ev.books){
+      if (PROPS_CFG.books[src] === false) continue;
+      var bp = propsBookPoints(ev.books[src], stat);
+      var r = propsCurveEval(bp.pts, stat, L);
+      if (!r) continue;
+      vals.push(r.p); srcs.push(src);
+      if (PROP_MODE_RANK[r.mode] > PROP_MODE_RANK[worst]) worst = r.mode;
+    }
+    if (!vals.length) return null;
+    var mean = vals.reduce(function(a, b){ return a + b; }, 0) / vals.length;
+    var sd = vals.length > 1 ? Math.sqrt(vals.reduce(function(a, b){ return a + (b - mean) * (b - mean); }, 0) / (vals.length - 1)) : null;
+    return { p: mean, n: vals.length, sd: sd, mode: worst, srcs: srcs };
+  }
+
+  // ── Prediction-market side ────────────────────────────────────────────
+  function propsFee(price, coef){ return coef * price * (1 - price); }
+  // Best executable side of one rung given a fair P(Yes). Returns null if no side is quotable.
+  function propsBestSide(venue, rung, fair){
+    var coef = venue === 'K' ? PROPS_FEES.kalshi : ((isFinite(rung.fee) && rung.fee > 0) ? rung.fee : PROPS_FEES.poly);
+    var opts = [];
+    if (rung.ask != null && rung.ask > 0 && rung.ask < 1){
+      var c = rung.ask, f = propsFee(c, coef), ev = fair - c - f;
+      opts.push({ side: 'Yes', cost: c, fee: f, ev: ev, evMaker: ev + f, roi: ev / c });
+    }
+    if (rung.bid != null && rung.bid > 0 && rung.bid < 1){
+      var c2 = 1 - rung.bid, f2 = propsFee(c2, coef), ev2 = (1 - fair) - c2 - f2;
+      opts.push({ side: 'No', cost: c2, fee: f2, ev: ev2, evMaker: ev2 + f2, roi: ev2 / c2 });
+    }
+    if (!opts.length) return null;
+    opts.sort(function(a, b){ return b.ev - a.ev; });
+    return opts[0];
+  }
+
+  // Normalise a rung's line to "P(X > L)" form. "N+" markets are X >= N, i.e. L = N - 0.5.
+  function propsRungLine(r, stat){
+    if (stat === 'attd') return (r.thr == null || r.thr <= 1) ? 0.5 : null; // only the 1+ rung (Kalshi stores 0.5, Polymarket 1)
+    var n = null;
+    if (r.lineLabel){ var m = /(\d+(?:\.\d+)?)\s*\+/.exec(r.lineLabel); if (m) n = parseFloat(m[1]); }
+    if (n != null) return Number.isInteger(n) ? n - 0.5 : n;
+    if (r.thr == null) return null;
+    return Number.isInteger(r.thr) ? r.thr - 0.5 : r.thr;
+  }
+  function propsDayOk(rungDate, startIso){
+    if (rungDate == null || !startIso) return true;
+    var d = new Date(startIso); if (isNaN(d.getTime())) return true;
+    var day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    return Math.abs(day - rungDate) <= 86400000 * 1.01;
+  }
+  function propsLabel(stat, L){
+    if (stat === 'attd') return 'Anytime TD';
+    return PROP_STATS[stat].label + ' ' + (Number.isInteger(L + 0.5) ? (L + 0.5) : L) + '+';
+  }
+  function propsGame(name){
+    var m = /\b([A-Z]{2,3})\s*@\s*.*?\b([A-Z]{2,3})\s*$/.exec(name || '');
+    return m ? (m[1] + ' @ ' + m[2]) : (name || '');
+  }
+
+  function propsCompute(){
+    if (!propsBooksCache || propsBooksStamp !== lastRawPregame){
+      propsBooksCache = Object.keys(lastRawPregame || {}).length ? propsBuildBooks() : {};
+      propsBooksStamp = lastRawPregame;
+    }
+    var books = propsBooksCache, rows = [];
+    var venues = [['K', 'Kalshi', propsKalshiRungs], ['P', 'Polymarket', propsPolyRungs]];
+    venues.forEach(function(v){
+      v[2].forEach(function(r){
+        var stat = r.k, cfg = PROP_STATS[stat];
+        if (!cfg) return;
+        var rec = books[r.n];
+        if (!rec || !rec.stats[stat]) return;
+        var L = propsRungLine(r, stat);
+        if (L == null) return;
+        // The player's own earliest game - rungs from a later week are ignored.
+        var evs = rec.stats[stat].events, evId = null, evStart = null;
+        for (var id in evs){ if (evStart === null || evs[id].start < evStart){ evStart = evs[id].start; evId = id; } }
+        var ev = evs[evId];
+        if (!propsDayOk(r.date, ev.start)) return;
+        var cons = propsConsensus(ev, stat, L);
+        if (!cons) return;
+        var best = propsBestSide(v[0], r, cons.p);
+        if (!best) return;
+        var mid = (r.bid != null && r.ask != null) ? (r.bid + r.ask) / 2 : (r.last != null ? r.last : null);
+        var spread = (r.bid != null && r.ask != null) ? r.ask - r.bid : null;
+        rows.push({
+          key: [v[0], r.n, stat, L].join('|'), venue: v[0], venueName: v[1], player: rec.name, pos: rec.pos, stat: stat, L: L,
+          label: propsLabel(stat, L), side: best.side, cost: best.cost, fee: best.fee, ev: best.ev, evMaker: best.evMaker, roi: best.roi,
+          fair: cons.p, n: cons.n, sd: cons.sd, mode: cons.mode, srcs: cons.srcs, bid: r.bid, ask: r.ask, mid: mid, spread: spread,
+          oi: r.oi, vol: r.vol, game: propsGame(ev.name), start: ev.start, gap: mid != null ? Math.abs(cons.p - mid) : 0,
+          oneSided: stat === 'attd', tk: r.tk
+        });
+      });
+    });
+    propsRows = rows;
+    return rows;
+  }
+
+  // ── Log (persisted) ─────────────────────────────────────────────────
+  function propsLoadLog(){ try { propsLog = JSON.parse(localStorage.getItem(PROPS_LOG_KEY) || '[]') || []; } catch(e){ propsLog = []; } }
+  function propsSaveLog(){ try { localStorage.setItem(PROPS_LOG_KEY, JSON.stringify(propsLog)); } catch(e){} }
+  function propsLogPnl(en){
+    if (!en.result || en.result === 'push') return en.result === 'push' ? 0 : null;
+    var coefFee = en.fee || 0;
+    return en.result === 'win' ? (1 - en.cost - coefFee) : (-en.cost - coefFee);
+  }
+  // Refresh each open log entry with the current fair value and market price of the same side.
+  function propsUpdateLog(){
+    var byKey = {};
+    propsRows.forEach(function(r){ byKey[r.key] = r; });
+    var changed = false;
+    propsLog.forEach(function(en){
+      var r = byKey[en.key];
+      if (!r) return;
+      en.latest = { t: Date.now(), fair: en.side === 'Yes' ? r.fair : 1 - r.fair, mkt: r.mid != null ? (en.side === 'Yes' ? r.mid : 1 - r.mid) : null };
+      changed = true;
+    });
+    if (changed) propsSaveLog();
+  }
+
+  // ── Rendering ─────────────────────────────────────────────────────────
+  function propsEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function propsC(x){ return x == null ? '-' : (x * 100).toFixed(1) + '¢'; }
+  function propsPct(x){ return x == null ? '-' : (x * 100).toFixed(1) + '%'; }
+  function propsAge(t){
+    if (!t) return 'not loaded';
+    var m = Math.round((Date.now() - t) / 60000);
+    return m < 1 ? 'just now' : m < 90 ? m + ' min ago' : Math.round(m / 60) + ' h ago';
+  }
+  var PROP_MODE_TXT = { direct: 'Posted line', interp: 'Interpolated', fit: 'Poisson fit', extrap: 'Extrapolated' };
+
+  function propsFiltered(){
+    var c = PROPS_CFG, q = c.search.trim().toLowerCase();
+    return propsRows.filter(function(r){
+      if (c.venue !== 'all' && r.venue !== c.venue) return false;
+      if (c.stat !== 'all' && r.stat !== c.stat) return false;
+      if (c.side !== 'all' && r.side !== c.side) return false;
+      if (q && r.player.toLowerCase().indexOf(q) < 0) return false;
+      if (r.n < c.minBooks) return false;
+      if (r.spread != null && r.spread * 100 > c.maxSpread) return false;
+      if (r.ev * 100 < c.minEdge) return false;
+      if (!c.suspect && r.gap > 0.20) return false;
+      return true;
+    });
+  }
+  function propsRender(){
+    var host = document.getElementById('propsTable');
+    if (!host) return;
+    propsCompute();
+    propsUpdateLog();
+    // status line
+    var nb = propsBooksCache ? Object.keys(propsBooksCache).length : 0;
+    document.getElementById('propsSrcStatus').innerHTML =
+      '<span>Sportsbooks (Unabated): <b>' + nb + '</b> players' + (nb ? '' : ' - load Unabated props') + '</span>' +
+      '<span>Kalshi: <b>' + propsKalshiRungs.length + '</b> rungs, ' + propsAge(propsKalshiAt) + '</span>' +
+      '<span>Polymarket: <b>' + propsPolyRungs.length + '</b> rungs, ' + propsAge(propsPolyAt) + '</span>' +
+      '<span>Matched: <b>' + propsRows.length + '</b></span>';
+    // book list
+    var bl = document.getElementById('propsBookList'), html = '';
+    Object.keys(propsSrcCounts).sort(function(a, b){ return propsSrcCounts[b] - propsSrcCounts[a]; }).forEach(function(s){
+      var nm = PROP_BOOK_NAMES[s] || ('src ' + s), on = PROPS_CFG.books[s] !== false;
+      html += '<label class="pp-chk"><input type="checkbox" data-src="' + s + '"' + (on ? ' checked' : '') + '> ' + propsEsc(nm) + ' <span class="pp-dim">(' + propsSrcCounts[s] + ')</span></label>';
+    });
+    bl.innerHTML = html || '<span class="pp-dim">No books loaded yet.</span>';
+
+    var rows = propsFiltered(), sk = PROPS_CFG.sortKey, dir = PROPS_CFG.sortDir === 'asc' ? 1 : -1;
+    rows.sort(function(a, b){
+      var x = a[sk], y = b[sk];
+      if (typeof x === 'string') return dir * x.localeCompare(y);
+      if (x == null) x = -Infinity; if (y == null) y = -Infinity;
+      return dir * (x - y);
+    });
+    var shown = rows.slice(0, 400), loggedKeys = {};
+    propsLog.forEach(function(en){ if (!en.result) loggedKeys[en.key + '|' + en.side] = true; });
+    var h = '<table class="pp-table"><thead><tr>';
+    [['player', 'Player'], ['label', 'Market'], ['venue', 'Venue'], [null, 'Bet'], ['cost', 'Price'], ['fair', 'Fair'], ['ev', 'Edge'], ['roi', 'ROI'], ['n', 'Books'], ['sd', 'Book σ'], ['mode', 'Basis'], ['spread', 'Bid/Ask'], ['oi', 'OI'], ['game', 'Game'], [null, '']].forEach(function(c){
+      h += '<th' + (c[0] ? ' data-sort="' + c[0] + '"' : '') + '>' + c[1] + (c[0] === sk ? (dir === 1 ? ' ▲' : ' ▼') : '') + '</th>';
+    });
+    h += '</tr></thead><tbody>';
+    shown.forEach(function(r){
+      var cls = r.ev * 100 >= 6 ? 'pp-hot' : '';
+      h += '<tr class="' + cls + '">' +
+        '<td class="pp-l">' + propsEsc(r.player) + ' <span class="pp-dim">' + propsEsc(r.pos) + '</span></td>' +
+        '<td class="pp-l">' + propsEsc(r.label) + '</td>' +
+        '<td>' + (r.venue === 'K' ? 'Kalshi' : 'Poly') + '</td>' +
+        '<td><b class="pp-side ' + (r.side === 'Yes' ? 'pp-yes' : 'pp-no') + '">' + r.side + '</b></td>' +
+        '<td>' + propsC(r.cost) + '</td><td>' + propsPct(r.fair) + '</td>' +
+        '<td class="pp-edge ' + (r.ev < 0 ? 'pp-neg' : '') + '" title="Taker fee ' + propsC(r.fee) + ' already deducted. Edge if filled as a resting (maker) order: ' + propsC(r.evMaker) + '">' + (r.ev * 100).toFixed(1) + '¢</td>' +
+        '<td>' + (r.roi * 100).toFixed(1) + '%</td>' +
+        '<td title="' + propsEsc(r.srcs.map(function(s){ return PROP_BOOK_NAMES[s] || ('src ' + s); }).join(', ')) + '">' + r.n + '</td>' +
+        '<td>' + (r.sd != null ? (r.sd * 100).toFixed(1) + '¢' : '-') + '</td>' +
+        '<td class="pp-mode pp-' + r.mode + '" title="' + (r.oneSided ? 'Books post only a Yes price; their margin is removed with the assumed hold set above. ' : '') + '">' + PROP_MODE_TXT[r.mode] + (r.oneSided ? '*' : '') + '</td>' +
+        '<td>' + (r.bid != null ? (r.bid * 100).toFixed(0) : '-') + '/' + (r.ask != null ? (r.ask * 100).toFixed(0) : '-') + '</td>' +
+        '<td>' + (isFinite(r.oi) ? Math.round(r.oi).toLocaleString() : '-') + '</td>' +
+        '<td class="pp-dim">' + propsEsc(r.game) + '</td>' +
+        '<td>' + (loggedKeys[r.key + '|' + r.side] ? '<span class="pp-dim">logged</span>' : '<button class="pp-log" data-key="' + propsEsc(r.key) + '">Log</button>') + '</td></tr>';
+    });
+    h += '</tbody></table>';
+    host.innerHTML = rows.length ? h : '<div class="pp-empty">' + (propsRows.length ? 'No bets clear your filters.' : 'Nothing to compare yet. Load Unabated props plus Kalshi and/or Polymarket (buttons above), then this table fills in.') + '</div>';
+    document.getElementById('propsCount').textContent = rows.length + ' bet' + (rows.length === 1 ? '' : 's') + (rows.length > 400 ? ' (top 400 shown)' : '');
+    propsRenderLog();
+  }
+
+  function propsRenderLog(){
+    var host = document.getElementById('propsLog');
+    if (!host) return;
+    var settled = propsLog.filter(function(e){ return e.result; }), staked = 0, pnl = 0, w = 0, l = 0, clv = [], clvN = 0;
+    settled.forEach(function(e){ var p = propsLogPnl(e); if (p == null) return; staked += e.cost; pnl += p; if (e.result === 'win') w++; if (e.result === 'loss') l++; });
+    propsLog.forEach(function(e){ if (e.latest && e.latest.fair != null){ clv.push(e.latest.fair - e.cost); } });
+    var avgClv = clv.length ? clv.reduce(function(a, b){ return a + b; }, 0) / clv.length : null;
+    var avgEdge = propsLog.length ? propsLog.reduce(function(a, e){ return a + e.ev; }, 0) / propsLog.length : null;
+    document.getElementById('propsLogSummary').innerHTML =
+      '<span>Logged: <b>' + propsLog.length + '</b></span><span>Settled: <b>' + settled.length + '</b> (' + w + '-' + l + ')</span>' +
+      '<span>ROI on settled: <b>' + (staked ? (pnl / staked * 100).toFixed(1) + '%' : '-') + '</b></span>' +
+      '<span>Avg edge at entry: <b>' + (avgEdge != null ? (avgEdge * 100).toFixed(1) + '¢' : '-') + '</b></span>' +
+      '<span>Avg fair vs. paid now: <b>' + (avgClv != null ? (avgClv * 100).toFixed(1) + '¢' : '-') + '</b></span>';
+    if (!propsLog.length){ host.innerHTML = '<div class="pp-empty">Nothing logged yet. Hit "Log" on a bet to track it here.</div>'; return; }
+    var h = '<table class="pp-table"><thead><tr><th>When</th><th>Player</th><th>Market</th><th>Venue</th><th>Bet</th><th>Paid</th><th>Fair then</th><th>Edge then</th><th>Fair now</th><th>Mkt now</th><th>Result</th><th>P&amp;L</th><th></th></tr></thead><tbody>';
+    propsLog.slice().reverse().forEach(function(e){
+      var p = propsLogPnl(e);
+      h += '<tr><td class="pp-dim">' + new Date(e.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '</td>' +
+        '<td class="pp-l">' + propsEsc(e.player) + '</td><td class="pp-l">' + propsEsc(e.label) + '</td><td>' + (e.venue === 'K' ? 'Kalshi' : 'Poly') + '</td>' +
+        '<td><b class="pp-side ' + (e.side === 'Yes' ? 'pp-yes' : 'pp-no') + '">' + e.side + '</b></td><td>' + propsC(e.cost) + '</td><td>' + propsPct(e.fairSide) + '</td><td>' + (e.ev * 100).toFixed(1) + '¢</td>' +
+        '<td>' + (e.latest ? propsPct(e.latest.fair) : '-') + '</td><td>' + (e.latest && e.latest.mkt != null ? propsPct(e.latest.mkt) : '-') + '</td>' +
+        '<td>' + (e.result ? '<b>' + e.result + '</b>' : '<button class="pp-res" data-id="' + e.id + '" data-r="win">W</button><button class="pp-res" data-id="' + e.id + '" data-r="loss">L</button><button class="pp-res" data-id="' + e.id + '" data-r="push">Push</button>') + '</td>' +
+        '<td>' + (p != null ? (p >= 0 ? '+' : '') + (p * 100).toFixed(1) + '¢' : '-') + '</td>' +
+        '<td><button class="pp-del" data-id="' + e.id + '" title="Remove">✕</button></td></tr>';
+    });
+    host.innerHTML = h + '</tbody></table>';
+  }
+
+  function propsExportLog(){
+    var cols = ['ts', 'player', 'label', 'venue', 'side', 'cost', 'fee', 'fairSide', 'ev', 'books', 'basis', 'result'];
+    var lines = [cols.join(',')];
+    propsLog.forEach(function(e){
+      lines.push(cols.map(function(c){
+        var v = c === 'ts' ? new Date(e.ts).toISOString() : e[c];
+        v = v == null ? '' : String(v);
+        return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+      }).join(','));
+    });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+    a.download = 'slate_iq_props_log.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function propsWire(){
+    var $ = function(id){ return document.getElementById(id); };
+    $('viewPropsBtn').addEventListener('click', function(){ propsShowView('props'); });
+    // Main Slate / Single Game bring the optimizer back; FD/DK leave whichever tab is open alone.
+    $('mainSlateBtn').addEventListener('click', function(){ propsShowView('opt'); });
+    $('singleGameBtn').addEventListener('click', function(){ propsShowView('opt'); });
+    ['fdPlatformBtn', 'dkPlatformBtn'].forEach(function(id){
+      $(id).addEventListener('click', function(){ setTimeout(propsSyncTabs, 0); });
+    });
+    [['pfMinEdge', 'minEdge'], ['pfMaxSpread', 'maxSpread'], ['pfMinBooks', 'minBooks'], ['pfHold1', 'hold1'], ['pfHoldAttd', 'holdAttd']].forEach(function(p){
+      $(p[0]).addEventListener('input', function(){ var v = parseFloat(this.value); if (!isNaN(v)){ PROPS_CFG[p[1]] = v; propsRender(); } });
+    });
+    [['pfVenue', 'venue'], ['pfStat', 'stat'], ['pfSide', 'side']].forEach(function(p){
+      $(p[0]).addEventListener('change', function(){ PROPS_CFG[p[1]] = this.value; propsRender(); });
+    });
+    $('pfSearch').addEventListener('input', function(){ PROPS_CFG.search = this.value; propsRender(); });
+    $('pfSuspect').addEventListener('change', function(){ PROPS_CFG.suspect = this.checked; propsRender(); });
+    $('propsBookList').addEventListener('change', function(ev){
+      var t = ev.target; if (t && t.getAttribute('data-src')){ PROPS_CFG.books[t.getAttribute('data-src')] = t.checked; propsRender(); }
+    });
+    $('propsTable').addEventListener('click', function(ev){
+      var t = ev.target;
+      if (t.tagName === 'TH' && t.getAttribute('data-sort')){
+        var k = t.getAttribute('data-sort');
+        if (PROPS_CFG.sortKey === k) PROPS_CFG.sortDir = PROPS_CFG.sortDir === 'desc' ? 'asc' : 'desc'; else { PROPS_CFG.sortKey = k; PROPS_CFG.sortDir = (k === 'player' || k === 'label' || k === 'game' || k === 'mode') ? 'asc' : 'desc'; }
+        propsRender();
+      } else if (t.classList && t.classList.contains('pp-log')){
+        var r = propsRows.filter(function(x){ return x.key === t.getAttribute('data-key'); })[0];
+        if (!r) return;
+        propsLog.push({ id: 'l' + Date.now() + Math.floor(Math.random() * 1000), ts: Date.now(), key: r.key, venue: r.venue, player: r.player, label: r.label, stat: r.stat, L: r.L,
+          side: r.side, cost: r.cost, fee: r.fee, ev: r.ev, fairSide: r.side === 'Yes' ? r.fair : 1 - r.fair, books: r.n, basis: r.mode, result: null, latest: null });
+        propsSaveLog(); propsRender();
+      }
+    });
+    $('propsLog').addEventListener('click', function(ev){
+      var t = ev.target, id = t.getAttribute && t.getAttribute('data-id');
+      if (!id) return;
+      if (t.classList.contains('pp-res')){ propsLog.forEach(function(e){ if (e.id === id) e.result = t.getAttribute('data-r'); }); }
+      else if (t.classList.contains('pp-del')){ propsLog = propsLog.filter(function(e){ return e.id !== id; }); }
+      else return;
+      propsSaveLog(); propsRender();
+    });
+    $('propsExportBtn').addEventListener('click', propsExportLog);
+    $('propsRecomputeBtn').addEventListener('click', propsRender);
+    $('propsRefreshAllBtn').addEventListener('click', async function(){
+      var btn = this; btn.disabled = true; btn.textContent = 'Refreshing...';
+      try {
+        await fetchMarketProjections(); propsRender();
+        await fetchKalshiProjections(); propsRender();
+        await fetchPolymarketProjections();
+      } catch(e){ console.warn('Props refresh error:', e); }
+      btn.disabled = false; btn.textContent = 'Refresh all sources';
+      propsRender();
+    });
+  }
+  var propsViewOn = false;
+  function propsSyncTabs(){
+    document.getElementById('optView').style.display = propsViewOn ? 'none' : '';
+    document.getElementById('propsView').style.display = propsViewOn ? '' : 'none';
+    document.getElementById('viewPropsBtn').classList.toggle('active', propsViewOn);
+    document.getElementById('mainSlateBtn').classList.toggle('active', !propsViewOn && slateMode === 'main');
+    document.getElementById('singleGameBtn').classList.toggle('active', !propsViewOn && slateMode === 'sg');
+  }
+  function propsShowView(v){
+    propsViewOn = v === 'props';
+    propsSyncTabs();
+    // Main/SG clicks update their own highlight after this runs, so re-sync once they have.
+    setTimeout(propsSyncTabs, 0);
+    if (propsViewOn) propsRender();
+  }
+  propsLoadLog();
+  // Exposed for testing/debugging in the console.
+  window.__propsEngine = { curveEval: propsCurveEval, bookPoints: propsBookPoints, bestSide: propsBestSide, rungLine: propsRungLine, compute: propsCompute, cfg: PROPS_CFG,
+    rows: function(){ return propsRows; }, setRungs: function(k, p){ propsKalshiRungs = k || []; propsPolyRungs = p || []; }, render: propsRender };
+
+  propsWire();
 
   async function fetchMarketProjections(){
     var workerUrl = (document.getElementById('unabatedWorkerUrl').value||'').trim().replace(/\/+$/,'');
@@ -5412,6 +6029,31 @@
     return (out.sacksMean !== null || out.dstTdProb !== null) ? out : null;
   }
 
+  // Prediction = Kalshi and Polymarket merged into ONE source: their plain average where both
+  // have the player, whichever one exists otherwise. It counts once (not twice) in the
+  // market average, so sportsbooks (Unabated) and prediction markets each carry half.
+  function predictionProjection(norm){
+    var kp = kalshiProjections[norm], pp = polymarketProjections[norm], parts = [];
+    if (kp) parts.push({ source: 'Kalshi', fp: kp.fp });
+    if (pp) parts.push({ source: 'Polymarket', fp: pp.fp });
+    if (!parts.length) return null;
+    var fp = parts.reduce(function(a, b){ return a + b.fp; }, 0) / parts.length;
+    return { fp: fp, parts: parts, gap: parts.length === 2 ? Math.abs(parts[0].fp - parts[1].fp) : null, kp: kp, pp: pp,
+             label: parts.length === 2 ? 'Kalshi+Polymarket' : parts[0].source };
+  }
+  function predictionTooltip(pr, position){
+    if (!pr) return 'No Kalshi or Polymarket data loaded for this player yet.';
+    var head = 'Prediction-market projection: ' + pr.fp.toFixed(1) + ' pts';
+    if (pr.parts.length === 2){
+      head += ' (average of Kalshi ' + pr.parts[0].fp.toFixed(1) + ' and Polymarket ' + pr.parts[1].fp.toFixed(1) + ')';
+      if (pr.gap >= 2) head += '\nNote: the two venues differ by ' + pr.gap.toFixed(1) + ' pts - check which one is thin.';
+    } else head += ' (' + pr.parts[0].source + ' only)';
+    var out = [head, ''];
+    if (pr.kp) out.push(kalshiTooltip(pr.kp, position), '');
+    if (pr.pp) out.push(polymarketTooltip(pr.pp, position));
+    return out.join('\n').trim();
+  }
+
   function combinedMarketProjection(p){
     var norm = normalizeName(p.name);
     var parts = [];
@@ -5422,11 +6064,9 @@
       return dlp === null ? null : { fp: dlp, parts: [{ source: 'Line model', fp: dlp }], count: 1 };
     }
     var mp = marketProjections[norm];
-    var kp = kalshiProjections[norm];
-    var pp = polymarketProjections[norm];
+    var pred = predictionProjection(norm);
     if (mp) parts.push({ source: 'Unabated',  fp: mp.fp });
-    if (kp) parts.push({ source: 'Kalshi',    fp: kp.fp });
-    if (pp) parts.push({ source: 'Polymarket',fp: pp.fp });
+    if (pred) parts.push({ source: 'Prediction (' + pred.label + ')', fp: pred.fp });
     // Defenses have no player props, so give them a betting-line projection
     // (fit on 2023-26 FanDuel tournament data): fewer points implied for the
     // opponent = more DEF points. Only used when no other source exists.
@@ -6291,9 +6931,9 @@
       var av, bv;
       if (sortKey === 'mkt'){
         av = mktSortValue(a); bv = mktSortValue(b);
-      } else if (sortKey === 'kalshi'){
-        var akp = kalshiProjections[normalizeName(a.name)];
-        var bkp = kalshiProjections[normalizeName(b.name)];
+      } else if (sortKey === 'kalshi' || sortKey === 'prediction'){
+        var akp = predictionProjection(normalizeName(a.name));
+        var bkp = predictionProjection(normalizeName(b.name));
         av = akp ? akp.fp : -Infinity;
         bv = bkp ? bkp.fp : -Infinity;
       } else if (sortKey === 'model'){
@@ -6333,7 +6973,7 @@
       if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
       // For the projection columns, players with no number always sink to the bottom,
       // whichever direction is picked (ascending used to float them to the top).
-      if (sortKey === 'mkt' || sortKey === 'kalshi' || sortKey === 'polymarket' || sortKey === 'model'){
+      if (sortKey === 'mkt' || sortKey === 'kalshi' || sortKey === 'prediction' || sortKey === 'polymarket' || sortKey === 'model'){
         var aMiss = (av === -Infinity), bMiss = (bv === -Infinity);
         if (aMiss && !bMiss) return 1;
         if (bMiss && !aMiss) return -1;
@@ -6378,7 +7018,7 @@
         : (projSource === 'model' && modelProjection(p)) ? 'Projection Source = Model: ' + modelTooltip(modelProjection(p), p.position)
         : 'Effective projection used for ranking/lineups: ' + effectiveFppg(p).toFixed(1) + ' pts' +
           (projSource === 'blend' ? ' (50/50 blend of fppg ' + p.fppg.toFixed(1) + ' and market avg)' : '') +
-          ' - ' + (cmp ? combinedMarketProjectionNote(cmp) : 'no Unabated/Kalshi/Polymarket data yet for this player, falling back to fppg');
+          ' - ' + (cmp ? combinedMarketProjectionNote(cmp) : 'no Unabated or prediction-market data yet for this player, falling back to fppg');
       return '<tr>'+
         '<td style="text-align:left;"'+glAttr(p)+'>'+p.name+'</td>'+
         '<td class="pos-pill">'+p.position+'</td>'+
@@ -6398,7 +7038,10 @@
           if (td) tags.push('td');
           return '<span style="color:var(--teal);opacity:.85;" title="'+tip.replace(/"/g,'&quot;')+'">'+defLineProjection(p).toFixed(1)+' <span style="font-size:11px;">'+(tags.length ? 'line+' + tags.join('+') : 'line')+'</span>'+extra+'</span>';
         })() : '—'))+'</td>'+
-        '<td class="num" style="color:'+(kp?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kp,p.position).replace(/"/g,'&quot;')+'">'+(kp ? kalshiDisplayTotal(kp).toFixed(1) : '—')+'</td>'+
+        (function(){
+          var pr = predictionProjection(normalizeName(p.name));
+          return '<td class="num" style="color:'+(pr?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+predictionTooltip(pr,p.position).replace(/"/g,'&quot;')+'">'+(pr ? pr.fp.toFixed(1)+(pr.gap !== null && pr.gap >= 2 ? ' <span style="opacity:.6;font-size:11px;">&#177;</span>' : '') : '—')+'</td>';
+        })()+
         '<td class="num polymkt-col" style="color:'+(pp?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(pp,p.position).replace(/"/g,'&quot;')+'">'+(pp ? polymarketDisplayTotal(pp).toFixed(1) : '—')+'</td>'+
         (function(){
           var md = modelProjection(p);
@@ -6620,7 +7263,8 @@
     var mkt = marketProjections[normalizeName(p.name)];
     var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mkt,p.position).replace(/"/g,'&quot;')+'">'+(mkt ? mktDisplayTotal(mkt).toFixed(1)+(mktCoverage(mkt,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mkt,p.position).matched+'/'+mktCoverage(mkt,p.position).total+')</span>':'') : '—')+'</td>';
     var kalshi = kalshiProjections[normalizeName(p.name)];
-    var kalshiCell = '<td class="mono" style="color:'+(kalshi?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+kalshiTooltip(kalshi,p.position).replace(/"/g,'&quot;')+'">'+(kalshi ? kalshiDisplayTotal(kalshi).toFixed(1) : '—')+'</td>';
+    var predTP = predictionProjection(normalizeName(p.name));
+    var kalshiCell = '<td class="mono" style="color:'+(predTP?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+predictionTooltip(predTP,p.position).replace(/"/g,'&quot;')+'">'+(predTP ? predTP.fp.toFixed(1) : '—')+'</td>';
     var polymkt = polymarketProjections[normalizeName(p.name)];
     var polymktCell = '<td class="mono polymkt-col" style="color:'+(polymkt?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(polymkt,p.position).replace(/"/g,'&quot;')+'">'+(polymkt ? polymarketDisplayTotal(polymkt).toFixed(1) : '—')+'</td>';
     var valueDelta = mkt3xDelta(p);
@@ -7639,10 +8283,12 @@
         var mktVal = mp ? mktDisplayTotal(mp) : null;
         var kalshiVal = kp ? kalshiDisplayTotal(kp) : null;
         var polymktVal = pp ? polymarketDisplayTotal(pp) : null;
+        var predRec = predictionProjection(normalizeName(p.name));
+        var predictionVal = predRec ? Math.round(predRec.fp * 10) / 10 : null;
         var combinedVal = combined ? Math.round(combined.fp * 10) / 10 : null;
         return {
           name: p.name, position: p.position, team: p.team, salary: p.salary,
-          fppg: p.fppg, mkt: mktVal, actualPts: p.actualPts,
+          fppg: p.fppg, mkt: mktVal, prediction: predictionVal, actualPts: p.actualPts,
           ownership: p.ownership != null ? p.ownership : null,
           mvpOwnership: p.mvpOwnership != null ? p.mvpOwnership : null,
           mktDelta: mktVal != null ? Math.round((p.actualPts - mktVal)*10)/10 : null,
