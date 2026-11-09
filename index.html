@@ -197,6 +197,9 @@
      sorted out. Nothing underneath was removed: the fetch function, state
      persistence, and accuracy-log/export columns are untouched. */
   .polymkt-col,.polymkt-row{display:none !important;}
+  /* Kalshi and Polymarket share one load button now, so label each status line. */
+  #kalshiStatus:not(:empty)::before{content:'Kalshi: ';opacity:.65;}
+  #polymarketStatus:not(:empty)::before{content:'Polymarket: ';opacity:.65;}
   /* Defense-only view: Team total, Kalshi, Opp and Role are all empty/unused for a D/ST. */
   #poolTable.hide-team-total th[data-key="teamImplied"], #poolTable.hide-team-total td.tt-cell,
   #poolTable.hide-team-total th[data-key="prediction"], #poolTable.hide-team-total th[data-key="model"], #poolTable.hide-team-total th[data-key="opp"], #poolTable.hide-team-total th[data-key="role"],
@@ -578,20 +581,15 @@
           <span id="propsStatus" class="src-status"></span>
         </div>
         <div class="src-row-half">
-          <button id="loadKalshiBtn">Load Kalshi props</button>
-          <button type="button" class="src-gear" data-src-toggle="kalshiUrlWrap" title="Show/edit proxy URL">&#9881;</button>
+          <button id="loadKalshiBtn" title="Loads Kalshi and Polymarket together; the Pred column averages them">Load Prediction props</button>
+          <button id="loadPolymarketBtn" style="display:none;" aria-hidden="true" tabindex="-1">Load Polymarket props</button>
+          <button type="button" class="src-gear" data-src-toggle="predUrlWrap" title="Show/edit the Kalshi and Polymarket proxy URLs">&#9881;</button>
           <span id="kalshiStatus" class="src-status"></span>
-          <div class="src-url-wrap" id="kalshiUrlWrap">
-            <label class="src-row-label">Proxy URL</label>
-            <input id="kalshiWorkerUrl" type="text" value="https://kalshi-proxy-deno.bvmcintyre86-stack.deno.net" placeholder="https://your-kalshi-proxy.deno.dev">
-          </div>
-        </div>
-        <div class="src-row-half polymkt-row">
-          <button id="loadPolymarketBtn">Load Polymarket props</button>
-          <button type="button" class="src-gear" data-src-toggle="polymarketUrlWrap" title="Show/edit proxy URL">&#9881;</button>
           <span id="polymarketStatus" class="src-status"></span>
-          <div class="src-url-wrap" id="polymarketUrlWrap">
-            <label class="src-row-label">Proxy URL</label>
+          <div class="src-url-wrap" id="predUrlWrap">
+            <label class="src-row-label">Kalshi proxy URL</label>
+            <input id="kalshiWorkerUrl" type="text" value="https://kalshi-proxy-deno.bvmcintyre86-stack.deno.net" placeholder="https://your-kalshi-proxy.deno.dev">
+            <label class="src-row-label" style="margin-top:6px;">Polymarket proxy URL</label>
             <input id="polymarketWorkerUrl" type="text" value="https://polymarket-proxy-deno.bvmcintyre86-stack.deno.net" placeholder="https://your-polymarket-proxy.deno.dev">
           </div>
         </div>
@@ -616,7 +614,7 @@
         <button id="debugPlayerBtn">Search</button>
         <span class="src-hint">Unabated raw props for this player, and why each was kept or dropped - results print to the console (F12)</span>
       </div>
-      <div class="src-row polymkt-row">
+      <div class="src-row">
         <label class="src-row-label">Audit a Polymarket player</label>
         <input id="debugPolymarketInput" type="text" placeholder="e.g. Pittman">
         <button id="debugPolymarketBtn">Search</button>
@@ -2076,7 +2074,14 @@
     renderTopPlayers();
     saveState();
   }
-  document.getElementById('loadKalshiBtn').addEventListener('click', fetchKalshiProjections);
+  // One button loads both prediction markets (they feed the single Pred column). Run together;
+  // each keeps its own status line and failure message.
+  document.getElementById('loadKalshiBtn').addEventListener('click', async function(){
+    var btn = this; btn.disabled = true;
+    try { await Promise.all([fetchKalshiProjections(), fetchPolymarketProjections()]); }
+    catch(e){ console.warn('Prediction props load error:', e); }
+    finally { btn.disabled = false; }
+  });
 
   // ── Polymarket US ──────────────────────────────────────────────────────
   // Two upstreams behind the one proxy URL (see the proxy script's own
