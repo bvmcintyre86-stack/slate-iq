@@ -805,13 +805,13 @@
       <div class="field"><label>Anytime-TD book hold %</label><input type="number" id="pfHoldAttd" value="8" step="1" title="Books post only a Yes price for anytime TD. This is the margin assumed to be inside it."></div>
       <div class="field"><label>One-sided hold %</label><input type="number" id="pfHold1" value="5" step="1" title="Margin assumed for alt lines and any book that posts only one side."></div>
       <div class="field"><label>Min open interest</label><input type="number" id="pfMinOi" value="0" min="0" step="50" title="Hides rows whose market has fewer contracts outstanding than this. Rows with unknown open interest (Polymarket doesn't report it here) are hidden whenever this is above 0."></div>
-      <label class="pp-chk" style="padding-bottom:9px;"><input type="checkbox" id="pfHideExtrap" checked> Hide extrapolated rows</label>
+      <label class="pp-chk" style="padding-bottom:9px;"><input type="checkbox" id="pfHideExtrap" checked> Hide rough extrapolations</label>
       <label class="pp-chk" style="padding-bottom:9px;"><input type="checkbox" id="pfBooksOnly" checked> Sportsbooks only</label>
       <label class="pp-chk" style="padding-bottom:9px;"><input type="checkbox" id="pfSuspect"> Show suspect (&gt;20¢ gap to market)</label>
     </div>
     <div class="pp-books" id="propsBookList"></div>
     <details class="pp-note"><summary>How this is calculated</summary>
-      <div>Each selected sportsbook's over/under (or Yes) price is converted to a probability and its margin removed. Where a book posts the exact line a prediction-market rung uses, that is the fair number ("Posted line"). Otherwise the book's other lines are used to interpolate, or the curve is extended a short way with a normal (yardage, receptions) or Poisson (pass TDs) fit - those rows are labelled and deserve more skepticism. Fair value is the average across books; "Spread" is how much the books disagree. Anytime TD is only offered as a Yes price, so its margin is an assumption (the hold box above); a * marks those rows. Fees use 7% x p x (1-p) on Kalshi and the market's own fee coefficient on Polymarket (it reports 9.5% right now); hover Edge for the no-fee (resting order) figure. Bid/ask depth is not available here, so check size before trading. Rows more than 20¢ away from the market are hidden by default because that usually means the two markets are not the same bet (injury, different rules). Use the Log to track results and whether prices move toward your number; that is the real test of whether an edge exists.</div>
+      <div>Each selected sportsbook's over/under (or Yes) price is converted to a probability and its margin removed. Where a book posts the exact line a prediction-market rung uses, that is the fair number ("Posted line"). Otherwise the book's other lines are used to interpolate, or a skewed curve is fitted to that book's posted lines and read off at the rung ("Fitted shape": normal for pass yards, gamma for rush/rec yards, negative binomial for receptions, Poisson for pass TDs; the spread comes from this season's game logs and is adjusted by the book's own alt lines when it posts more than one). Fitted-shape and Poisson rows lean on that assumed shape, so check them against the Book σ column; "Rough extrapolation" is the old stretched-normal fallback and is hidden by default. Fair value is the average across books; "Spread" is how much the books disagree. Anytime TD is only offered as a Yes price, so its margin is an assumption (the hold box above); a * marks those rows. Fees use 7% x p x (1-p) on Kalshi and the market's own fee coefficient on Polymarket (it reports 9.5% right now); hover Edge for the no-fee (resting order) figure. Bid/ask depth is not available here, so check size before trading. Rows more than 20¢ away from the market are hidden by default because that usually means the two markets are not the same bet (injury, different rules). Use the Log to track results and whether prices move toward your number; that is the real test of whether an edge exists.</div>
     </details>
     <div class="pp-wrap" id="propsTable"></div>
     <h3>Bet log</h3>
@@ -1326,7 +1326,8 @@
   var projSource = 'fppg';    // 'fppg' | 'market' | 'blend'
 
   function normalizeName(n){
-    var s = (n || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g,' ').trim();
+    // Fold accents first (Estimé -> Estime); otherwise the é is deleted and the name never matches a source that omits the accent.
+    var s = (n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g,' ').trim();
     // Strip a trailing generational suffix (Jr, Sr, II, III, IV, V) so
     // "Michael Pittman Jr" and "Michael Pittman" normalize to the same
     // string regardless of which source (FanDuel vs Unabated) includes it -
@@ -2831,7 +2832,94 @@
     return { pts: pts, hold: hold };
   }
 
-  // Fair P(X > L) from one book's curve. mode: direct < interp < fit < extrap.
+
+  // ── Fitted-shape model (replaces the crude "stretch a normal curve" extrapolation) ──
+  // Real stat lines are not bell-shaped: rushing/receiving yards pile up near zero with a long right tail,
+  // and receptions are counts. A normal curve therefore overprices the middle and underprices the tail.
+  // Families: pass yards = normal, rush/rec yards = gamma, receptions = negative binomial.
+  // The spread (coefficient of variation) of each family follows the player's size, cv = a * mean^-b,
+  // measured from the 2026 weekly logs (leave-one-out means, weeks 1-8, ~1,100 player-weeks per stat).
+  // Each book's own posted lines then set the mean (and, with 2+ lines, nudge the spread, anchored to this prior).
+  var PROP_SHAPE = {
+    passYards:  { fam: 'norm',  a: 69.9,  b: -0.981, lo: 0.22, hi: 0.50 },
+    rushYards:  { fam: 'gamma', a: 5.726, b: -0.563, lo: 0.35, hi: 1.60 },
+    recYards:   { fam: 'gamma', a: 6.051, b: -0.560, lo: 0.40, hi: 1.60 },
+    receptions: { fam: 'nb',    a: 1.216, b: -0.551, lo: 0.30, hi: 1.20 }
+  };
+  function propsLgamma(x){
+    var c = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.001208650973866179, -0.000005395239384953];
+    var y = x, t = x + 5.5; t -= (x + 0.5) * Math.log(t);
+    var ser = 1.000000000190015; for (var j = 0; j < 6; j++) ser += c[j] / ++y;
+    return -t + Math.log(2.5066282746310005 * ser / x);
+  }
+  function propsGammaP(a, x){ // regularised lower incomplete gamma P(a, x)
+    if (x <= 0) return 0;
+    var gl = propsLgamma(a), i;
+    if (x < a + 1){
+      var ap = a, sum = 1 / a, del = sum;
+      for (i = 0; i < 200; i++){ ap++; del *= x / ap; sum += del; if (Math.abs(del) < Math.abs(sum) * 1e-12) break; }
+      return sum * Math.exp(-x + a * Math.log(x) - gl);
+    }
+    var b = x + 1 - a, c = 1e300, d = 1 / b, h = d;
+    for (i = 1; i < 200; i++){
+      var an = -i * (i - a); b += 2; d = an * d + b; if (Math.abs(d) < 1e-300) d = 1e-300;
+      c = b + an / c; if (Math.abs(c) < 1e-300) c = 1e-300; d = 1 / d; var del2 = d * c; h *= del2;
+      if (Math.abs(del2 - 1) < 1e-12) break;
+    }
+    return 1 - Math.exp(-x + a * Math.log(x) - gl) * h;
+  }
+  function propsShapeCv(stat, mu, scale){
+    var c = PROP_SHAPE[stat];
+    return propsClamp(c.a * Math.pow(mu, c.b), c.lo, c.hi) * (scale || 1);
+  }
+  // P(X > L) for the family at mean mu and coefficient of variation cv.
+  function propsShapeSurv(stat, L, mu, cv){
+    var fam = PROP_SHAPE[stat].fam;
+    if (fam === 'norm') return 1 - normalCdf((L - mu) / (cv * mu));
+    if (fam === 'gamma'){ var k = 1 / (cv * cv); return 1 - propsGammaP(k, L / (mu / k)); }
+    var v = Math.max((cv * mu) * (cv * mu), mu * 1.01), r = mu * mu / (v - mu), q = mu / (r + mu), pmf = Math.pow(1 - q, r), cdf = 0, n = Math.floor(L);
+    for (var k2 = 0; k2 <= n; k2++){ cdf += pmf; pmf *= (k2 + r) / (k2 + 1) * q; }
+    return 1 - cdf;
+  }
+  function propsGolden(f, lo, hi, it){
+    var g = 0.6180339887, a = hi - g * (hi - lo), b = lo + g * (hi - lo), fa = f(a), fb = f(b);
+    for (var i = 0; i < it; i++){
+      if (fa < fb){ hi = b; b = a; fb = fa; a = hi - g * (hi - lo); fa = f(a); }
+      else { lo = a; a = b; fa = fb; b = lo + g * (hi - lo); fb = f(b); }
+    }
+    return (lo + hi) / 2;
+  }
+  var propsShapeCache = {};
+  // Fit mean (and spread when 2+ lines are posted) to one book's de-vigged points. Null if it fits badly.
+  function propsShapeFit(pts, stat){
+    var key = stat + '|' + pts.map(function(q){ return q.L + ':' + q.p.toFixed(4); }).join(',');
+    if (key in propsShapeCache) return propsShapeCache[key];
+    var minL = pts[0].L, maxL = pts[pts.length - 1].L, lo = Math.max(0.3, minL * 0.1), hi = maxL * 4 + 5, res = null;
+    if (pts.length === 1){
+      var q = pts[0], a = lo, b = hi;
+      for (var i = 0; i < 60; i++){
+        var m = (a + b) / 2;
+        if (propsShapeSurv(stat, q.L, m, propsShapeCv(stat, m)) < q.p) a = m; else b = m;
+      }
+      var mu1 = (a + b) / 2; res = { mu: mu1, cv: propsShapeCv(stat, mu1), err: 0 };
+    } else {
+      var best = null, SP = 0.015, TAU = 0.30;
+      for (var si = -6; si <= 6; si++){
+        var sc = Math.exp(si * 0.1);
+        var sse = function(m){ var t = 0; pts.forEach(function(q){ var d = q.p - propsShapeSurv(stat, q.L, m, propsShapeCv(stat, m, sc)); t += d * d; }); return t; };
+        var mu = propsGolden(sse, lo, hi, 45), obj = sse(mu) + SP * SP * Math.pow(Math.log(sc) / TAU, 2);
+        if (!best || obj < best.obj) best = { obj: obj, mu: mu, sc: sc };
+      }
+      var cvB = propsShapeCv(stat, best.mu, best.sc), maxErr = 0;
+      pts.forEach(function(q){ maxErr = Math.max(maxErr, Math.abs(q.p - propsShapeSurv(stat, q.L, best.mu, cvB))); });
+      res = maxErr <= 0.05 ? { mu: best.mu, cv: cvB, err: maxErr } : null;
+    }
+    if (Object.keys(propsShapeCache).length > 6000) propsShapeCache = {};
+    propsShapeCache[key] = res;
+    return res;
+  }
+
+  // Fair P(X > L) from one book's curve. mode: direct < interp < fit < shape < extrap.
   function propsCurveEval(pts, stat, L){
     var cfg = PROP_STATS[stat];
     pts = pts.filter(function(q){ return q.p > 0.004 && q.p < 0.996; }).sort(function(a, b){ return a.L - b.L; });
@@ -2851,6 +2939,13 @@
         return { p: 1 - normalCdf(z[j] + t * (z[j + 1] - z[j])), mode: 'interp' };
       }
     }
+    if (PROP_SHAPE[stat]){
+      var sf = propsShapeFit(pts, stat);
+      if (sf){
+        var ps = propsShapeSurv(stat, L, sf.mu, sf.cv);
+        if (ps > 0.015 && ps < 0.985) return { p: ps, mode: 'shape' };
+      }
+    }
     var k = L < pts[0].L ? 0 : pts.length - 1;
     var sigma0 = cfg.sd * propsClamp(pts[k].L / cfg.mu0, 0.5, 2);
     var mu = pts[k].L - z[k] * sigma0;
@@ -2863,7 +2958,7 @@
     if (Math.abs(L - pts[k].L) / sigma > 1.25) return null; // too far from anything posted to trust
     return { p: 1 - normalCdf((L - mu) / sigma), mode: 'extrap' };
   }
-  var PROP_MODE_RANK = { direct: 0, interp: 1, fit: 2, extrap: 3 };
+  var PROP_MODE_RANK = { direct: 0, interp: 1, fit: 2, shape: 2.5, extrap: 3 };
 
   // Consensus across the enabled books for one player/stat/event at line L.
   function propsConsensus(ev, stat, L){
@@ -3004,7 +3099,7 @@
     var m = Math.round((Date.now() - t) / 60000);
     return m < 1 ? 'just now' : m < 90 ? m + ' min ago' : Math.round(m / 60) + ' h ago';
   }
-  var PROP_MODE_TXT = { direct: 'Posted line', interp: 'Interpolated', fit: 'Poisson fit', extrap: 'Extrapolated' };
+  var PROP_MODE_TXT = { direct: 'Posted line', interp: 'Interpolated', fit: 'Poisson fit', shape: 'Fitted shape', extrap: 'Rough extrapolation' };
 
   function propsFiltered(){
     var c = PROPS_CFG, q = c.search.trim().toLowerCase();
@@ -3204,7 +3299,7 @@
   propsLoadLog();
   try { var sb = JSON.parse(localStorage.getItem('slateIqPropsBooks') || '{}'); if (sb && typeof sb === 'object') PROPS_CFG.books = sb; } catch(e){}
   // Exposed for testing/debugging in the console.
-  window.__propsEngine = { curveEval: propsCurveEval, bookPoints: propsBookPoints, bestSide: propsBestSide, rungLine: propsRungLine, compute: propsCompute, cfg: PROPS_CFG,
+  window.__propsEngine = { shapeFit: propsShapeFit, shapeSurv: propsShapeSurv, gammaP: propsGammaP, curveEval: propsCurveEval, bookPoints: propsBookPoints, bestSide: propsBestSide, rungLine: propsRungLine, compute: propsCompute, cfg: PROPS_CFG,
     rows: function(){ return propsRows; }, setRungs: function(k, p){ propsKalshiRungs = k || []; propsPolyRungs = p || []; }, render: propsRender };
 
   propsWire();
