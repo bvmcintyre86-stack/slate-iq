@@ -7294,7 +7294,8 @@
   function glFpts(r, plat){
     var cmp = r[2], att = r[3], pY = r[4], pT = r[5], it = r[6], ru = r[8], rT = r[9], rec = r[11], reY = r[12], reT = r[13], fl = r[14], two = r[15];
     var pts = pY*0.04 + pT*4 - it + ru*0.1 + rT*6 + rec*(plat === 'dk' ? 1 : 0.5) + reY*0.1 + reT*6 - fl*(plat === 'dk' ? 1 : 2) + two*2;
-    if (plat === 'dk'){ if (pY >= 300) pts += 3; if (ru >= 100) pts += 3; if (reY >= 100) pts += 3; }
+    // Both sites pay +3 for 300+ passing, 100+ rushing and 100+ receiving yards (FanDuel's rules page confirms it).
+    if (pY >= 300) pts += 3; if (ru >= 100) pts += 3; if (reY >= 100) pts += 3;
     return pts;
   }
   var GL_COLS = {
