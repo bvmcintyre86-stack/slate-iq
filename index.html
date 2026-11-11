@@ -659,6 +659,7 @@
             <th data-key="opp" title="Opponent's rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th>
             <th data-key="role" title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>
             <th data-key="actualPts" title="Enter after the games are final, to compare against your Mkt projection.">Actual</th>
+            <th data-key="projOwn" title="Projected ownership - needs saved slates with imported ownership.">Proj Own</th>
             <th data-key="ownership" title="Enter from FanDuel/DraftKings' own post-contest ownership export.">Own %</th>
             <th data-key="mvpOwnership" id="mvpOwnHeader" title="Single Game only: what % of entries had this player specifically as MVP/Captain, not just anywhere in the roster.">MVP Own %</th>
             <th>Top</th>
@@ -7023,8 +7024,161 @@
     tagSel.value  = filterTag;
   }
 
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PROJECTED OWNERSHIP - learns from the slates saved in Results History.
+  // Every saved slate with an imported contest-results file gives (projection, salary, actual ownership)
+  // for each player. We fit a small ridge regression on the log-odds of ownership using
+  //   position, projection per $1k (value) and its rank/z-score within the position,
+  //   salary rank, and projection/salary z-scores,
+  // then rescale each position so the slots add up the way real rosters do.
+  // Backtested leave-one-slate-out on the model's own history; the result is shown in the column tooltip.
+  // It only knows what the projections know - a late injury it was never told about will still be missed.
+  // ═══════════════════════════════════════════════════════════════════════
+  var OWN_MIN_SLATES = 3, OWN_LAMBDA = 3, OWN_POS = ['QB', 'RB', 'WR', 'TE'];
+  var ownModelCache = { key: null, model: null };
+  function ownZ(arr){
+    var n = arr.length, m = arr.reduce(function(a, b){ return a + b; }, 0) / n;
+    var sd = Math.sqrt(arr.reduce(function(a, b){ return a + (b - m) * (b - m); }, 0) / n) || 1;
+    return arr.map(function(v){ return n < 4 ? 0 : (v - m) / sd; });
+  }
+  // list: [{position, salary, proj}] -> one feature vector per player
+  function ownFeatures(list){
+    var byPos = {}, out = new Array(list.length);
+    list.forEach(function(x, i){ (byPos[x.position] = byPos[x.position] || []).push(i); });
+    Object.keys(byPos).forEach(function(pos){
+      var idx = byPos[pos];
+      var val = idx.map(function(i){ return list[i].proj / (list[i].salary / 1000); });
+      var zv = ownZ(val), zp = ownZ(idx.map(function(i){ return list[i].proj; })), zs = ownZ(idx.map(function(i){ return list[i].salary; }));
+      var vOrder = idx.map(function(_, k){ return k; }).sort(function(a, b){ return val[b] - val[a]; }), vRank = {};
+      vOrder.forEach(function(k, r){ vRank[k] = r + 1; });
+      var sOrder = idx.map(function(_, k){ return k; }).sort(function(a, b){ return list[idx[b]].salary - list[idx[a]].salary; }), sRank = {};
+      sOrder.forEach(function(k, r){ sRank[k] = r / Math.max(idx.length - 1, 1); });
+      idx.forEach(function(i, k){
+        var v = Math.max(-2.5, Math.min(3, zv[k]));
+        out[i] = [1, pos === 'QB' ? 1 : 0, pos === 'RB' ? 1 : 0, pos === 'WR' ? 1 : 0, pos === 'TE' ? 1 : 0,
+                  v, v * v, vRank[k] === 1 ? 1 : 0, (vRank[k] === 2 || vRank[k] === 3) ? 1 : 0, sRank[k], zp[k], zs[k]];
+      });
+    });
+    return out;
+  }
+  function ownSolve(A, b){
+    var n = b.length, i, j, k;
+    for (i = 0; i < n; i++){
+      var piv = i; for (j = i + 1; j < n; j++) if (Math.abs(A[j][i]) > Math.abs(A[piv][i])) piv = j;
+      var t = A[i]; A[i] = A[piv]; A[piv] = t; var tb = b[i]; b[i] = b[piv]; b[piv] = tb;
+      for (j = i + 1; j < n; j++){ var f = A[j][i] / A[i][i]; for (k = i; k < n; k++) A[j][k] -= f * A[i][k]; b[j] -= f * b[i]; }
+    }
+    var x = new Array(n);
+    for (i = n - 1; i >= 0; i--){ var sum = b[i]; for (j = i + 1; j < n; j++) sum -= A[i][j] * x[j]; x[i] = sum / A[i][i]; }
+    return x;
+  }
+  function ownFit(slates){
+    var X = [], y = [];
+    slates.forEach(function(sl){
+      var F = ownFeatures(sl.rows);
+      sl.rows.forEach(function(r, i){ X.push(F[i]); y.push(Math.log(Math.max(0.003, Math.min(0.97, r.own / 100)) / (1 - Math.max(0.003, Math.min(0.97, r.own / 100))))); });
+    });
+    var d = X[0].length, A = [], b = new Array(d).fill(0), i, j, k;
+    for (i = 0; i < d; i++){ A.push(new Array(d).fill(0)); A[i][i] = i === 0 ? 1e-6 : OWN_LAMBDA; }
+    X.forEach(function(row, r){ for (j = 0; j < d; j++){ b[j] += row[j] * y[r]; for (k = 0; k < d; k++) A[j][k] += row[j] * row[k]; } });
+    var sums = {}, cnt = {};
+    slates.forEach(function(sl){
+      var tot = {}; sl.rows.forEach(function(r){ tot[r.position] = (tot[r.position] || 0) + r.own; });
+      Object.keys(tot).forEach(function(pz){ sums[pz] = (sums[pz] || 0) + tot[pz]; cnt[pz] = (cnt[pz] || 0) + 1; });
+    });
+    var targets = {}; Object.keys(sums).forEach(function(pz){ targets[pz] = sums[pz] / cnt[pz]; });
+    return { w: ownSolve(A, b), targets: targets };
+  }
+  function ownPredict(model, list){
+    var F = ownFeatures(list), raw = F.map(function(f){
+      var z = 0; for (var j = 0; j < f.length; j++) z += f[j] * model.w[j];
+      return 100 / (1 + Math.exp(-z));
+    });
+    var tot = {}; list.forEach(function(x, i){ tot[x.position] = (tot[x.position] || 0) + raw[i]; });
+    return raw.map(function(v, i){
+      var t = model.targets[list[i].position], c = tot[list[i].position];
+      return (t && c) ? Math.min(95, v * t / c) : v;
+    });
+  }
+  function ownRank(a){
+    var idx = a.map(function(_, i){ return i; }).sort(function(x, y){ return a[x] - a[y]; }), r = new Array(a.length), i = 0;
+    while (i < idx.length){ var j = i; while (j + 1 < idx.length && a[idx[j + 1]] === a[idx[i]]) j++; for (var k = i; k <= j; k++) r[idx[k]] = (i + j) / 2; i = j + 1; }
+    return r;
+  }
+  function ownCorr(a, b){
+    var ra = ownRank(a), rb = ownRank(b), n = a.length, ma = ra.reduce(function(x, y){ return x + y; }, 0) / n, mb = rb.reduce(function(x, y){ return x + y; }, 0) / n, sab = 0, saa = 0, sbb = 0;
+    for (var i = 0; i < n; i++){ sab += (ra[i] - ma) * (rb[i] - mb); saa += (ra[i] - ma) * (ra[i] - ma); sbb += (rb[i] - mb) * (rb[i] - mb); }
+    return saa && sbb ? sab / Math.sqrt(saa * sbb) : 0;
+  }
+  // Training slates: saved Main-slate results for this platform that actually had ownership imported.
+  function ownTrainingSlates(){
+    var out = [];
+    (resultsHistory || []).forEach(function(en){
+      if (!en || en.mode === 'sg' || en.platform !== platform || !en.players) return;
+      var withOwn = en.players.filter(function(p){ return p.ownership != null; });
+      if (withOwn.length < 25) return;                       // ownership was never imported for this slate
+      var teams = {}; withOwn.forEach(function(p){ teams[p.team] = true; });
+      var rows = [];
+      en.players.forEach(function(p){
+        if (!teams[p.team] || !(p.salary > 0)) return;       // teams with nobody drafted = not on the slate
+        var proj = p.combined != null ? p.combined : (p.mkt != null ? p.mkt : p.fppg);
+        if (!(proj > 0)) return;
+        rows.push({ position: p.position, salary: p.salary, proj: proj, own: p.ownership != null ? p.ownership : 0 });
+      });
+      // A slate saved with only the handful of players you tracked (not the whole pool) would teach the model that
+      // everyone is popular, so require something close to a full slate.
+      if (rows.length >= 90) out.push({ label: en.weekLabel, rows: rows });
+    });
+    return out;
+  }
+  function ownModel(){
+    var slates = ownTrainingSlates();
+    var key = platform + '|' + slates.length + '|' + slates.reduce(function(a, sl){ return a + sl.rows.length; }, 0);
+    if (ownModelCache.key === key) return ownModelCache.model;
+    var model = { n: slates.length, fit: null, mae: null, corr: null, top5: null };
+    if (slates.length >= OWN_MIN_SLATES){
+      try {
+        model.fit = ownFit(slates);
+        var mae = [], corr = [], top = [];
+        slates.forEach(function(sl, i){
+          var fit = ownFit(slates.filter(function(_, j){ return j !== i; })), pr = ownPredict(fit, sl.rows), act = sl.rows.map(function(r){ return r.own; });
+          mae.push(act.reduce(function(a, v, k){ return a + Math.abs(v - pr[k]); }, 0) / act.length); corr.push(ownCorr(act, pr));
+          var ta = act.map(function(_, k){ return k; }).sort(function(x, y){ return act[y] - act[x]; }).slice(0, 5), tp = pr.map(function(_, k){ return k; }).sort(function(x, y){ return pr[y] - pr[x]; }).slice(0, 5);
+          top.push(ta.filter(function(k){ return tp.indexOf(k) >= 0; }).length / 5);
+        });
+        var avg = function(a){ return a.reduce(function(x, y){ return x + y; }, 0) / a.length; };
+        model.mae = avg(mae); model.corr = avg(corr); model.top5 = avg(top);
+      } catch(e){ console.warn('ownership model failed', e); model.fit = null; }
+    }
+    ownModelCache = { key: key, model: model };
+    return model;
+  }
+  // Sets p.projOwn on every pool player (null when there is not enough history yet).
+  function ownProjectPool(){
+    var m = ownModel(), th = document.querySelector('th[data-key="projOwn"]');
+    var ok = m.fit && slateMode !== 'sg';
+    if (th){
+      th.title = ok
+        ? 'Projected ownership, learned from ' + m.n + ' saved ' + platform.toUpperCase() + ' slates with imported contest ownership. Backtest on those slates (each predicted from the others): average miss ' + m.mae.toFixed(1) + ' pts, rank correlation ' + m.corr.toFixed(2) + ', ' + Math.round(m.top5 * 100) + '% of the real top-5 found. Uses your saved projections, so it improves as you save more slates.'
+        : 'Projected ownership needs ' + OWN_MIN_SLATES + ' saved ' + platform.toUpperCase() + ' Main slates with ownership imported (you have ' + m.n + '). Save each slate to Results History after importing the contest results file.';
+    }
+    var list = [], ref = [];
+    players.forEach(function(p){
+      p.projOwn = null;
+      if (!ok || !(p.salary > 0)) return;
+      var cmp = combinedMarketProjection(p), proj = cmp ? cmp.fp : p.fppg;
+      if (!(proj > 0)) return;
+      list.push({ position: p.position, salary: p.salary, proj: proj }); ref.push(p);
+    });
+    if (!ok || list.length < 20) return;
+    var pr = ownPredict(m.fit, list);
+    ref.forEach(function(p, i){ p.projOwn = Math.round(pr[i] * 10) / 10; });
+  }
+
   function renderTable(){
     var body = document.getElementById('poolBody');
+    try { ownProjectPool(); } catch(e){ console.warn('projected ownership failed', e); }
     var empty = document.getElementById('poolEmpty');
     var search = filterSearch;
     var posF   = filterPos;
@@ -7220,6 +7374,7 @@
             })()+
           '</div>'+
         '</td>'+
+        '<td class="num" style="'+(p.projOwn != null && p.projOwn >= 30 ? 'color:var(--gold);font-weight:700;' : (p.projOwn == null ? 'color:var(--muted);' : ''))+'">'+(p.projOwn != null ? p.projOwn.toFixed(1)+'%' : '—')+'</td>'+
         '<td><div style="display:flex;align-items:center;justify-content:center;gap:3px;"><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-own-id="'+p.id+'" value="'+(p.ownership!=null?p.ownership:'')+'" style="width:60px;text-align:center;" placeholder="—"><span>%</span></div></td>'+
         '<td class="mvp-own-cell"><div style="display:flex;align-items:center;justify-content:center;gap:3px;"><input type="number" step="0.1" min="0" max="100" class="row-result-input" data-mvp-own-id="'+p.id+'" value="'+(p.mvpOwnership!=null?p.mvpOwnership:'')+'" style="width:60px;text-align:center;" placeholder="—"><span>%</span></div></td>'+
         '<td><button class="tp-add-btn'+(topPlayers[p.id]?' in-tp':'')+'" data-tp-id="'+p.id+'">'+(topPlayers[p.id]?'★ Starred':'☆ Star')+'</button></td>'+
