@@ -635,6 +635,8 @@
       <select id="matchupFilter"><option value="">All matchups</option></select>
       <select id="tagFilter"><option value="">All script tags</option></select>
       <label class="stack-chk" title="Shows only players with an Unabated (MKT) and/or Kalshi projection."><input type="checkbox" id="mktOnlyFilter"> Has MKT / Kalshi projection</label>
+      <label class="stack-chk" title="Players you unticked as inactive. Untick this to hide them again."><input type="checkbox" id="showOutFilter"> Show marked-out</label>
+      <button class="row-btn" id="clearOutBtn" style="display:none;" title="Put every marked-out player back (this also happens automatically after 6 days).">Clear outs</button>
       <span class="row-count" id="rowCount"></span>
     </div>
 
@@ -3109,6 +3111,7 @@
       if (c.stat !== 'all' && r.stat !== c.stat) return false;
       if (c.side !== 'all' && r.side !== c.side) return false;
       if (q && r.player.toLowerCase().indexOf(q) < 0) return false;
+      if (typeof outName === 'function' && outName(normalizeName(r.player))) return false;   // marked out in the Player Pool
       if (r.n < c.minBooks) return false;
       if (r.spread != null && r.spread * 100 > c.maxSpread) return false;
       if (r.ev * 100 < c.minEdge) return false;
@@ -6422,7 +6425,7 @@
     var emptySlots = activeSLOT_DEFS.filter(function(s){return !lineup[s.key];});
     // Use Top Players as the candidate pool if any are starred, otherwise use full player pool
     var tpList = Object.values(topPlayers);
-    var candidatePool = tpList.length > 0 ? tpList : players;
+    var candidatePool = (tpList.length > 0 ? tpList : players).filter(function(p){ return !isOut(p); });
     if (!emptySlots.length){ setMsg('Lineup is already full. Clear a slot to optimize around it.'); return; }
 
     if (restrictToTopPlayers && !tpList.length){
@@ -6438,7 +6441,7 @@
     // be completed. With the restriction on, that fallback becomes a no-op
     // (fullPool === pool) - a slot with no eligible Top Players option is
     // left unfilled instead of reaching outside Top Players at all.
-    var fullPool = restrictToTopPlayers ? pool : players.filter(function(p){ return !usedIds[p.id] && p.salary > 0; });
+    var fullPool = restrictToTopPlayers ? pool : players.filter(function(p){ return !usedIds[p.id] && p.salary > 0 && !isOut(p); });
 
     if (slateMode === 'sg'){ sgFill(emptySlots, pool, fullPool); return; }
 
@@ -7167,7 +7170,7 @@
     var list = [], ref = [];
     players.forEach(function(p){
       p.projOwn = null;
-      if (!ok || !(p.salary > 0)) return;
+      if (!ok || !(p.salary > 0) || isOut(p)) return;
       var cmp = combinedMarketProjection(p), proj = cmp ? cmp.fp : 0;   // no market/prediction number = no projected ownership
       if (!(proj > 0)) return;
       list.push({ position: p.position, salary: p.salary, proj: proj }); ref.push(p);
@@ -7175,6 +7178,24 @@
     if (!ok || list.length < 20) return;
     var pr = ownPredict(m.fit, list);
     ref.forEach(function(p, i){ p.projOwn = Math.round(pr[i] * 10) / 10; });
+  }
+
+  // ── Inactive ("Out") players ──
+  // Tick-box beside every player. Unchecking marks him out: he is hidden from the pool, left out of the optimizer and
+  // the Props tab. Remembered in this browser for 6 days (so it clears itself by next week's slate), or use Clear.
+  var OUT_KEY = 'slateIqOutPlayers', OUT_TTL = 6 * 24 * 3600 * 1000, outPlayers = {}, showOut = false;
+  try { outPlayers = JSON.parse(localStorage.getItem(OUT_KEY) || '{}') || {}; } catch(e){ outPlayers = {}; }
+  function outSave(){ try { localStorage.setItem(OUT_KEY, JSON.stringify(outPlayers)); } catch(e){} }
+  function outPrune(){ var now = Date.now(), ch = false; Object.keys(outPlayers).forEach(function(k){ if (!(outPlayers[k] > now)){ delete outPlayers[k]; ch = true; } }); if (ch) outSave(); }
+  outPrune();
+  function outKey(p){ return normalizeName(p.name) + '|' + p.team; }
+  function isOut(p){ return (outPlayers[outKey(p)] || 0) > Date.now(); }
+  function outName(norm){ var now = Date.now(); return Object.keys(outPlayers).some(function(k){ return k.indexOf(norm + '|') === 0 && outPlayers[k] > now; }); }
+  // Books behind a player's Unabated projection: the most any one stat has (a stat quoted by a single book counts 1).
+  function mktBookCount(mp){
+    if (!mp || !mp.breakdown) return null;
+    var best = 0; Object.keys(mp.breakdown).forEach(function(k){ best = Math.max(best, mp.breakdown[k].consensusCount || 1); });
+    return best || null;
   }
 
   function renderTable(){
@@ -7200,6 +7221,7 @@
     }
 
     var rows = players.filter(function(p){
+      if (isOut(p) && !showOut) return false;
       if (sgTeams && !sgTeams[p.team]) return false;
       // Hide unmatched players when games are loaded
       if (games.length > 0 && p.tag === 'unmatched' && tagF !== 'unmatched') return false;
@@ -7279,7 +7301,9 @@
       return 0;
     });
 
-    document.getElementById('rowCount').textContent = rows.length + ' of ' + players.length + ' players';
+    var nOut = players.filter(isOut).length;
+    document.getElementById('rowCount').textContent = rows.length + ' of ' + players.length + ' players' + (nOut ? ' (' + nOut + ' marked out' + (showOut ? ', shown' : ', hidden') + ')' : '');
+    var oc = document.getElementById('clearOutBtn'); if (oc) oc.style.display = nOut ? '' : 'none';
 
     if (!rows.length){
       body.innerHTML = '';
@@ -7315,8 +7339,11 @@
         : 'Effective projection used for ranking/lineups: ' + effectiveFppg(p).toFixed(1) + ' pts' +
           (projSource === 'blend' ? ' (50/50 blend of fppg ' + p.fppg.toFixed(1) + ' and market avg)' : '') +
           ' - ' + (cmp ? combinedMarketProjectionNote(cmp) : 'no Unabated or prediction-market data yet for this player, falling back to fppg');
-      return '<tr>'+
-        '<td style="text-align:left;"'+glAttr(p)+'>'+p.name+'</td>'+
+      var outNow = isOut(p), thinN = (p.position !== 'DEF' && p.salary >= 5000) ? mktBookCount(mp) : null;
+      return '<tr'+(outNow ? ' style="opacity:.45;"' : '')+'>'+
+        '<td style="text-align:left;"'+glAttr(p)+'><input type="checkbox" class="row-active" data-out-id="'+p.id+'"'+(outNow ? '' : ' checked')+' title="Active. Untick if this player is inactive/out - he will be hidden and left out of the optimizer." style="margin-right:6px;vertical-align:middle;cursor:pointer;">'+p.name+
+          (thinN !== null && thinN <= 2 && !outNow ? ' <span title="Only '+thinN+' sportsbook'+(thinN === 1 ? '' : 's')+' behind this Unabated projection - a player at this salary normally has more. Thin or stale lines are one sign a player may be inactive; check before using." style="color:var(--gold);cursor:help;">&#9888;</span>' : '')+
+        '</td>'+
         '<td class="pos-pill">'+p.position+'</td>'+
         '<td class="mono">'+p.team+'</td>'+
         '<td class="num">'+money(p.salary)+'</td>'+
@@ -7409,6 +7436,15 @@
     });
     applyMvpOwnColumnVisibility();
 
+    body.querySelectorAll('[data-out-id]').forEach(function(cb){
+      cb.addEventListener('change', function(){
+        var pl = players.filter(function(x){ return String(x.id) === cb.getAttribute('data-out-id'); })[0];
+        if (!pl) return;
+        if (cb.checked) delete outPlayers[outKey(pl)]; else outPlayers[outKey(pl)] = Date.now() + OUT_TTL;
+        outSave(); renderTable(); try { if (typeof propsRender === 'function' && propsViewOn()) propsRender(); } catch(e){}
+        if (!cb.checked){ var inL = playerInSlot(pl); if (inL) setMsg(pl.name + ' is marked out but still in your lineup (' + inL + ') - remove him.'); }
+      });
+    });
     body.querySelectorAll('[data-add-id]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var id = btn.getAttribute('data-add-id');
@@ -8509,6 +8545,8 @@
   document.getElementById('tagFilter').addEventListener('change', function(){ filterTag=this.value; renderTable(); });
   document.getElementById('matchupFilter').addEventListener('change', function(){ filterMatchup=this.value; renderTable(); });
   document.getElementById('mktOnlyFilter').addEventListener('change', function(){ filterMktOnly=this.checked; renderTable(); });
+  document.getElementById('showOutFilter').addEventListener('change', function(){ showOut = this.checked; renderTable(); });
+  document.getElementById('clearOutBtn').addEventListener('click', function(){ outPlayers = {}; outSave(); renderTable(); try { if (propsViewOn()) propsRender(); } catch(e){} });
 
   document.querySelectorAll('#poolTable th[data-key]').forEach(function(th){
     th.addEventListener('click', function(){
