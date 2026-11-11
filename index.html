@@ -7122,13 +7122,13 @@
       var rows = [];
       en.players.forEach(function(p){
         if (!teams[p.team] || !(p.salary > 0)) return;       // teams with nobody drafted = not on the slate
-        var proj = p.combined != null ? p.combined : (p.mkt != null ? p.mkt : p.fppg);
+        var proj = p.combined;                               // market-based projection only (Unabated and/or prediction markets)
         if (!(proj > 0)) return;
         rows.push({ position: p.position, salary: p.salary, proj: proj, own: p.ownership != null ? p.ownership : 0 });
       });
       // A slate saved with only the handful of players you tracked (not the whole pool) would teach the model that
       // everyone is popular, so require something close to a full slate.
-      if (rows.length >= 90) out.push({ label: en.weekLabel, rows: rows });
+      if (en.players.length >= 90 && rows.length >= 40) out.push({ label: en.weekLabel, rows: rows });
     });
     return out;
   }
@@ -7154,20 +7154,21 @@
     ownModelCache = { key: key, model: model };
     return model;
   }
+  window.__ownEngine = { fit: ownFit, predict: ownPredict, corr: ownCorr };
   // Sets p.projOwn on every pool player (null when there is not enough history yet).
   function ownProjectPool(){
     var m = ownModel(), th = document.querySelector('th[data-key="projOwn"]');
     var ok = m.fit && slateMode !== 'sg';
     if (th){
       th.title = ok
-        ? 'Projected ownership, learned from ' + m.n + ' saved ' + platform.toUpperCase() + ' slates with imported contest ownership. Backtest on those slates (each predicted from the others): average miss ' + m.mae.toFixed(1) + ' pts, rank correlation ' + m.corr.toFixed(2) + ', ' + Math.round(m.top5 * 100) + '% of the real top-5 found. Uses your saved projections, so it improves as you save more slates.'
+        ? 'Projected ownership for players with a market or prediction projection, learned from ' + m.n + ' saved ' + platform.toUpperCase() + ' slates with imported contest ownership. Backtest on those slates (each predicted from the others): average miss ' + m.mae.toFixed(1) + ' pts, rank correlation ' + m.corr.toFixed(2) + ', ' + Math.round(m.top5 * 100) + '% of the real top-5 found. Uses your saved projections, so it improves as you save more slates.'
         : 'Projected ownership needs ' + OWN_MIN_SLATES + ' saved ' + platform.toUpperCase() + ' Main slates with ownership imported (you have ' + m.n + '). Save each slate to Results History after importing the contest results file.';
     }
     var list = [], ref = [];
     players.forEach(function(p){
       p.projOwn = null;
       if (!ok || !(p.salary > 0)) return;
-      var cmp = combinedMarketProjection(p), proj = cmp ? cmp.fp : p.fppg;
+      var cmp = combinedMarketProjection(p), proj = cmp ? cmp.fp : 0;   // no market/prediction number = no projected ownership
       if (!(proj > 0)) return;
       list.push({ position: p.position, salary: p.salary, proj: proj }); ref.push(p);
     });
