@@ -803,6 +803,7 @@
       <div class="field"><label>Min books</label><input type="number" id="pfMinBooks" value="2" min="1" step="1"></div>
       <div class="field"><label>Venue</label><select id="pfVenue"><option value="all">Both</option><option value="K">Kalshi</option><option value="P">Polymarket</option></select></div>
       <div class="field"><label>Market</label><select id="pfStat"><option value="all">All</option><option value="attd">Anytime TD</option><option value="passYards">Pass Yds</option><option value="passTD">Pass TD</option><option value="rushYards">Rush Yds</option><option value="recYards">Rec Yds</option><option value="receptions">Receptions</option></select></div>
+      <div class="field"><label>Game</label><select id="pfGame"><option value="all">All games</option></select></div>
       <div class="field"><label>Bet</label><select id="pfSide"><option value="all">Yes + No</option><option value="Yes">Yes only</option><option value="No">No only</option></select></div>
       <div class="field"><label>Player</label><input type="text" id="pfSearch" placeholder="search"></div>
       <div class="field"><label>Anytime-TD book hold %</label><input type="number" id="pfHoldAttd" value="8" step="1" title="Books post only a Yes price for anytime TD. This is the margin assumed to be inside it."></div>
@@ -2744,7 +2745,7 @@
     return propsSrcKind(src) === 'book';
   }
   var PROPS_FEES = { kalshi: 0.07, poly: 0.07 }; // poly: only used if a market carries no fee of its own; real markets report one (0.095 seen on 2026-11-09) // taker coefficient: fee = coef * p * (1 - p) per contract
-  var PROPS_CFG = { minEdge: 3, maxSpread: 10, minBooks: 2, hold1: 5, holdAttd: 8, venue: 'all', stat: 'all', side: 'all', search: '', suspect: false, hideExtrap: true, booksOnly: true, minOi: 0, books: {}, sortKey: 'ev', sortDir: 'desc' };
+  var PROPS_CFG = { minEdge: 3, maxSpread: 10, minBooks: 2, hold1: 5, holdAttd: 8, venue: 'all', stat: 'all', game: 'all', side: 'all', search: '', suspect: false, hideExtrap: true, booksOnly: true, minOi: 0, books: {}, sortKey: 'ev', sortDir: 'desc' };
   var PROPS_LOG_KEY = 'slateIqPropsLog';
   var propsLog = [];
   var propsRows = [];
@@ -3024,6 +3025,7 @@
   }
 
   function propsCompute(){
+    if (window.__propsFrozen){ propsRows = window.__propsFrozen; return propsRows; }   // test hook only
     if (!propsBooksCache || propsBooksStamp !== lastRawPregame){
       propsBooksCache = Object.keys(lastRawPregame || {}).length ? propsBuildBooks() : {};
       propsBooksStamp = lastRawPregame;
@@ -3109,6 +3111,7 @@
     return propsRows.filter(function(r){
       if (c.venue !== 'all' && r.venue !== c.venue) return false;
       if (c.stat !== 'all' && r.stat !== c.stat) return false;
+      if (c.game !== 'all' && r.game !== c.game) return false;
       if (c.side !== 'all' && r.side !== c.side) return false;
       if (q && r.player.toLowerCase().indexOf(q) < 0) return false;
       if (typeof outName === 'function' && outName(normalizeName(r.player))) return false;   // marked out in the Player Pool
@@ -3134,6 +3137,16 @@
       '<span>Polymarket: <b>' + propsPolyRungs.length + '</b> rungs, ' + propsAge(propsPolyAt) + '</span>' +
       '<span>Matched: <b>' + propsRows.length + '</b></span>';
     // book list
+    // Game filter: one entry per matchup that has rows, in kickoff order; keeps your pick across refreshes.
+    var gSel = document.getElementById('pfGame');
+    if (gSel){
+      var gStart = {}; propsRows.forEach(function(r){ var t = r.start ? (typeof r.start === 'number' ? r.start : (Date.parse(r.start) || 0)) : 0; if (r.game && (gStart[r.game] == null || t < gStart[r.game])) gStart[r.game] = t; });
+      var gList = Object.keys(gStart).sort(function(a, b){ return gStart[a] - gStart[b] || (a < b ? -1 : 1); });
+      if (PROPS_CFG.game !== 'all' && gList.indexOf(PROPS_CFG.game) < 0) PROPS_CFG.game = 'all';
+      var gHtml = '<option value="all">All games</option>' + gList.map(function(g){ return '<option value="' + propsEsc(g) + '">' + propsEsc(g) + '</option>'; }).join('');
+      if (gSel.getAttribute('data-sig') !== gHtml){ gSel.innerHTML = gHtml; gSel.setAttribute('data-sig', gHtml); }
+      gSel.value = PROPS_CFG.game;
+    }
     var bl = document.getElementById('propsBookList'), html = '', groups = {};
     Object.keys(propsSrcCounts).forEach(function(sr){ (groups[propsSrcKind(sr)] = groups[propsSrcKind(sr)] || []).push(sr); });
     ['book', 'pickem', 'exchange', 'consensus', 'other'].forEach(function(kind){
@@ -3240,7 +3253,7 @@
     [['pfMinEdge', 'minEdge'], ['pfMaxSpread', 'maxSpread'], ['pfMinBooks', 'minBooks'], ['pfHold1', 'hold1'], ['pfHoldAttd', 'holdAttd']].forEach(function(p){
       $(p[0]).addEventListener('input', function(){ var v = parseFloat(this.value); if (!isNaN(v)){ PROPS_CFG[p[1]] = v; propsRender(); } });
     });
-    [['pfVenue', 'venue'], ['pfStat', 'stat'], ['pfSide', 'side']].forEach(function(p){
+    [['pfVenue', 'venue'], ['pfStat', 'stat'], ['pfGame', 'game'], ['pfSide', 'side']].forEach(function(p){
       $(p[0]).addEventListener('change', function(){ PROPS_CFG[p[1]] = this.value; propsRender(); });
     });
     $('pfSearch').addEventListener('input', function(){ PROPS_CFG.search = this.value; propsRender(); });
