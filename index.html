@@ -964,6 +964,15 @@
   var lineups    = [emptyLineup()];
   var activeIdx  = 0;
   var lineup     = lineups[activeIdx];
+  // A saved lineup list can come back empty (or with the active tab past its end), which left `lineup` undefined and
+  // crashed every table render ("Cannot read properties of undefined (reading 'QB')") - e.g. when loading a DK salary file.
+  function syncActiveLineup(){
+    if (!Array.isArray(lineups)) lineups = [];
+    for (var i = lineups.length - 1; i >= 0; i--) if (!lineups[i] || typeof lineups[i] !== 'object') lineups.splice(i, 1);
+    if (!lineups.length) lineups.push(emptyLineup());
+    if (!(activeIdx >= 0 && activeIdx < lineups.length)) activeIdx = 0;
+    lineup = lineups[activeIdx];
+  }
   var salaryCap  = 60000;
   var SEC_DEFAULTS = { tilt: 0, secCount: 0, secCombos: { rbDef: true, rbOppPC: true, wrOppPC: true, rbSamePC: false, rbOppRb: false }, avoidDefOpp: true, noSameTeamDup: true, rbFavOnly: true };
   var stackSettings = Object.assign({ level: 0, bringBack: false, onslaughtOnly: false }, JSON.parse(JSON.stringify(SEC_DEFAULTS)));
@@ -5061,7 +5070,7 @@
       topPlayers = ms.topPlayers || {};
       if (ms.lineups){ lineups=ms.lineups; activeIdx=ms.activeIdx; }
       else { lineups=[emptyLineup()]; activeIdx=0; }
-      lineup = lineups[activeIdx];
+      syncActiveLineup();
       salaryCap = platformCap[platform] || (platform==='dk'?50000:60000);
       document.getElementById('capInput').value = salaryCap;
       // Older saves kept Kalshi/Polymarket as one shared global. Treat that
@@ -5208,7 +5217,7 @@
             }
           });
         });
-        lineup = lineups[activeIdx];
+        syncActiveLineup();
         document.getElementById('poolStatus').textContent = players.length+' players loaded.';
         populateFilterOptions();
         tagPlayers();
@@ -5223,6 +5232,7 @@
   }
 
   function playerInSlot(p){
+    if (!lineup) syncActiveLineup();
     for (var i=0;i<activeSLOT_DEFS.length;i++){
       var k = activeSLOT_DEFS[i].key;
       if (lineup[k] && lineup[k].id === p.id) return k;
@@ -5295,7 +5305,7 @@
 
   function switchLineup(idx){
     activeIdx = idx;
-    lineup = lineups[activeIdx];
+    syncActiveLineup();
     setMsg('');
     saveState(); renderLuTabs(); refreshLineupUI(); renderTable();
   }
@@ -8338,7 +8348,7 @@
       lineups   = [emptyLineup()];
       activeIdx = 0;
     }
-    lineup = lineups[activeIdx];
+    syncActiveLineup();
     loadMarketScope(platform, mode);
     setMsg('');
     updateLuSubAndLabels();
@@ -8413,7 +8423,7 @@
       lineups   = [emptyLineup()];
       activeIdx = 0;
     }
-    lineup = lineups[activeIdx];
+    syncActiveLineup();
 
     document.getElementById('fdPlatformBtn').classList.toggle('active', platform==='fd');
     document.getElementById('dkPlatformBtn').classList.toggle('active', platform==='dk');
