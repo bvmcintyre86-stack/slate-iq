@@ -6836,6 +6836,80 @@
       }
     }
 
+    // Phase 4: floor repair. Phase 3 only tries one swap at a time, so it can get stuck a few hundred dollars short
+    // (e.g. $49,100 of $50,000) when no single upgrade fits in the gap. Here we also try swapping TWO slots at once
+    // (one up, one down, or both up) and take the combination that lands inside [floor, cap] with the least points lost.
+    if (salaryUsed() < salaryFloor){
+      var optsFor = function(slot, poolArr){
+        var reqTeam = slotTeamConstraint[slot.key];
+        return poolArr.filter(function(p){
+          if (reqTeam && p.team !== reqTeam) return false;
+          if (slotExcludeTeam[slot.key] && p.team === slotExcludeTeam[slot.key]) return false;
+          if (slotPositionLock[slot.key] && p.position !== slotPositionLock[slot.key]) return false;
+          if (slotPosAllowed[slot.key] && slotPosAllowed[slot.key].indexOf(p.position) === -1) return false;
+          if (slotRequireGoodScript[slot.key] && !GOOD_SCRIPT_TAGS[p.tag]) return false;
+          return slot.eligible.indexOf(p.position) !== -1;
+        });
+      };
+      var scoreOf = function(slot, p){ return playerScore(p) + (slotStackRole[slot.key] === 'stack' ? stackPositionBonus(p) : 0); };
+      for (var repair = 0; repair < 6 && salaryUsed() < salaryFloor; repair++){
+        var curTotal = salaryUsed();
+        var free = candidatePool.filter(function(p){ return !activeSLOT_DEFS.some(function(s){ return lineup[s.key] && lineup[s.key].id === p.id; }); });
+        var slotsNow = emptySlots.filter(function(sl){ return lineup[sl.key]; });
+        var optMap = {}; slotsNow.forEach(function(sl){ optMap[sl.key] = optsFor(sl, free); });
+        var bestRep = null;
+        var consider = function(changes, total, scoreDelta){
+          var inRange = total >= salaryFloor && total <= salaryCap;
+          if (total > salaryCap || total <= curTotal) return;
+          var key = [inRange ? 1 : 0, inRange ? scoreDelta : total];   // reach the floor first; then least points lost; else get as close as possible
+          if (!bestRep || key[0] > bestRep.key[0] || (key[0] === bestRep.key[0] && key[1] > bestRep.key[1])) bestRep = { changes: changes, key: key };
+        };
+        var okAssign = function(changes){
+          // apply tentatively, then make sure none of the new players clash with the rest of the lineup
+          var saved = changes.map(function(c){ return lineup[c.slot.key]; });
+          changes.forEach(function(c){ lineup[c.slot.key] = c.p; });
+          var ok = changes.every(function(c){ return !badPair(c.p, c.slot.key); });
+          changes.forEach(function(c, i){ lineup[c.slot.key] = saved[i]; });
+          return ok;
+        };
+        // single swaps (also catches cases Phase 3 skipped because of its strict "biggest jump" ordering)
+        slotsNow.forEach(function(sl){
+          var curP = lineup[sl.key];
+          optMap[sl.key].forEach(function(c){
+            var d = slotSalary(sl, c) - slotSalary(sl, curP);
+            var tot = curTotal + d; if (tot <= curTotal || tot > salaryCap) return;
+            var sd = scoreOf(sl, c) - scoreOf(sl, curP);
+            var chg = [{ slot: sl, p: c }]; if (okAssign(chg)) consider(chg, tot, sd);
+          });
+        });
+        // pair swaps
+        if (!bestRep || bestRep.key[0] === 0){
+          for (var i1 = 0; i1 < slotsNow.length; i1++){
+            for (var i2 = i1 + 1; i2 < slotsNow.length; i2++){
+              var s1 = slotsNow[i1], s2 = slotsNow[i2], p1 = lineup[s1.key], p2 = lineup[s2.key];
+              var o1 = optMap[s1.key], o2 = optMap[s2.key];
+              for (var a1 = 0; a1 < o1.length; a1++){
+                var c1 = o1[a1], t1 = curTotal + slotSalary(s1, c1) - slotSalary(s1, p1);
+                for (var a2 = 0; a2 < o2.length; a2++){
+                  var c2 = o2[a2]; if (c2.id === c1.id) continue;
+                  var tot2 = t1 + slotSalary(s2, c2) - slotSalary(s2, p2);
+                  if (tot2 <= curTotal || tot2 > salaryCap) continue;
+                  if (bestRep && bestRep.key[0] === 1 && tot2 < salaryFloor) continue;
+                  var sd2 = scoreOf(s1, c1) - scoreOf(s1, p1) + scoreOf(s2, c2) - scoreOf(s2, p2);
+                  var chg2 = [{ slot: s1, p: c1 }, { slot: s2, p: c2 }];
+                  var inR = tot2 >= salaryFloor;
+                  if (bestRep && bestRep.key[0] >= (inR ? 1 : 0) && (inR ? sd2 : tot2) <= bestRep.key[1] && bestRep.key[0] === (inR ? 1 : 0)) continue;
+                  if (okAssign(chg2)) consider(chg2, tot2, sd2);
+                }
+              }
+            }
+          }
+        }
+        if (!bestRep) break;
+        bestRep.changes.forEach(function(c){ lineup[c.slot.key] = c.p; });
+      }
+    }
+
     var msgParts = [];
     if (autoQbNote) msgParts.push(autoQbNote);
     if (stackNote) msgParts.push(stackNote);
