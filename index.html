@@ -7379,10 +7379,7 @@
           if (td) tip += '. Kalshi D/ST anytime TD ' + (td.p*100).toFixed(0) + '% swapped in for the ~0.8-pt average: worth ' + (td.p*6).toFixed(1) + ' pts. Also a ceiling flag (league base rate ~12%)';
           var extra = '';
           if (td) extra = ' <span style="font-size:11px;color:'+(td.p >= 0.17 ? 'var(--gold)' : 'var(--muted)')+';">TD '+Math.round(td.p*100)+'%</span>';
-          var tags = [];
-          if (di && di.sacksMean != null) tags.push('sk');
-          if (td) tags.push('td');
-          return '<span style="color:var(--teal);opacity:.85;" title="'+tip.replace(/"/g,'&quot;')+'">'+defLineProjection(p).toFixed(1)+' <span style="font-size:11px;">'+(tags.length ? 'line+' + tags.join('+') : 'line')+'</span>'+extra+'</span>';
+          return '<span style="color:var(--teal);opacity:.85;display:inline-block;max-width:84px;line-height:1.2;" title="'+tip.replace(/"/g,'&quot;')+'">'+defLineProjection(p).toFixed(1)+' <span style="font-size:11px;">line</span>'+extra+'</span>';
         })() : '—'))+'</td>'+
         (function(){
           var pr = predictionProjection(normalizeName(p.name));
