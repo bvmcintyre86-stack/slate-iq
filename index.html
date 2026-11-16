@@ -409,6 +409,11 @@
   .tp-card .tp-tag{font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;width:110px;flex-shrink:0;text-align:center;}
   .tp-card .tp-sal{color:var(--muted);font-size:12px;}
   .tp-col-header{display:flex;align-items:center;gap:8px;padding:2px 10px 4px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line);margin-bottom:2px;}
+  .tp-grip{cursor:grab;color:var(--muted);font-size:14px;padding:0 4px;user-select:none;letter-spacing:-3px;}
+  .tp-grip:hover{color:var(--gold);}
+  .tp-card.tp-dragging{opacity:.4;}
+  .tp-card.tp-over-top td{border-top:2px solid var(--gold);}
+  .tp-card.tp-over-bot td{border-bottom:2px solid var(--gold);}
   .tp-rank-num{font-size:11px;color:var(--muted);width:22px;text-align:right;font-family:'IBM Plex Mono',monospace;flex-shrink:0;margin-right:4px;}
   .tp-card .tp-rank-btn{background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 1px;flex-shrink:0;width:14px;}
   .tp-card .tp-rank-btn:hover{color:var(--gold);}
@@ -7684,7 +7689,7 @@
         }).join('')+'</div>'
       : '';
     var rankCtrl = showTierBtns && rankNum !== undefined
-      ? '<span class="tp-rank-num">#'+rankNum+'</span>'+
+      ? '<span class="tp-grip" title="Drag to reorder">&#8942;&#8942;</span><span class="tp-rank-num">#'+rankNum+'</span>'+
         '<button class="tp-rank-btn" data-tp-up="'+p.id+'" title="Move up">&uarr;</button>'+
         '<button class="tp-rank-btn" data-tp-dn="'+p.id+'" title="Move down">&darr;</button>'
       : '';
@@ -7702,7 +7707,11 @@
       return '<td class="mono" style="color:'+color+';font-weight:'+(valueDelta<=0?'700':'400')+';">'+(valueDelta > 0 ? '+' : '')+valueDelta.toFixed(1)+'</td>';
     })();
     var matchupCells = renderMatchupCells(p);
-    return '<tr class="tp-card">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name"'+glAttr(p)+'>'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+kalshiCell+polymktCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+matchupCells+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
+    var livePl = (players||[]).find(function(x){return x.id===p.id;}) || p;
+    var pOwn = livePl.projOwn, eOwn = livePl.ownership;
+    var ownShow = (pOwn!=null&&!isNaN(pOwn)) ? pOwn : ((eOwn!=null&&eOwn!==''&&!isNaN(eOwn)) ? +eOwn : null);
+    var ownCell = '<td class="mono tp-own" style="color:'+(ownShow==null?'var(--muted)':(ownShow>=30?'var(--gold)':'inherit'))+';" title="Projected: '+((pOwn!=null&&!isNaN(pOwn))?(+pOwn).toFixed(1)+'%':'n/a')+' | Entered: '+((eOwn!=null&&eOwn!==''&&!isNaN(eOwn))?eOwn+'%':'n/a')+'">'+(ownShow==null?'—':(+ownShow).toFixed(1)+'%')+'</td>';
+    return '<tr class="tp-card'+(showTierBtns&&rankNum!==undefined?' tp-drag':'')+'" data-tp-row="'+p.id+'">'+'<td><span class="tp-tier-badge '+(tc[tier]||'t0')+'" style="width:20px;height:20px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;">'+(tier===0?'&mdash;':tier)+'</span></td>'+'<td><span class="tp-pos">'+p.position+'</span></td>'+'<td class="tp-name"'+glAttr(p)+'>'+p.name+'</td>'+'<td>'+p.team+'</td>'+'<td class="mono">'+(p.salary?'$'+p.salary.toLocaleString():'')+'</td>'+'<td class="mono">'+(p.teamImplied!==null&&p.teamImplied!==undefined?p.teamImplied.toFixed(2):'')+'</td>'+mktCell+kalshiCell+polymktCell+valueCell+'<td><span class="tp-tag" style="color:'+t.color+';background:'+t.bg+';">'+t.label+'</span></td>'+matchupCells+ownCell+(showTierBtns?'<td>'+rankCtrl+'</td><td>'+tierBtns+'</td>':'')+'<td>'+addBtn+'</td>'+'<td><button class="tp-rm" data-tp-rm="'+p.id+'" title="Remove">&times;</button></td>'+'</tr>';
   }
 
   // The two "extra separator" columns from nflverse matchup data: how the
@@ -7792,13 +7801,13 @@
       var allRows = '';
       [1,2,3,0].forEach(function(tier){
         if (!byTier[tier].length) return;
-        allRows += '<tr class="tp-tier-hdr-row"><td colspan="15"><span class="tp-tier-badge '+tc2[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl[tier]+' ('+byTier[tier].length+')</td></tr>';
+        allRows += '<tr class="tp-tier-hdr-row"><td colspan="16"><span class="tp-tier-badge '+tc2[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl[tier]+' ('+byTier[tier].length+')</td></tr>';
         allRows += byTier[tier].map(function(p){return renderTPCard(p,false);}).join('');
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
         +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th class="polymkt-col" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
-        +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>'
+        +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th><th title="Projected ownership (falls back to entered Own %)">Own</th>'
         +'<th></th><th></th></tr></thead><tbody>'+allRows+'</tbody></table>';
     } else {
       var byTier2 = {1:[],2:[],3:[],0:[]};
@@ -7809,13 +7818,13 @@
       var posRows = '';
       [1,2,3,0].forEach(function(tier){
         if (!byTier2[tier].length) return;
-        posRows += '<tr class="tp-tier-hdr-row"><td colspan="17"><span class="tp-tier-badge '+tc3[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl2[tier]+' ('+byTier2[tier].length+')</td></tr>';
+        posRows += '<tr class="tp-tier-hdr-row"><td colspan="18"><span class="tp-tier-badge '+tc3[tier]+'">'+  (tier===0?'&mdash;':tier)+'</span> '+tl2[tier]+' ('+byTier2[tier].length+')</td></tr>';
         posRows += byTier2[tier].map(function(p,i){return renderTPCard(p,true,i+1);}).join('');
       });
       list.innerHTML = '<table class="tp-table"><thead><tr>'
         +'<th style="width:26px;"></th><th style="width:36px;"></th>'
         +'<th style="text-align:left;">Player</th><th>Team</th><th>Salary</th><th>Total</th><th>Mkt</th><th title="Kalshi-implied projection, from the same 50/50-closest threshold logic as an alt line">Kalshi</th><th class="polymkt-col" title="Polymarket US-implied projection, from the same 50/50-closest threshold logic as an alt line">Polymkt</th><th id="tpValueHeader">'+valueTargetLabel()+' &Delta;</th><th>Script</th>'
-        +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th>'
+        +'<th title="Opponent'+"'"+'s rank allowing fantasy pts to this position this season (1 = allows the most)">Opp</th><th title="Season role - WOPR for WR/TE, carries/gm for RB, attempts/gm for QB (last 2 games)">Role</th><th title="Projected ownership (falls back to entered Own %)">Own</th>'
         +'<th>Rank</th><th>Tier</th><th></th><th></th></tr></thead><tbody>'+posRows+'</tbody></table>';
     }
     list.querySelectorAll('[data-tp-add]').forEach(function(btn){
@@ -7845,6 +7854,47 @@
         renderTopPlayers();
       });
     });
+    (function(){
+      var dragId = null;
+      function grp(id){var p=topPlayers[id]; if(!p) return [];
+        return Object.values(topPlayers).filter(function(x){return (x.tier||0)===(p.tier||0)&&x.position===p.position;})
+          .sort(function(a,b){return (a.rank||0)-(b.rank||0)||a.name.localeCompare(b.name);});}
+      function clr(){list.querySelectorAll('.tp-over-top,.tp-over-bot,.tp-dragging').forEach(function(r){r.classList.remove('tp-over-top','tp-over-bot','tp-dragging');});}
+      function same(a,b){var pa=topPlayers[a],pb=topPlayers[b];return pa&&pb&&(pa.tier||0)===(pb.tier||0)&&pa.position===pb.position;}
+      list.querySelectorAll('tr.tp-drag').forEach(function(tr){
+        var grip = tr.querySelector('.tp-grip');
+        if (grip){
+          grip.addEventListener('mousedown', function(){tr.setAttribute('draggable','true');});
+          grip.addEventListener('touchstart', function(){tr.setAttribute('draggable','true');},{passive:true});
+        }
+        tr.addEventListener('dragstart', function(e){
+          dragId = tr.getAttribute('data-tp-row');
+          try{e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',dragId);}catch(x){}
+          tr.classList.add('tp-dragging');
+        });
+        tr.addEventListener('dragend', function(){tr.removeAttribute('draggable'); dragId=null; clr();});
+        tr.addEventListener('dragover', function(e){
+          var id = tr.getAttribute('data-tp-row');
+          if (!dragId || id===dragId || !same(dragId,id)) return;
+          e.preventDefault();
+          var r = tr.getBoundingClientRect(), below = e.clientY > r.top + r.height/2;
+          list.querySelectorAll('.tp-over-top,.tp-over-bot').forEach(function(x){x.classList.remove('tp-over-top','tp-over-bot');});
+          tr.classList.add(below?'tp-over-bot':'tp-over-top');
+        });
+        tr.addEventListener('drop', function(e){
+          var id = tr.getAttribute('data-tp-row');
+          if (!dragId || id===dragId || !same(dragId,id)) return;
+          e.preventDefault();
+          var r = tr.getBoundingClientRect(), below = e.clientY > r.top + r.height/2;
+          var g = grp(dragId), moved = topPlayers[dragId];
+          g = g.filter(function(x){return x.id!==dragId;});
+          var ti = g.findIndex(function(x){return x.id===id;});
+          g.splice(below?ti+1:ti, 0, moved);
+          g.forEach(function(x,i){x.rank=i;});
+          dragId=null; saveState(); renderTopPlayers();
+        });
+      });
+    })();
     list.querySelectorAll('[data-tp-up]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var id = btn.getAttribute('data-tp-up');
