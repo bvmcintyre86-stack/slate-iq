@@ -980,7 +980,7 @@
   }
   var salaryCap  = 60000;
   var SEC_DEFAULTS = { tilt: 0, secCount: 0, secCombos: { rbDef: true, rbOppPC: true, wrOppPC: true, rbSamePC: false, rbOppRb: false }, avoidDefOpp: true, noSameTeamDup: true, rbFavOnly: true };
-  var stackSettings = Object.assign({ level: 0, bringBack: false, onslaughtOnly: false }, JSON.parse(JSON.stringify(SEC_DEFAULTS)));
+  var stackSettings = Object.assign({ level: 0, bringBack: false, onslaughtOnly: false, recBack: true, recBackPts: 4 }, JSON.parse(JSON.stringify(SEC_DEFAULTS)));
 
   // ── Market-based projections (Unabated player props) ─────────────────────
   var SPORTSBOOK_PRIORITY = [1, 2, 86, 4, 20, 36]; // DK, FanDuel, Fanatics, BetMGM, Caesars, theScore Bet
@@ -4588,6 +4588,27 @@
     renderTable();
   }
 
+  // A "receiving back": an RB whose market-projected receiving points
+  // (receptions + receiving yards pathways) clear the threshold - treated like
+  // a WR/TE when forcing a QB stack.
+  var REC_BACK_PTS = 4;
+  function recPtsOf(p){
+    var mp = marketProjections[normalizeName(p.name)];
+    var b = mp && mp.breakdown; if (!b) return null;
+    var v = 0, any = false;
+    if (b.receptions){ v += b.receptions.value; any = true; }
+    if (b.recYards){ v += b.recYards.value; any = true; }
+    return any ? v : null;
+  }
+  window.__stackTest = { lus: function(){return lineups;}, mp: function(){return marketProjections;}, isStackCatcher: function(p){return isStackCatcher(p);}, ss: function(){return stackSettings;} };
+  function isStackCatcher(p){
+    if (p.position === 'WR' || p.position === 'TE') return true;
+    if (p.position === 'RB'){
+      var r = recPtsOf(p); return r !== null && r >= REC_BACK_PTS;
+    }
+    return false;
+  }
+
   // ── Lineup construction (stack / bring-back / onslaught / shootout) ─────
   function lineupConstruction(lu){
     lu = lu || lineup;
@@ -4935,7 +4956,7 @@
       salaryCap = state.cap || 60000;
       document.getElementById('capInput').value = salaryCap;
       if (state.stackSettings){
-        stackSettings = Object.assign({level:0,bringBack:false,onslaughtOnly:false}, JSON.parse(JSON.stringify(SEC_DEFAULTS)), state.stackSettings);
+        stackSettings = Object.assign({level:0,bringBack:false,onslaughtOnly:false,recBack:true,recBackPts:4}, JSON.parse(JSON.stringify(SEC_DEFAULTS)), state.stackSettings);
         stackSettings.secCombos = Object.assign({}, SEC_DEFAULTS.secCombos, (state.stackSettings || {}).secCombos);
         document.getElementById('stackLevelSel').value = stackSettings.level;
         if (typeof syncSecondaryUI === 'function') syncSecondaryUI();
@@ -6359,7 +6380,7 @@
   // QB's yardage/TDs correlate most directly with his receivers - RBs still
   // get picked when they're clearly the better play, just not by default.
   function stackPositionBonus(p){
-    return (p.position === 'WR' || p.position === 'TE') ? 10 : 0;
+    return isStackCatcher(p) ? 10 : 0;   // WR/TE and receiving RBs get the same stack bonus
   }
 
 
@@ -6484,6 +6505,7 @@
     var slotRequireGoodScript = {};
     var slotPosAllowed = {};   // secondary stacks: e.g. a WR/TE role may be filled by either
     var slotStackRole = {};
+    var slotStackRB = {};      // RB stack slots: only receiving RBs may fill them
     var stackNote = null;
     var autoQbNote = null;
 
@@ -6545,11 +6567,11 @@
         // reach for an RB if there aren't enough WR/TE options to hit the level.
         if (stackSettings.level > 0){
           var passCatcherPool = pool.filter(function(p){
-            return p.team === qb.team && p.id !== qb.id && ['WR','TE'].indexOf(p.position) !== -1;
+            return p.team === qb.team && p.id !== qb.id && isStackCatcher(p);
           });
           if (passCatcherPool.length < stackSettings.level){
             var fallbackPC = fullPool.filter(function(p){
-              return p.team === qb.team && p.id !== qb.id && ['WR','TE'].indexOf(p.position) !== -1;
+              return p.team === qb.team && p.id !== qb.id && isStackCatcher(p);
             });
             if (fallbackPC.length > passCatcherPool.length) passCatcherPool = fallbackPC;
           }
@@ -6566,28 +6588,27 @@
             }
             stackTeamPool = withRb;
           }
+          // Choose the stack pieces by VALUE, not by slot order: every
+          // qualifying pass catcher (WR, TE, and receiving RBs above the
+          // threshold) competes on the same footing, ranked by projection
+          // (less any exposure already used in this batch). So QB+2 can come
+          // out WR/RB or TE/RB when the RB is that involved in the passing game.
           var assigned = 0;
-          for (var si=0; si<corrSlots.length && assigned<stackSettings.level; si++){
-            var s1 = corrSlots[si];
-            if (lineup[s1.key]) continue;
-            var opts1 = stackTeamPool.filter(function(p){
-              return s1.eligible.indexOf(p.position)!==-1 && !picks[p.id];
-            });
-            if (!opts1.length) continue;
-            var cheap1 = opts1.reduce(function(m,p){
-              // Prefer whichever candidate has been used LEAST so far in this
-              // batch (matters for bulk-generating N lineups) - falls back to
-              // cheapest as the tie-breaker, same as before. Outside a bulk
-              // run exposureCount is always empty, so this behaves identically
-              // to the old pure-cheapest logic for a normal single Optimize.
-              var pExp = exposureCount[p.id] || 0, mExp = exposureCount[m.id] || 0;
-              if (pExp !== mExp) return pExp < mExp ? p : m;
-              return p.salary < m.salary ? p : m;
-            }, opts1[0]);
-            picks[cheap1.id] = true;
-            lineup[s1.key] = cheap1;
+          var stackRanked = stackTeamPool.filter(function(p){ return !picks[p.id]; }).slice().sort(function(a,b){
+            var sa = playerScore(a) + stackPositionBonus(a) - (exposureCount[a.id]||0), sb = playerScore(b) + stackPositionBonus(b) - (exposureCount[b.id]||0);
+            return sb - sa;
+          });
+          for (var ri2=0; ri2<stackRanked.length && assigned<stackSettings.level; ri2++){
+            var cand = stackRanked[ri2];
+            var s1 = corrSlots.filter(function(sl){ return !lineup[sl.key] && sl.eligible.indexOf(cand.position)!==-1; })
+              .sort(function(a,b){ return a.eligible.length - b.eligible.length; })[0];
+            if (!s1) continue;
+            picks[cand.id] = true;
+            lineup[s1.key] = cand;
             slotTeamConstraint[s1.key] = qb.team;
+            slotPositionLock[s1.key] = cand.position;   // keep the chosen WR/TE/RB mix through the upgrade passes
             slotStackRole[s1.key] = 'stack';
+            if (cand.position === 'RB') slotStackRB[s1.key] = true;
             assigned++;
           }
           if (assigned < stackSettings.level){
@@ -6770,6 +6791,7 @@
           if (reqTeam && p.team !== reqTeam) return false;
           if (slotExcludeTeam[slot.key] && p.team === slotExcludeTeam[slot.key]) return false;
           if (slotPositionLock[slot.key] && p.position !== slotPositionLock[slot.key]) return false;
+          if (slotStackRB[slot.key] && !isStackCatcher(p)) return false;
           if (slotPosAllowed[slot.key] && slotPosAllowed[slot.key].indexOf(p.position) === -1) return false;
           if (slotRequireGoodScript[slot.key] && !GOOD_SCRIPT_TAGS[p.tag]) return false;
           if (badPair(p, slot.key)) return false;
@@ -6815,6 +6837,7 @@
           if (reqTeam && p.team !== reqTeam) return false;
           if (slotExcludeTeam[slot.key] && p.team === slotExcludeTeam[slot.key]) return false;
           if (slotPositionLock[slot.key] && p.position !== slotPositionLock[slot.key]) return false;
+          if (slotStackRB[slot.key] && !isStackCatcher(p)) return false;
           if (slotPosAllowed[slot.key] && slotPosAllowed[slot.key].indexOf(p.position) === -1) return false;
           if (slotRequireGoodScript[slot.key] && !GOOD_SCRIPT_TAGS[p.tag]) return false;
           if (badPair(p, slot.key)) return false;
@@ -6851,6 +6874,7 @@
           if (reqTeam && p.team !== reqTeam) return false;
           if (slotExcludeTeam[slot.key] && p.team === slotExcludeTeam[slot.key]) return false;
           if (slotPositionLock[slot.key] && p.position !== slotPositionLock[slot.key]) return false;
+          if (slotStackRB[slot.key] && !isStackCatcher(p)) return false;
           if (slotPosAllowed[slot.key] && slotPosAllowed[slot.key].indexOf(p.position) === -1) return false;
           if (slotRequireGoodScript[slot.key] && !GOOD_SCRIPT_TAGS[p.tag]) return false;
           return slot.eligible.indexOf(p.position) !== -1;
