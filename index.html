@@ -7587,13 +7587,21 @@
 
 
   // ── Player game logs (hover) ──────────────────────────────────────────────
-  var glIndex = null;
+  var glIndex = null, glIndex2 = null;
+  // Fallback key: first initial + last name + position (catches Matt/Matthew, Mike/Michael, Zach/Zachary...).
+  // Only used when exactly one logged player has that key.
+  function glKey2(name, pos){
+    var t = normalizeName(name).split(' '); if (t.length < 2) return null;
+    return t[0].charAt(0) + ' ' + t.slice(1).join(' ') + '|' + pos;
+  }
   function glBuild(){
-    glIndex = {};
+    glIndex = {}; glIndex2 = {};
     if (typeof NFL_GAMELOGS === 'undefined') return;
     Object.keys(NFL_GAMELOGS.players).forEach(function(k){
       var e = NFL_GAMELOGS.players[k];
       glIndex[normalizeName(e.n) + '|' + e.p] = e;
+      var k2 = glKey2(e.n, e.p);
+      if (k2) glIndex2[k2] = (k2 in glIndex2) ? 'dup' : e;
     });
   }
   function glAttr(p){
@@ -7604,6 +7612,10 @@
     if (!glIndex) glBuild();
     var e = glIndex[normalizeName(name) + '|' + pos];
     if (!e && pos === 'FLEX') e = glIndex[normalizeName(name) + '|RB'];
+    if (!e){
+      var k2 = glKey2(name, pos === 'FLEX' ? 'RB' : pos), c = k2 && glIndex2[k2];
+      if (c && c !== 'dup' && (!team || !c.t || normalizeTeam(c.t) === normalizeTeam(team))) e = c;
+    }
     return e || null;
   }
   function glFpts(r, plat){
