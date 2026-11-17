@@ -484,6 +484,7 @@
       <button class="mode-btn active" id="mainSlateBtn">Main Slate</button>
       <button class="mode-btn" id="singleGameBtn">Single Game</button>
       <button class="mode-btn" id="viewPropsBtn">Props</button>
+      <button class="mode-btn" id="viewPaceBtn">Pace</button>
     </div>
     <div class="mode-toggle" style="margin-left:10px;">
       <button class="mode-btn active" id="fdPlatformBtn">FanDuel</button>
@@ -791,6 +792,19 @@
   </section>
 </div><!-- /optView -->
 
+<div id="paceView" style="display:none;">
+  <section>
+    <div class="section-head">
+      <h2>Pace &amp; plays</h2>
+      <div class="sub" id="paceSub">Which games should get the most plays, and which offenses play fastest.</div>
+    </div>
+    <h3 style="font-size:13px;margin:14px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">This slate &mdash; projected plays</h3>
+    <div style="overflow-x:auto;"><table class="pp-table" id="paceGamesTbl"></table></div>
+    <h3 style="font-size:13px;margin:22px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">All teams</h3>
+    <div style="overflow-x:auto;"><table class="pp-table" id="paceTeamsTbl"></table></div>
+  </section>
+</div>
+
 <div id="propsView" style="display:none;">
   <section>
     <div class="section-head">
@@ -834,6 +848,7 @@
 
 <script src="nfl_rosters_2026.js"></script>
 <script src="gamelogs_2026.js" onerror="void 0"></script>
+<script src="pace_2026.js" onerror="void 0"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script>
 (function(){
@@ -3258,6 +3273,7 @@
   function propsWire(){
     var $ = function(id){ return document.getElementById(id); };
     $('viewPropsBtn').addEventListener('click', function(){ propsShowView('props'); });
+    $('viewPaceBtn').addEventListener('click', function(){ propsShowView('pace'); });
     // Main Slate / Single Game bring the optimizer back; FD/DK leave whichever tab is open alone.
     $('mainSlateBtn').addEventListener('click', function(){ propsShowView('opt'); });
     $('singleGameBtn').addEventListener('click', function(){ propsShowView('opt'); });
@@ -3312,20 +3328,24 @@
       propsRender();
     });
   }
-  var propsViewOn = false;
+  var propsViewOn = false, paceViewOn = false;
   function propsSyncTabs(){
-    document.getElementById('optView').style.display = propsViewOn ? 'none' : '';
+    document.getElementById('optView').style.display = (propsViewOn || paceViewOn) ? 'none' : '';
     document.getElementById('propsView').style.display = propsViewOn ? '' : 'none';
     document.getElementById('viewPropsBtn').classList.toggle('active', propsViewOn);
-    document.getElementById('mainSlateBtn').classList.toggle('active', !propsViewOn && slateMode === 'main');
-    document.getElementById('singleGameBtn').classList.toggle('active', !propsViewOn && slateMode === 'sg');
+    document.getElementById('mainSlateBtn').classList.toggle('active', !propsViewOn && !paceViewOn && slateMode === 'main');
+    document.getElementById('singleGameBtn').classList.toggle('active', !propsViewOn && !paceViewOn && slateMode === 'sg');
+    document.getElementById('paceView').style.display = paceViewOn ? '' : 'none';
+    document.getElementById('viewPaceBtn').classList.toggle('active', paceViewOn);
   }
   function propsShowView(v){
     propsViewOn = v === 'props';
+    paceViewOn = v === 'pace';
     propsSyncTabs();
     // Main/SG clicks update their own highlight after this runs, so re-sync once they have.
     setTimeout(propsSyncTabs, 0);
     if (propsViewOn) propsRender();
+    if (paceViewOn) paceRender();
   }
   propsLoadLog();
   try { var sb = JSON.parse(localStorage.getItem('slateIqPropsBooks') || '{}'); if (sb && typeof sb === 'object') PROPS_CFG.books = sb; } catch(e){}
@@ -4493,6 +4513,7 @@
         barRow(s.home.team, s.home.implied, maxImplied, TAGS[s.home.tag].color)+
         '<span class="tag-pill" title="'+TAGS[s.away.tag].note+'" style="color:'+TAGS[s.away.tag].color+';background:'+TAGS[s.away.tag].bg+';">'+s.away.team+' '+TAGS[s.away.tag].label+'</span> '+
         '<span class="tag-pill" title="'+TAGS[s.home.tag].note+'" style="color:'+TAGS[s.home.tag].color+';background:'+TAGS[s.home.tag].bg+';">'+s.home.team+' '+TAGS[s.home.tag].label+'</span>'+
+        paceCardLine(g)+
         '</div><div class="face face-back">'+matchupBackHtml(g)+'</div></div>';
 
       card.addEventListener('click', function(e){
@@ -4526,6 +4547,17 @@
         saveState();
       });
     });
+  }
+
+  function paceCardLine(g){
+    var pg = (typeof paceGame === 'function') ? paceGame(g) : null;
+    if (!pg) return '';
+    var rk = '';
+    try {
+      var all = games.map(function(x){ var p = paceGame(x); return p ? p.proj : null; }).filter(function(v){ return v != null; }).sort(function(a, b){ return b - a; });
+      var i = all.indexOf(pg.proj); if (i >= 0) rk = ' <span style="opacity:.7;">(#' + (i + 1) + ' of ' + all.length + ')</span>';
+    } catch(e){}
+    return '<div class="mono" style="font-size:11px;color:var(--muted);margin-top:6px;" title="Projected plays: each side = avg of its own plays/g and the opponent\'s plays allowed/g. Seconds per play is neutral-situation pace, avg of both offenses (lower = faster).">Proj plays <b style="color:var(--chalk);">' + pg.proj.toFixed(0) + '</b>' + rk + (pg.spp != null ? ' &middot; ' + pg.spp.toFixed(1) + 's/play' : '') + '</div>';
   }
 
   function barRow(team, val, max, color){
@@ -7585,6 +7617,112 @@
     });
   }
 
+
+
+  // ── Pace & projected plays ───────────────────────────────────────────────
+  // Source: pace_2026.js (nflverse team stats + play-by-play). plays = pass att + sacks + carries.
+  var paceIdx = null;
+  function paceBuild(){
+    paceIdx = {};
+    if (typeof NFL_PACE === 'undefined') return;
+    Object.keys(NFL_PACE.teams).forEach(function(k){ paceIdx[normalizeTeam(k)] = NFL_PACE.teams[k]; });
+  }
+  function paceTeam(code){ if (!paceIdx) paceBuild(); return paceIdx[normalizeTeam(code)] || null; }
+  // Expected plays for each side = average of (its own plays/g, opponent's plays allowed/g).
+  function paceGame(g){
+    var A = paceTeam(g.away), H = paceTeam(g.home);
+    if (!A || !H) return null;
+    var aE = (A.ppg + (H.pag != null ? H.pag : A.ppg)) / 2, hE = (H.ppg + (A.pag != null ? A.pag : H.ppg)) / 2;
+    var sp = (A.nspp != null && H.nspp != null) ? (A.nspp + H.nspp) / 2 : null;
+    var oe = (A.proe != null && H.proe != null) ? (A.proe + H.proe) / 2 : null;
+    return { aE: aE, hE: hE, proj: aE + hE, spp: sp, proe: oe, A: A, H: H };
+  }
+  var paceSort = { games: { k: 'proj', d: -1 }, teams: { k: 'ppg', d: -1 } };
+  function paceTint(rank, n, hiGood){
+    if (rank == null || !n) return '';
+    var q = rank / (n - 1 || 1);               // 0 = top of the sort order
+    if (q <= 0.25) return 'background:rgba(76,175,80,.22);';
+    if (q >= 0.75) return 'background:rgba(239,83,80,.16);';
+    return '';
+  }
+  function paceTable(el, cols, rows, key){
+    var st = paceSort[key];
+    var sorted = rows.slice().sort(function(a, b){
+      var x = a[st.k], y = b[st.k];
+      if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+      return typeof x === 'string' ? st.d * x.localeCompare(y) : st.d * (x - y);
+    });
+    var rk = {};
+    cols.forEach(function(c){
+      if (!c.tint) return;
+      var vals = rows.filter(function(r){ return r[c.k] != null; }).slice().sort(function(a, b){ return c.tint * (b[c.k] - a[c.k]); });
+      rk[c.k] = { n: vals.length, m: vals.reduce(function(o, r, i){ o[r.id] = i; return o; }, {}) };
+    });
+    var head = '<thead><tr>' + cols.map(function(c){
+      return '<th data-pk="' + c.k + '" style="cursor:pointer;" title="' + (c.tip || '').replace(/"/g, '&quot;') + '">' + c.h + (st.k === c.k ? (st.d < 0 ? ' &#9660;' : ' &#9650;') : '') + '</th>';
+    }).join('') + '</tr></thead>';
+    var body = '<tbody>' + sorted.map(function(r){
+      return '<tr>' + cols.map(function(c){
+        var v = r[c.k], txt = v == null ? '&mdash;' : (c.f ? c.f(v, r) : v);
+        var tint = c.tint && v != null && rk[c.k] ? paceTint(rk[c.k].m[r.id], rk[c.k].n) : '';
+        return '<td style="' + tint + (c.left ? 'text-align:left;' : '') + '">' + txt + '</td>';
+      }).join('') + '</tr>';
+    }).join('') + '</tbody>';
+    el.innerHTML = head + body;
+    el.querySelectorAll('th[data-pk]').forEach(function(th){
+      th.addEventListener('click', function(){
+        var k = th.getAttribute('data-pk');
+        paceSort[key] = { k: k, d: paceSort[key].k === k ? -paceSort[key].d : (k === 'team' || k === 'game' || k === 'nspp' || k === 'spp' ? 1 : -1) };
+        paceRender();
+      });
+    });
+  }
+  function paceRender(){
+    var sub = document.getElementById('paceSub');
+    if (typeof NFL_PACE === 'undefined'){ sub.textContent = 'pace_2026.js not found next to this page.'; return; }
+    paceBuild();
+    var m = NFL_PACE.meta;
+    sub.textContent = 'Through Week ' + m.throughWeek + '. Plays = pass attempts + sacks + carries. Neutral sec/play = Q1-3, win prob 20-80%, outside the last 2 min of a half (lower = faster). PROE = pass rate over expected in those spots. Green = top quarter, red = bottom quarter.';
+    var f1 = function(v){ return v.toFixed(1); };
+    var fs = function(v){ return (v > 0 ? '+' : '') + v.toFixed(1); };
+    // Slate games
+    var grows = games.map(function(g){
+      var pg = paceGame(g); if (!pg) return { id: g.id, game: g.away + ' @ ' + g.home, total: g.total };
+      return { id: g.id, game: g.away + ' @ ' + g.home, total: g.total, spread: (g.favorite === 'pick' ? 'PK' : (g.favorite === 'away' ? g.away : g.home) + ' -' + g.spread),
+        proj: pg.proj, aE: pg.aE, hE: pg.hE, spp: pg.spp, proe: pg.proe,
+        ppp: g.total && pg.proj ? g.total / pg.proj : null };
+    });
+    var gEl = document.getElementById('paceGamesTbl');
+    if (!games.length) gEl.innerHTML = '<tbody><tr><td style="text-align:left;color:var(--muted);">No games loaded yet - load the slate on the Main Slate tab.</td></tr></tbody>';
+    else paceTable(gEl, [
+      { k: 'game', h: 'Game', left: true },
+      { k: 'spread', h: 'Line', f: function(v){ return v; } },
+      { k: 'total', h: 'Total', f: f1 },
+      { k: 'proj', h: 'Proj plays', f: f1, tint: 1, tip: 'Away expected + home expected plays. Each side = average of its own plays/g and what the opponent allows per game.' },
+      { k: 'aE', h: 'Away plays', f: f1 },
+      { k: 'hE', h: 'Home plays', f: f1 },
+      { k: 'spp', h: 'Neutral s/play', f: f1, tint: -1, tip: 'Average of both offenses. Lower = faster.' },
+      { k: 'proe', h: 'PROE', f: fs, tint: 1, tip: 'Average pass rate over expected of the two offenses.' },
+      { k: 'ppp', h: 'Pts / play', f: function(v){ return v.toFixed(2); }, tip: 'Game total divided by projected plays - how efficient the market expects the game to be.' }
+    ], grows, 'games');
+    // Teams
+    var trows = Object.keys(NFL_PACE.teams).map(function(k){
+      var t = NFL_PACE.teams[k]; return { id: k, team: k, g: t.g, ppg: t.ppg, l4: t.l4, pag: t.pag, nspp: t.nspp, spp: t.spp, nPass: t.nPass, proe: t.proe, nh: t.nh };
+    });
+    paceTable(document.getElementById('paceTeamsTbl'), [
+      { k: 'team', h: 'Team', left: true },
+      { k: 'g', h: 'GP' },
+      { k: 'ppg', h: 'Plays/g', f: f1, tint: 1 },
+      { k: 'l4', h: 'Last 4', f: f1, tint: 1, tip: 'Plays per game over the last 4 games' },
+      { k: 'pag', h: 'Plays allowed/g', f: f1, tint: 1, tip: 'Plays the opponent runs against this defense. High = pace-friendly opponent.' },
+      { k: 'nspp', h: 'Neutral s/play', f: f1, tint: -1, tip: 'Seconds per play in neutral game situations. Lower = faster.' },
+      { k: 'spp', h: 'All s/play', f: f1, tint: -1, tip: 'Seconds per play in all situations (includes clock-killing).' },
+      { k: 'nPass', h: 'Neutral pass %', f: f1, tint: 1 },
+      { k: 'proe', h: 'PROE', f: fs, tint: 1, tip: 'Pass rate over expected, neutral situations.' },
+      { k: 'nh', h: 'No-huddle %', f: f1, tint: 1 }
+    ], trows, 'teams');
+  }
+  window.__paceEngine = { game: paceGame, team: paceTeam, render: paceRender };
 
   // ── Player game logs (hover) ──────────────────────────────────────────────
   var glIndex = null, glIndex2 = null;
