@@ -110,6 +110,12 @@
   .mu-syn .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;padding-top:2px;}
   .mu-syn .k-lean{color:var(--teal);} .mu-syn .k-watch{color:var(--brick);} .mu-syn .k-script{color:var(--gold);} .mu-syn .k-top{color:var(--muted);}
   .mu-syn .sub2{display:block;}
+  .mu-syn .gr-para{font-size:11.5px;line-height:1.45;color:var(--chalk);margin-bottom:6px;}
+  .mu-syn .gr-spot-h{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--teal);margin:4px 0 3px;}
+  .mu-syn .gr-stack{font-size:11px;margin-top:5px;padding-top:5px;border-top:1px solid var(--line);}
+  .mu-syn .gr-pl{font-size:11px;line-height:1.35;margin-bottom:2px;}
+  .mu-syn .gr-pos{font-size:9.5px;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:0 3px;margin-right:5px;}
+  .mu-syn .gr-meta{color:var(--muted);font-size:10.5px;}
   .mu-grid{display:grid;grid-template-columns:64px 1fr 1fr;column-gap:8px;row-gap:3px;align-items:center;flex:0 0 auto;}
   .mu-colh{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--gold);}
   .mu-lbl{font-size:11px;color:var(--muted);}
@@ -4285,7 +4291,7 @@
 
   // Rule-based synopsis from the grade gaps (offense grade minus the
   // opposing defense grade). Deterministic - same inputs, same text.
-  var MU_BACK_H = 495; // every flipped card is exactly this tall
+  var MU_BACK_H = 650; // every flipped card is exactly this tall
   function shortName(n){
     var parts = String(n).trim().split(/\s+/);
     return parts.length < 2 ? n : parts[0].charAt(0) + '. ' + parts.slice(1).join(' ');
@@ -4351,6 +4357,119 @@
     return '<div class="mu-syn">' + out.join('') + '</div>';
   }
 
+
+  // ── Game read: short written breakdown + players in good spots ───────────
+  // Deterministic (same inputs, same text). Pulls from the game lines, projected plays/pace,
+  // PFF grade gaps (when loaded), team passing tendencies, and the Player Pool projections.
+  function gameReadHtml(g, A, H){
+    var sd = gameSides(g);
+    function thv(id, d){ var e = document.getElementById(id), v = e ? parseFloat(e.value) : NaN; return isNaN(v) ? d : v; }
+    var hiTot = thv('thHighTotal', 46.5), blow = thv('thBlowout', 6.5);
+    var fav = g.favorite === 'pick' ? null : (g.favorite === 'away' ? g.away : g.home);
+    var dog = fav ? (fav === g.away ? g.home : g.away) : null;
+    function fmt1(v){ return (Math.round(v * 10) / 10).toFixed(1); }
+    function sgn(v){ var r = Math.round(v); return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r); }
+
+    // Pool helpers
+    function fpOf(p){ var v = 0; try { v = effectiveFppg(p) || 0; } catch(e){} return v; }
+    var pool = (players || []).filter(function(p){ return p.position !== 'DEF' && p.salary > 0 && fpOf(p) > 0; });
+    var hasMkt = pool.some(function(p){ var nm = normalizeName(p.name); return marketProjections[nm] || kalshiProjections[nm]; });
+    if (hasMkt) pool = pool.filter(function(p){ var nm = normalizeName(p.name); return marketProjections[nm] || kalshiProjections[nm]; });
+    var med = {};
+    ['QB','RB','WR','TE'].forEach(function(pos){
+      var v = pool.filter(function(p){ return p.position === pos; }).map(function(p){ return fpOf(p) / (p.salary / 1000); }).sort(function(a,b){ return a - b; });
+      med[pos] = v.length ? v[Math.floor(v.length / 2)] : 0;
+    });
+    function teamTop(team, positions, n){
+      var tn = normalizeTeam(team);
+      return pool.filter(function(p){ return normalizeTeam(p.team) === tn && positions.indexOf(p.position) >= 0; })
+        .sort(function(a,b){ return fpOf(b) - fpOf(a); }).slice(0, n);
+    }
+
+    // ---- paragraph ----
+    var sent = [];
+    var pg = (typeof paceGame === 'function') ? paceGame(g) : null;
+    var s1 = g.away + ' @ ' + g.home + ' carries a ' + fmt1(g.total) + ' total' + (fav ? ' with ' + fav + ' favored by ' + fmt1(g.spread) : ' as a pick’em') +
+      ' (' + fmt1(sd.away.implied) + '–' + fmt1(sd.home.implied) + ' implied).';
+    sent.push(s1);
+    if (pg){
+      var allP = games.map(function(x){ var q = paceGame(x); return q ? q.proj : null; }).filter(function(v){ return v != null; }).sort(function(a,b){ return b - a; });
+      var rk = allP.indexOf(pg.proj) + 1, n = allP.length, label = '';
+      if (n >= 4){ if (rk <= Math.ceil(n * 0.25)) label = ' — one of the busiest games on the slate'; else if (rk > n - Math.ceil(n * 0.25)) label = ' — one of the slowest games on the slate'; }
+      sent.push('Both offenses project for about ' + Math.round(pg.proj) + ' plays' + (rk ? ' (#' + rk + ' of ' + n + ')' : '') + label + '.');
+    }
+    // script
+    var spr = g.spread || 0;
+    if (fav && spr >= blow){
+      sent.push(fav + ' is a clear favorite, so expect ' + fav + ' to lean on its run game late while ' + dog + ' needs pass volume to keep up.');
+    } else if (fav && spr >= 3.5){
+      sent.push(fav + ' is a moderate favorite; ' + dog + ' stays live, so both passing games should get work.');
+    } else {
+      sent.push('A close game is expected, so both teams should stay on their normal script.');
+    }
+    // tendencies
+    var pa = (typeof paceTeam === 'function') ? paceTeam(g.away) : null, ph = (typeof paceTeam === 'function') ? paceTeam(g.home) : null;
+    var tend = [];
+    [[g.away, pa], [g.home, ph]].forEach(function(x){
+      if (!x[1] || x[1].proe == null) return;
+      if (x[1].proe >= 3) tend.push(x[0] + ' throws more than expected (' + sgn(x[1].proe) + ' PROE)');
+      else if (x[1].proe <= -3) tend.push(x[0] + ' runs more than expected (' + sgn(x[1].proe) + ' PROE)');
+    });
+    if (tend.length) sent.push(tend.join(', and ') + '.');
+    // grades
+    if (A && H){
+      var own = {}; own[g.away] = A; own[g.home] = H;
+      var oppOf = {}; oppOf[g.away] = g.home; oppOf[g.home] = g.away;
+      var items = [];
+      [g.away, g.home].forEach(function(t){
+        var O = own[t], D = own[oppOf[t]];
+        items.push({ t: t, kind: 'passing', d: O.grades_pass - D.grades_coverage_defense, vs: 'coverage' });
+        items.push({ t: t, kind: 'run game', d: ((O.grades_run - D.grades_run_defense) + (O.grades_run_block - D.grades_run_defense)) / 2, vs: 'run defense' });
+      });
+      items = items.filter(function(x){ return !isNaN(x.d); });
+      var best = items.slice().sort(function(a,b){ return b.d - a.d; })[0];
+      var worst = items.slice().sort(function(a,b){ return a.d - b.d; })[0];
+      if (best && best.d >= 8) sent.push('The best matchup is ' + best.t + ' ' + best.kind + ' (' + sgn(best.d) + ' vs ' + oppOf[best.t] + ' ' + best.vs + ').');
+      if (worst && worst.d <= -8 && worst !== best) sent.push('The toughest is ' + worst.t + ' ' + worst.kind + ' (' + sgn(worst.d) + ' vs ' + oppOf[worst.t] + ' ' + worst.vs + ').');
+    }
+    // stack idea (own line under the players)
+    var stackHtml = '';
+    if (pool.length){
+      var gapT = {}; gapT[g.away] = 0; gapT[g.home] = 0;
+      if (A && H){ gapT[g.away] = A.grades_pass - H.grades_coverage_defense; gapT[g.home] = H.grades_pass - A.grades_coverage_defense; }
+      var stackT = (sd.away.implied + (gapT[g.away] || 0) / 10 >= sd.home.implied + (gapT[g.home] || 0) / 10) ? g.away : g.home, bb = stackT === g.away ? g.home : g.away;
+      var q = teamTop(stackT, ['QB'], 1)[0], c = teamTop(stackT, ['WR','TE'], 2), r = teamTop(bb, ['WR','TE'], 1)[0];
+      if (q && c.length && (stackT === g.away ? sd.away.implied : sd.home.implied) >= 22){
+        stackHtml = '<div class="gr-stack"><span class="gr-spot-h" style="margin:0 6px 0 0;">Stack</span>' + shortName(q.name) + ' + ' + c.map(function(x){ return shortName(x.name); }).join(' / ') +
+          (r && g.total >= hiTot - 2 ? ' <span class="gr-meta">bring-back ' + shortName(r.name) + '</span>' : '') + '</div>';
+      }
+    }
+    var para = '<div class="gr-para">' + sent.join(' ') + '</div>';
+
+    // ---- players in good spots ----
+    var spot = '';
+    if (pool.length){
+      var tms = [normalizeTeam(g.away), normalizeTeam(g.home)];
+      var cand = pool.filter(function(p){ return tms.indexOf(normalizeTeam(p.team)) >= 0 && ['QB','RB','WR','TE'].indexOf(p.position) >= 0; })
+        .map(function(p){
+          var fp = fpOf(p), val = fp / (p.salary / 1000), vz = med[p.position] ? val / med[p.position] - 1 : 0;
+          var edge = 0, wl = 0.5; try { edge = matchupEdge(p); wl = workloadFactor(p); } catch(e){}
+          var floor = p.position === 'QB' ? 14 : p.position === 'RB' ? 8 : 7;
+          return { p: p, fp: fp, val: val, vz: vz, gap: edge * 30, score: vz + 0.6 * edge * wl + 0.15 * (p.teamImplied ? (p.teamImplied - 22) / 6 : 0), ok: fp >= floor };
+        }).filter(function(x){ return x.ok; }).sort(function(a,b){ return b.score - a.score; }).slice(0, 3);
+      if (cand.length){
+        spot = '<div class="gr-spot-h">In good spots</div>' + cand.map(function(x){
+          var p = x.p, bits = ['$' + (p.salary / 1000).toFixed(1) + 'K', fmt1(x.fp) + ' pts', x.val.toFixed(1) + 'x'];
+          if (x.gap >= 6) bits.push((p.position === 'RB' ? 'run' : 'pass') + ' matchup ' + sgn(x.gap));
+          var own = (p.projOwn != null && !isNaN(p.projOwn)) ? p.projOwn : ((p.ownership != null && p.ownership !== '' && !isNaN(p.ownership)) ? +p.ownership : null);
+          if (own != null) bits.push(own.toFixed(0) + '% own');
+          return '<div class="gr-pl"><span class="gr-pos">' + p.position + '</span><b>' + shortName(p.name) + '</b> <span class="gr-meta">' + p.team + '</span> <span class="gr-meta mono">' + bits.join(' · ') + '</span></div>';
+        }).join('');
+      }
+    }
+    return '<div class="mu-syn">' + para + spot + stackHtml + '</div>';
+  }
+
   // ── Team tendencies for the flip card (from this season's game logs) ──
   var tendCache = null;
   function lastName(n){
@@ -4410,7 +4529,7 @@
     var A = teamGrades[normalizeTeam(g.away)], H = teamGrades[normalizeTeam(g.home)];
     var head = '<div class="mu-head"><span>' + g.away + ' @ ' + g.home + '</span><span class="hint">click to flip back</span></div>';
     if (!A || !H){
-      return '<div class="mu-wrap">' + head + '<div class="mu-empty">' + (Object.keys(teamGrades).length
+      return '<div class="mu-wrap">' + head + gameReadHtml(g, A || null, H || null) + '<div class="mu-empty">' + (Object.keys(teamGrades).length
         ? 'No PFF grades found for ' + (!A ? g.away : g.home) + ' in the uploaded file.'
         : 'Upload PFF\'s team_overview.csv (Game Environment &rarr; Upload team grades CSV) to see this matchup.') + '</div></div>';
     }
@@ -4434,7 +4553,7 @@
     grid += '</div>';
     return '<div class="mu-wrap">' + head +
       '<div class="mu-rec mono">' + muRecord(A, g.away) + '<br>' + muRecord(H, g.home) + '</div>' +
-      matchupSynopsis(g, A, H) + grid + matchupBreakdownHtml(g) +
+      gameReadHtml(g, A, H) + grid + matchupBreakdownHtml(g) +
       '</div>';
   }
 
