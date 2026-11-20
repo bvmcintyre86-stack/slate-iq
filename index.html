@@ -4540,12 +4540,22 @@
     if (!tendCache || tendCache.through !== NFL_GAMELOGS.meta.throughWeek){
       var T = {};
       Object.keys(NFL_GAMELOGS.players).forEach(function(k){
-        var e = NFL_GAMELOGS.players[k], tc = normalizeTeam(e.t);
-        var o = T[tc] || (T[tc] = { att: 0, car: 0, tgt: 0, weeks: {}, pl: [] });
-        var tg = 0, ca = 0, at = 0;
-        e.w.forEach(function(r){ at += r[3]; ca += r[7]; tg += r[10]; o.weeks[r[0]] = 1; });
-        o.att += at; o.car += ca; o.tgt += tg;
-        o.pl.push({ n: e.n, p: e.p, tgt: tg, car: ca, g: e.w.length });
+        var e = NFL_GAMELOGS.players[k];
+        // Credit each game to the team he played for THAT week (r[18]); traded players
+        // (e.g. a QB who started 9 games for one club, then moved) must not carry old games to the new team.
+        var per = {};
+        e.w.forEach(function(r){
+          var tc = normalizeTeam(r[18] || e.t);
+          var q = per[tc] || (per[tc] = { tg: 0, ca: 0, at: 0, g: 0 });
+          q.at += r[3]; q.ca += r[7]; q.tg += r[10]; q.g++;
+          var o = T[tc] || (T[tc] = { att: 0, car: 0, tgt: 0, weeks: {}, pl: [] });
+          o.weeks[r[0]] = 1;
+        });
+        Object.keys(per).forEach(function(tc){
+          var q = per[tc], o = T[tc];
+          o.att += q.at; o.car += q.ca; o.tgt += q.tg;
+          o.pl.push({ n: e.n, p: e.p, tgt: q.tg, car: q.ca, g: q.g });
+        });
       });
       tendCache = { through: NFL_GAMELOGS.meta.throughWeek, T: T };
     }
