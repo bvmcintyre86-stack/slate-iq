@@ -4291,7 +4291,7 @@
 
   // Rule-based synopsis from the grade gaps (offense grade minus the
   // opposing defense grade). Deterministic - same inputs, same text.
-  var MU_BACK_H = 650; // every flipped card is exactly this tall
+  var MU_BACK_H = 700; // every flipped card is exactly this tall
   function shortName(n){
     var parts = String(n).trim().split(/\s+/);
     return parts.length < 2 ? n : parts[0].charAt(0) + '. ' + parts.slice(1).join(' ');
@@ -4387,35 +4387,53 @@
     }
 
     // ---- paragraph ----
+    // Always: the lines + the script. Then the 3 most distinctive facts about THIS game, so no two
+    // games read alike. Each candidate fact carries a weight; the heaviest win.
     var sent = [];
     var pg = (typeof paceGame === 'function') ? paceGame(g) : null;
-    var s1 = g.away + ' @ ' + g.home + ' carries a ' + fmt1(g.total) + ' total' + (fav ? ' with ' + fav + ' favored by ' + fmt1(g.spread) : ' as a pick’em') +
-      ' (' + fmt1(sd.away.implied) + '–' + fmt1(sd.home.implied) + ' implied).';
-    sent.push(s1);
+    sent.push(g.away + ' @ ' + g.home + ' carries a ' + fmt1(g.total) + ' total' + (fav ? ' with ' + fav + ' favored by ' + fmt1(g.spread) : ' as a pick’em') +
+      ' (' + fmt1(sd.away.implied) + '–' + fmt1(sd.home.implied) + ' implied).');
+    var spr = g.spread || 0;
+    if (fav && spr >= blow) sent.push(fav + ' should control this one and lean on the run late, while ' + dog + ' needs pass volume to keep up.');
+    else if (fav && spr >= 3.5) sent.push(fav + ' is a moderate favorite, but ' + dog + ' stays live, so both passing games get work.');
+    else sent.push('A close game is expected, so both teams should stay on their normal script.');
+
+    var facts = [];
+    function fact(w, txt){ if (txt) facts.push({ w: w, t: txt }); }
     if (pg){
       var allP = games.map(function(x){ var q = paceGame(x); return q ? q.proj : null; }).filter(function(v){ return v != null; }).sort(function(a,b){ return b - a; });
-      var rk = allP.indexOf(pg.proj) + 1, n = allP.length, label = '';
-      if (n >= 4){ if (rk <= Math.ceil(n * 0.25)) label = ' — one of the busiest games on the slate'; else if (rk > n - Math.ceil(n * 0.25)) label = ' — one of the slowest games on the slate'; }
-      sent.push('Both offenses project for about ' + Math.round(pg.proj) + ' plays' + (rk ? ' (#' + rk + ' of ' + n + ')' : '') + label + '.');
+      var rk = allP.indexOf(pg.proj) + 1, n = allP.length;
+      if (n >= 4){
+        var q25 = Math.ceil(n * 0.25);
+        if (rk <= q25) fact(3 + (q25 - rk) * 0.3, 'The game projects for about ' + Math.round(pg.proj) + ' plays, #' + rk + ' of ' + n + ' on the slate.');
+        else if (rk > n - q25) fact(3 + (rk - (n - q25)) * 0.3, 'The game projects for only about ' + Math.round(pg.proj) + ' plays, #' + rk + ' of ' + n + ', so volume is scarce.');
+      } else fact(1, 'The game projects for about ' + Math.round(pg.proj) + ' plays.');
+      var ppp = g.total / pg.proj;
+      if (ppp >= 0.42) fact(2, 'The total is high for the number of plays, so the market expects efficient, big-play scoring.');
+      else if (ppp <= 0.36) fact(2, 'The total is low even for the play count, pointing to inefficient offense.');
     }
-    // script
-    var spr = g.spread || 0;
-    if (fav && spr >= blow){
-      sent.push(fav + ' is a clear favorite, so expect ' + fav + ' to lean on its run game late while ' + dog + ' needs pass volume to keep up.');
-    } else if (fav && spr >= 3.5){
-      sent.push(fav + ' is a moderate favorite; ' + dog + ' stays live, so both passing games should get work.');
-    } else {
-      sent.push('A close game is expected, so both teams should stay on their normal script.');
-    }
-    // tendencies
-    var pa = (typeof paceTeam === 'function') ? paceTeam(g.away) : null, ph = (typeof paceTeam === 'function') ? paceTeam(g.home) : null;
-    var tend = [];
-    [[g.away, pa], [g.home, ph]].forEach(function(x){
-      if (!x[1] || x[1].proe == null) return;
-      if (x[1].proe >= 3) tend.push(x[0] + ' throws more than expected (' + sgn(x[1].proe) + ' PROE)');
-      else if (x[1].proe <= -3) tend.push(x[0] + ' runs more than expected (' + sgn(x[1].proe) + ' PROE)');
+    var paA = (typeof paceTeam === 'function') ? paceTeam(g.away) : null, paH = (typeof paceTeam === 'function') ? paceTeam(g.home) : null;
+    [[g.away, paA], [g.home, paH]].forEach(function(x){
+      var t = x[1]; if (!t) return;
+      if (t.proe != null && Math.abs(t.proe) >= 3) fact(Math.abs(t.proe) / 1.5, x[0] + (t.proe > 0 ? ' throws more than expected' : ' runs more than expected') + ' (' + sgn(t.proe) + ' PROE).');
+      if (t.l4 != null && Math.abs(t.l4 - t.ppg) >= 3) fact(Math.abs(t.l4 - t.ppg) / 1.2, x[0] + ' has ' + (t.l4 > t.ppg ? 'sped up' : 'slowed down') + ' lately: ' + Math.round(t.l4) + ' plays a game over the last 4 vs ' + Math.round(t.ppg) + ' on the season.');
+      if (t.nspp != null && NFL_PACE && NFL_PACE.meta && Math.abs(t.nspp - NFL_PACE.meta.lgNspp) >= 1.5) fact(Math.abs(t.nspp - NFL_PACE.meta.lgNspp) * 1.2, x[0] + ' plays ' + (t.nspp < NFL_PACE.meta.lgNspp ? 'fast' : 'slow') + ' in neutral spots (' + t.nspp.toFixed(1) + ' s/play).');
     });
-    if (tend.length) sent.push(tend.join(', and ') + '.');
+    // usage concentration (game logs)
+    if (typeof teamTendency === 'function'){
+      [g.away, g.home].forEach(function(t){
+        var T = teamTendency(t); if (!T) return;
+        var tg = T.tgt && T.tgt[0], car = T.car || [];
+        if (tg && tg.pct >= 26) fact(tg.pct / 9, tg.n + ' soaks up ' + tg.pct + '% of ' + t + '’s targets.');
+        if (car[0] && car[0].pct >= 58) fact(car[0].pct / 22, car[0].n + ' owns ' + car[0].pct + '% of ' + t + '’s carries.');
+        else if (car[0] && car[1] && car[0].pct <= 45) fact(1.6, t + ' runs a committee (' + car[0].n + ' ' + car[0].pct + '%, ' + car[1].n + ' ' + car[1].pct + '%), which caps any one back.');
+      });
+    }
+    // pass rush
+    [[g.home, g.away], [g.away, g.home]].forEach(function(x){
+      var d = usageData.dst[normalizeTeam(x[0])];
+      if (d && d.games){ var sk = d.sacks / d.games; if (sk >= 3) fact(sk * 0.9, x[0] + '’s defense is getting home (' + sk.toFixed(1) + ' sacks a game), a risk for ' + x[1] + '’s QB.'); }
+    });
     // grades
     if (A && H){
       var own = {}; own[g.away] = A; own[g.home] = H;
@@ -4429,9 +4447,10 @@
       items = items.filter(function(x){ return !isNaN(x.d); });
       var best = items.slice().sort(function(a,b){ return b.d - a.d; })[0];
       var worst = items.slice().sort(function(a,b){ return a.d - b.d; })[0];
-      if (best && best.d >= 8) sent.push('The best matchup is ' + best.t + ' ' + best.kind + ' (' + sgn(best.d) + ' vs ' + oppOf[best.t] + ' ' + best.vs + ').');
-      if (worst && worst.d <= -8 && worst !== best) sent.push('The toughest is ' + worst.t + ' ' + worst.kind + ' (' + sgn(worst.d) + ' vs ' + oppOf[worst.t] + ' ' + worst.vs + ').');
+      if (best && best.d >= 8) fact(best.d / 3.5, 'The best matchup is ' + best.t + ' ' + best.kind + ' (' + sgn(best.d) + ' vs ' + oppOf[best.t] + ' ' + best.vs + ').');
+      if (worst && worst.d <= -8 && worst !== best) fact(Math.abs(worst.d) / 4, 'The toughest is ' + worst.t + ' ' + worst.kind + ' (' + sgn(worst.d) + ' vs ' + oppOf[worst.t] + ' ' + worst.vs + ').');
     }
+    facts.sort(function(a,b){ return b.w - a.w; }).slice(0, 3).forEach(function(x){ sent.push(x.t); });
     // stack idea (own line under the players)
     var stackHtml = '';
     if (pool.length){
@@ -4467,7 +4486,31 @@
         }).join('');
       }
     }
-    return '<div class="mu-syn">' + para + spot + stackHtml + '</div>';
+    // ---- avoids: only when the case is clear (two flags, or one severe one) ----
+    var avoidHtml = '';
+    if (pool.length){
+      var tms2 = [normalizeTeam(g.away), normalizeTeam(g.home)];
+      var av = pool.filter(function(p){ return tms2.indexOf(normalizeTeam(p.team)) >= 0 && ['QB','RB','WR','TE'].indexOf(p.position) >= 0 && p.salary >= (p.position === 'QB' ? 6500 : 5500); })
+        .map(function(p){
+          var fp = fpOf(p), val = fp / (p.salary / 1000), vz = med[p.position] ? val / med[p.position] - 1 : 0;
+          var edge = 0, wl = 0.5; try { edge = matchupEdge(p); wl = workloadFactor(p); } catch(e){}
+          var own = (p.projOwn != null && !isNaN(p.projOwn)) ? p.projOwn : ((p.ownership != null && p.ownership !== '' && !isNaN(p.ownership)) ? +p.ownership : null);
+          var flags = [], sev = 0;
+          if (vz <= -0.2){ flags.push('pricey for the projection (' + val.toFixed(1) + 'x)'); sev += -vz; }
+          if (edge * 30 <= -8 && wl >= 0.4){ flags.push('tough ' + (p.position === 'RB' ? 'run' : 'pass') + ' matchup ' + sgn(edge * 30)); sev += -edge * wl; }
+          if (own != null && own >= 15 && vz < -0.05){ flags.push(own.toFixed(0) + '% owned'); sev += 0.3; }
+          var thin = false; try { var mc = mktBookCount(marketProjections[normalizeName(p.name)]); thin = (mc !== null && mc <= 1); } catch(e){}
+          if (thin){ flags.push('thin market'); sev += 0.2; }
+          return { p: p, flags: flags, sev: sev, vz: vz };
+        }).filter(function(x){ return x.flags.length >= 2 || x.vz <= -0.35; }).sort(function(a,b){ return b.sev - a.sev; }).slice(0, 2);
+      if (av.length){
+        avoidHtml = '<div class="gr-spot-h" style="color:var(--brick);margin-top:6px;">Avoid</div>' + av.map(function(x){
+          var p = x.p;
+          return '<div class="gr-pl"><span class="gr-pos">' + p.position + '</span><b>' + shortName(p.name) + '</b> <span class="gr-meta">' + p.team + '</span> <span class="gr-meta mono">$' + (p.salary / 1000).toFixed(1) + 'K · ' + fmt1(fpOf(p)) + ' pts</span><div class="gr-meta" style="margin-left:2px;">' + x.flags.join(' · ') + '</div></div>';
+        }).join('');
+      }
+    }
+    return '<div class="mu-syn">' + para + spot + avoidHtml + stackHtml + '</div>';
   }
 
   // ── Team tendencies for the flip card (from this season's game logs) ──
