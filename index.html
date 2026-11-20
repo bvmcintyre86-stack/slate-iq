@@ -4372,7 +4372,7 @@
 
     // Pool helpers
     function fpOf(p){ var v = 0; try { v = effectiveFppg(p) || 0; } catch(e){} return v; }
-    var pool = (players || []).filter(function(p){ return p.position !== 'DEF' && p.salary > 0 && fpOf(p) > 0; });
+    var pool = (players || []).filter(function(p){ return p.position !== 'DEF' && p.salary > 0 && fpOf(p) > 0 && !isOut(p); });
     var hasMkt = pool.some(function(p){ var nm = normalizeName(p.name); return marketProjections[nm] || kalshiProjections[nm]; });
     if (hasMkt) pool = pool.filter(function(p){ var nm = normalizeName(p.name); return marketProjections[nm] || kalshiProjections[nm]; });
     var med = {};
@@ -4499,7 +4499,15 @@
         var b = sxx ? sxy / sxx : 0; fit[pos] = { a: my - b * mx, b: b };
       });
       var tms2 = [normalizeTeam(g.away), normalizeTeam(g.home)];
-      var av = pool.filter(function(p){ return tms2.indexOf(normalizeTeam(p.team)) >= 0 && fit[p.position] && p.salary >= (p.position === 'QB' ? 6000 : 5000); })
+      // Only players with a FULL prop list: every core market posted, each backed by 3+ books
+      // (a 1-2 book line is the same "thin" warning shown in the pool, and often means inactive).
+      var CORE = { QB: ['passYards','passTD'], RB: ['rushYards','recYards','receptions','attd'], WR: ['recYards','receptions','attd'], TE: ['recYards','receptions','attd'] };
+      function fullMkt(p){
+        var mp = marketProjections[normalizeName(p.name)];
+        if (!mp || !mp.breakdown || !CORE[p.position]) return false;
+        return CORE[p.position].every(function(k){ var b = mp.breakdown[k]; return b && (b.consensusCount || 1) >= 3; });
+      }
+      var av = pool.filter(function(p){ return tms2.indexOf(normalizeTeam(p.team)) >= 0 && fit[p.position] && p.salary >= (p.position === 'QB' ? 6000 : 5000) && !isOut(p) && fullMkt(p); })
         .map(function(p){
           var f2 = fit[p.position], exp = f2.a + f2.b * p.salary / 1000, fp = fpOf(p);
           var rz = exp > 0 ? (fp - exp) / exp : 0;               // negative = under-delivers for the price
@@ -4509,8 +4517,6 @@
           if (rz <= -0.15){ flags.push('projects ' + fmt1(fp) + ' vs ~' + fmt1(exp) + ' typical for $' + (p.salary / 1000).toFixed(1) + 'K'); sev += -rz; }
           if (edge * 30 <= -6 && wl >= 0.35){ flags.push('tough ' + (p.position === 'RB' ? 'run' : 'pass') + ' matchup ' + sgn(edge * 30)); sev += -edge * wl; }
           if (own != null && own >= 12 && rz < 0){ flags.push(own.toFixed(0) + '% owned'); sev += 0.25; }
-          var thin = false; try { var mc = mktBookCount(marketProjections[normalizeName(p.name)]); thin = (mc !== null && mc <= 1); } catch(e){}
-          if (thin){ flags.push('thin market'); sev += 0.2; }
           return { p: p, flags: flags, sev: sev, rz: rz };
         }).filter(function(x){ return x.flags.length >= 2 || x.rz <= -0.3; }).sort(function(a,b){ return b.sev - a.sev; }).slice(0, 2);
       if (av.length){
@@ -4804,7 +4810,7 @@
     if (b.recYards){ v += b.recYards.value; any = true; }
     return any ? v : null;
   }
-  window.__stackTest = { lus: function(){return lineups;}, mp: function(){return marketProjections;}, isStackCatcher: function(p){return isStackCatcher(p);}, ss: function(){return stackSettings;} };
+  window.__stackTest = { refresh: function(){ refreshMatchupBacks(); }, lus: function(){return lineups;}, mp: function(){return marketProjections;}, isStackCatcher: function(p){return isStackCatcher(p);}, ss: function(){return stackSettings;} };
   function isStackCatcher(p){
     if (p.position === 'WR' || p.position === 'TE') return true;
     if (p.position === 'RB'){
