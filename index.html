@@ -4486,23 +4486,33 @@
         }).join('');
       }
     }
-    // ---- avoids: only when the case is clear (two flags, or one severe one) ----
+    // ---- avoids: compare each player to what his SALARY normally buys at his position ----
+    // (stars always have a lower pts-per-$ than mid-priced guys, so a flat value cut-off would flag them all)
     var avoidHtml = '';
     if (pool.length){
+      var fit = {};
+      ['QB','RB','WR','TE'].forEach(function(pos){
+        var xs = pool.filter(function(p){ return p.position === pos; });
+        var n = xs.length; if (n < 8){ fit[pos] = null; return; }
+        var mx = 0, my = 0; xs.forEach(function(p){ mx += p.salary / 1000; my += fpOf(p); }); mx /= n; my /= n;
+        var sxx = 0, sxy = 0; xs.forEach(function(p){ var dx = p.salary / 1000 - mx; sxx += dx * dx; sxy += dx * (fpOf(p) - my); });
+        var b = sxx ? sxy / sxx : 0; fit[pos] = { a: my - b * mx, b: b };
+      });
       var tms2 = [normalizeTeam(g.away), normalizeTeam(g.home)];
-      var av = pool.filter(function(p){ return tms2.indexOf(normalizeTeam(p.team)) >= 0 && ['QB','RB','WR','TE'].indexOf(p.position) >= 0 && p.salary >= (p.position === 'QB' ? 6500 : 5500); })
+      var av = pool.filter(function(p){ return tms2.indexOf(normalizeTeam(p.team)) >= 0 && fit[p.position] && p.salary >= (p.position === 'QB' ? 6000 : 5000); })
         .map(function(p){
-          var fp = fpOf(p), val = fp / (p.salary / 1000), vz = med[p.position] ? val / med[p.position] - 1 : 0;
+          var f2 = fit[p.position], exp = f2.a + f2.b * p.salary / 1000, fp = fpOf(p);
+          var rz = exp > 0 ? (fp - exp) / exp : 0;               // negative = under-delivers for the price
           var edge = 0, wl = 0.5; try { edge = matchupEdge(p); wl = workloadFactor(p); } catch(e){}
           var own = (p.projOwn != null && !isNaN(p.projOwn)) ? p.projOwn : ((p.ownership != null && p.ownership !== '' && !isNaN(p.ownership)) ? +p.ownership : null);
           var flags = [], sev = 0;
-          if (vz <= -0.2){ flags.push('pricey for the projection (' + val.toFixed(1) + 'x)'); sev += -vz; }
-          if (edge * 30 <= -8 && wl >= 0.4){ flags.push('tough ' + (p.position === 'RB' ? 'run' : 'pass') + ' matchup ' + sgn(edge * 30)); sev += -edge * wl; }
-          if (own != null && own >= 15 && vz < -0.05){ flags.push(own.toFixed(0) + '% owned'); sev += 0.3; }
+          if (rz <= -0.15){ flags.push('projects ' + fmt1(fp) + ' vs ~' + fmt1(exp) + ' typical for $' + (p.salary / 1000).toFixed(1) + 'K'); sev += -rz; }
+          if (edge * 30 <= -6 && wl >= 0.35){ flags.push('tough ' + (p.position === 'RB' ? 'run' : 'pass') + ' matchup ' + sgn(edge * 30)); sev += -edge * wl; }
+          if (own != null && own >= 12 && rz < 0){ flags.push(own.toFixed(0) + '% owned'); sev += 0.25; }
           var thin = false; try { var mc = mktBookCount(marketProjections[normalizeName(p.name)]); thin = (mc !== null && mc <= 1); } catch(e){}
           if (thin){ flags.push('thin market'); sev += 0.2; }
-          return { p: p, flags: flags, sev: sev, vz: vz };
-        }).filter(function(x){ return x.flags.length >= 2 || x.vz <= -0.35; }).sort(function(a,b){ return b.sev - a.sev; }).slice(0, 2);
+          return { p: p, flags: flags, sev: sev, rz: rz };
+        }).filter(function(x){ return x.flags.length >= 2 || x.rz <= -0.3; }).sort(function(a,b){ return b.sev - a.sev; }).slice(0, 2);
       if (av.length){
         avoidHtml = '<div class="gr-spot-h" style="color:var(--brick);margin-top:6px;">Avoid</div>' + av.map(function(x){
           var p = x.p;
