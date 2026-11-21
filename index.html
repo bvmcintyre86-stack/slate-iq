@@ -415,6 +415,7 @@
   .tp-card .tp-tag{font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;width:110px;flex-shrink:0;text-align:center;}
   .tp-card .tp-sal{color:var(--muted);font-size:12px;}
   .tp-col-header{display:flex;align-items:center;gap:8px;padding:2px 10px 4px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line);margin-bottom:2px;}
+  .wx{font-size:14px;cursor:help;margin-left:4px;vertical-align:middle;}
   .tp-grip{cursor:grab;color:var(--muted);font-size:16px;padding:0 4px;margin-right:12px;user-select:none;letter-spacing:-3px;display:inline-block;vertical-align:middle;}
   .tp-grip:hover{color:var(--gold);}
   .tp-card.tp-dragging{opacity:.4;}
@@ -4655,6 +4656,7 @@
   }
 
   function renderGames(){
+    setTimeout(weatherEnsure, 0);
     var grid = document.getElementById('gamesGrid');
     grid.innerHTML = '';
     var maxImplied = 1;
@@ -4694,7 +4696,7 @@
         '<div class="flip-inner"><div class="face face-front">'+
         '<button class="flip-btn" title="Matchup view (PFF grades)">&#8644;</button>'+
         '<button class="remove" data-id="'+g.id+'" title="Remove game">&times;</button>'+
-        (kickoffStr ? '<div style="font-size:11px;color:var(--muted);margin-bottom:2px;">'+kickoffStr+'</div>' : '')+
+        '<div style="font-size:11px;color:var(--muted);margin-bottom:2px;min-height:16px;">'+kickoffStr+(kickoffStr?' ':'')+wxIcons(g)+'</div>'+
         '<div class="matchup">'+g.away+'<span class="at">@</span>'+g.home+'</div>'+
         '<div class="vegas-line mono">'+favSel+' -'+spreadInput+' O/U '+totalInput+'</div>'+
         barRow(s.away.team, s.away.implied, maxImplied, TAGS[s.away.tag].color)+
@@ -4820,7 +4822,7 @@
     if (b.recYards){ v += b.recYards.value; any = true; }
     return any ? v : null;
   }
-  window.__stackTest = { refresh: function(){ refreshMatchupBacks(); }, lus: function(){return lineups;}, mp: function(){return marketProjections;}, isStackCatcher: function(p){return isStackCatcher(p);}, ss: function(){return stackSettings;} };
+  window.__stackTest = { eff: function(p){return effectiveFppg(p);}, refresh: function(){ refreshMatchupBacks(); }, lus: function(){return lineups;}, mp: function(){return marketProjections;}, isStackCatcher: function(p){return isStackCatcher(p);}, ss: function(){return stackSettings;} };
   function isStackCatcher(p){
     if (p.position === 'WR' || p.position === 'TE') return true;
     if (p.position === 'RB'){
@@ -6583,17 +6585,19 @@
   // display columns. Falls back to fppg alone whenever NONE of the 3 sources
   // have this player yet (partial props coverage is expected/common).
   function effectiveFppg(p){
-    if (projSource === 'fppg') return p.fppg;
+    // High wind (15+ mph, open-air stadium) trims only the NON-market part: props already price it in.
+    var wf = windFactor(p);
+    if (projSource === 'fppg') return p.fppg * wf;
     if (projSource === 'model'){
       var mdl = modelProjection(p);
-      if (mdl) return mdl.fp;
+      if (mdl) return mdl.fp * wf;
       var c0 = combinedMarketProjection(p);
-      return c0 ? c0.fp : p.fppg;
+      return c0 ? c0.fp : p.fppg * wf;
     }
     var combined = combinedMarketProjection(p);
-    if (!combined) return p.fppg;
+    if (!combined) return p.fppg * wf;
     if (projSource === 'market') return combined.fp;
-    return (p.fppg + combined.fp) / 2; // blend
+    return (p.fppg * wf + combined.fp) / 2; // blend
   }
 
   // Nudges stack-slot picks toward pass catchers (WR/TE) over RBs, since a
@@ -7806,6 +7810,142 @@
   }
 
 
+
+
+  // ── Weather on game tiles ────────────────────────────────────────────────
+  // Open-Meteo hourly forecast (free, no key) for the home stadium at kickoff. Kickoff comes from the
+  // game itself (Unabated) or, failing that, the nflverse schedule. Display-only EXCEPT winds of 15+ mph,
+  // which trim QB/WR/TE projections that are NOT market-based (props already price wind in).
+  var WX_STADIUMS = {
+    ARI:[33.5276,-112.2626,'retract'], ATL:[33.7554,-84.4009,'retract'], BAL:[39.2780,-76.6227,'open'], BUF:[42.7738,-78.7870,'open'],
+    CAR:[35.2258,-80.8528,'open'], CHI:[41.8623,-87.6167,'open'], CIN:[39.0955,-84.5161,'open'], CLE:[41.5061,-81.6995,'open'],
+    DAL:[32.7473,-97.0945,'retract'], DEN:[39.7439,-105.0201,'open'], DET:[42.3400,-83.0456,'dome'], GB:[44.5013,-88.0622,'open'],
+    HOU:[29.6847,-95.4107,'retract'], IND:[39.7601,-86.1639,'retract'], JAX:[30.3239,-81.6373,'open'], KC:[39.0489,-94.4839,'open'],
+    LV:[36.0909,-115.1833,'dome'], LAC:[33.9535,-118.3392,'covered'], LA:[33.9535,-118.3392,'covered'], LAR:[33.9535,-118.3392,'covered'],
+    MIA:[25.9580,-80.2389,'open'], MIN:[44.9735,-93.2575,'dome'], NE:[42.0909,-71.2643,'open'], NO:[29.9511,-90.0812,'dome'],
+    NYG:[40.8135,-74.0745,'open'], NYJ:[40.8135,-74.0745,'open'], PHI:[39.9008,-75.1675,'open'], PIT:[40.4468,-80.0158,'open'],
+    SF:[37.4030,-121.9700,'open'], SEA:[47.5952,-122.3316,'open'], TB:[27.9759,-82.5033,'open'], TEN:[36.1665,-86.7713,'open'],
+    WAS:[38.9077,-76.8645,'open'], WSH:[38.9077,-76.8645,'open']
+  };
+  var wxStadIdx = null, wxCache = {}, wxTried = {}, wxSched = null, wxSchedTried = false, wxBusy = false, windMph = {};
+  try { wxCache = JSON.parse(localStorage.getItem('slateIqWeather') || '{}') || {}; } catch(e){ wxCache = {}; }
+  function wxStad(team){
+    if (!wxStadIdx){ wxStadIdx = {}; Object.keys(WX_STADIUMS).forEach(function(k){ wxStadIdx[normalizeTeam(k)] = WX_STADIUMS[k]; }); }
+    return wxStadIdx[normalizeTeam(team)] || null;
+  }
+  function wxEtToUtc(dateStr, timeStr){       // nflverse gameday + gametime (ET) -> ISO UTC
+    var p = dateStr.split('-').map(Number), t = (timeStr || '13:00').split(':').map(Number);
+    for (var off = 4; off <= 5; off++){
+      var d = new Date(Date.UTC(p[0], p[1] - 1, p[2], t[0] + off, t[1] || 0));
+      var h = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(d), 10) % 24;
+      if (h === t[0] % 24) return d.toISOString();
+    }
+    return new Date(Date.UTC(p[0], p[1] - 1, p[2], t[0] + 5, t[1] || 0)).toISOString();
+  }
+  function wxKickoff(g){
+    if (g.kickoff) return Promise.resolve(g.kickoff);
+    var find = function(){
+      var h = normalizeTeam(g.home), a = normalizeTeam(g.away), now = Date.now() - 36e5 * 30, best = null;
+      (wxSched || []).forEach(function(r){
+        if (normalizeTeam(r.home_team) !== h || normalizeTeam(r.away_team) !== a) return;
+        var iso = wxEtToUtc(r.gameday, r.gametime);
+        if (new Date(iso).getTime() >= now && (!best || iso < best)) best = iso;
+      });
+      return best;
+    };
+    if (wxSched) return Promise.resolve(find());
+    if (wxSchedTried) return Promise.resolve(null);
+    wxSchedTried = true;
+    return fetch('https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv').then(function(r){ return r.text(); }).then(function(txt){
+      var out = Papa.parse(txt, { header: true, skipEmptyLines: true }).data;
+      wxSched = out.filter(function(r){ return r.season === String(new Date().getFullYear()) || r.season === '2026'; });
+      return find();
+    }).catch(function(){ return null; });
+  }
+  function wxFetch(g, stad, iso){
+    var key = normalizeTeam(g.home) + '|' + iso;
+    var c = wxCache[key];
+    if (c && Date.now() - c.at < 36e5) return Promise.resolve(c.v);
+    var k = new Date(iso).getTime();
+    if (k - Date.now() > 15 * 864e5 || Date.now() - k > 3 * 864e5) return Promise.resolve(null);
+    var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + stad[0] + '&longitude=' + stad[1] +
+      '&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,snowfall,wind_speed_10m,wind_gusts_10m,cloud_cover,weather_code,is_day' +
+      '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=GMT&past_days=3&forecast_days=16';
+    return fetch(url).then(function(r){ return r.json(); }).then(function(j){
+      var H = j.hourly; if (!H || !H.time) return null;
+      var kd = new Date(Math.round(k / 36e5) * 36e5).toISOString().slice(0, 13) + ':00', i0 = H.time.indexOf(kd);
+      if (i0 < 0) return null;
+      var idx = [i0, i0 + 1, i0 + 2, i0 + 3].filter(function(i){ return i < H.time.length; });
+      var mx = function(a){ return Math.max.apply(null, idx.map(function(i){ return a[i] || 0; })); };
+      var sm = function(a){ return idx.reduce(function(t, i){ return t + (a[i] || 0); }, 0); };
+      var v = { temp: H.temperature_2m[i0], feels: H.apparent_temperature[i0], wind: mx(H.wind_speed_10m), gust: mx(H.wind_gusts_10m),
+        pop: mx(H.precipitation_probability), rain: sm(H.precipitation), snow: sm(H.snowfall), cloud: sm(H.cloud_cover) / idx.length,
+        code: H.weather_code[i0], day: H.is_day[i0] === 1 };
+      wxCache[key] = { at: Date.now(), v: v };
+      try { localStorage.setItem('slateIqWeather', JSON.stringify(wxCache)); } catch(e){}
+      return v;
+    }).catch(function(){ return null; });
+  }
+  // Entry point: fill in weather for every game that has none yet (once per page load per game).
+  function weatherEnsure(){
+    if (wxBusy) return;
+    var todo = games.filter(function(g){ return !wxTried[g.id] && wxStad(g.home); });
+    if (!todo.length) return;
+    wxBusy = true;
+    Promise.all(todo.map(function(g){
+      wxTried[g.id] = true;
+      return wxKickoff(g).then(function(iso){
+        if (!iso) return;
+        g._wxIso = iso;
+        return wxFetch(g, wxStad(g.home), iso).then(function(v){ g._wx = v; });
+      });
+    })).then(function(){
+      wxBusy = false;
+      wxWindMap();
+      renderGames();
+      if (typeof renderTable === 'function' && players.length) renderTable();
+    }).catch(function(){ wxBusy = false; });
+  }
+  function wxWindMap(){
+    windMph = {};
+    games.forEach(function(g){
+      var st = wxStad(g.home), w = g._wx;
+      if (!st || !w || st[2] !== 'open') return;     // roofs / canopies: no wind effect
+      if (w.wind >= 15){ windMph[normalizeTeam(g.home)] = w.wind; windMph[normalizeTeam(g.away)] = w.wind; }
+    });
+  }
+  // Fraction trimmed from a non-market projection at this wind speed.
+  function windFactor(p){
+    var mph = windMph[normalizeTeam(p.team)];
+    if (!mph) return 1;
+    var heavy = mph >= 20;
+    if (p.position === 'QB') return heavy ? 0.92 : 0.96;
+    if (p.position === 'WR' || p.position === 'TE') return heavy ? 0.94 : 0.97;
+    return 1;
+  }
+  function wxIcons(g){
+    var st = wxStad(g.home), w = g._wx;
+    if (!st) return '';
+    var when = g._wxIso ? new Date(g._wxIso) : null;
+    var head = when ? when.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) + ' ET' : '';
+    if (st[2] !== 'open'){
+      var why = st[2] === 'dome' ? 'Dome - indoors, weather is not a factor.' : st[2] === 'covered' ? 'Covered stadium - weather has little effect.' : 'Retractable roof - usually closed in poor weather.';
+      var extra = w ? '\nOutside: ' + Math.round(w.temp) + '°F, wind ' + Math.round(w.wind) + ' mph, ' + w.pop + '% precip' : '';
+      return '<span class="wx" title="' + (head ? head + '\n' : '') + why + extra + '">🏟️</span>';
+    }
+    if (!w) return g._wxIso ? '<span class="wx" title="' + head + '\nForecast not available yet (Open-Meteo covers about 2 weeks).">—</span>' : '';
+    var snow = w.snow >= 0.05 || [71,73,75,77,85,86].indexOf(w.code) >= 0, rain = !snow && (w.rain >= 0.05 || w.pop >= 50 || [51,53,55,61,63,65,66,67,80,81,82,95,96,99].indexOf(w.code) >= 0);
+    var icon = snow ? '❄️' : rain ? '🌧️' : (!snow && w.pop >= 30 ? '🌦️' : w.cloud >= 70 ? '☁️' : w.cloud >= 35 ? (w.day ? '⛅' : '☁️') : (w.day ? '☀️' : '🌙'));
+    var windy = w.wind >= 15 || w.gust >= 25;
+    var lines = [head + ' - ' + normalizeTeam(g.home) + ' stadium',
+      Math.round(w.temp) + '°F (feels ' + Math.round(w.feels) + '°F)',
+      'Wind ' + Math.round(w.wind) + ' mph, gusts ' + Math.round(w.gust),
+      'Precip ' + w.pop + '%' + (w.snow >= 0.05 ? ', snow ~' + w.snow.toFixed(1) + ' in' : w.rain >= 0.02 ? ', rain ~' + w.rain.toFixed(2) + ' in' : ''),
+      'Clouds ' + Math.round(w.cloud) + '%'];
+    if (w.wind >= 15) lines.push('', 'High wind: QB -' + (w.wind >= 20 ? 8 : 4) + '%, WR/TE -' + (w.wind >= 20 ? 6 : 3) + '% on non-market projections (props already price it in).');
+    else if (windy) lines.push('', 'Gusty - flagged, no projection change (sustained wind under 15 mph).');
+    return '<span class="wx" title="' + lines.join('\n').replace(/"/g, '&quot;') + '">' + icon + '</span>' + (windy ? '<span class="wx" title="' + lines.join('\n').replace(/"/g, '&quot;') + '">💨</span>' : '');
+  }
 
   // ── Pace & projected plays ───────────────────────────────────────────────
   // Source: pace_2026.js (nflverse team stats + play-by-play). plays = pass att + sacks + carries.
