@@ -723,7 +723,7 @@
             <option value="3">QB + 3</option>
           </select>
         </div>
-        <label class="stack-chk" title="Forces in your QB's opponent's alpha WR (their highest-salaried receiver) - a true same-game bring-back, matching what actually showed up in your tournament-winning-lineup study."><input type="checkbox" id="bringBackChk"> Bring-back</label>
+        <label class="stack-chk" title="Forces in a pass catcher from your QB's opponent - their highest-salaried WR, TE, or receiving RB (4.0+ market receiving pts) - a true same-game bring-back, matching what actually showed up in your tournament-winning-lineup study."><input type="checkbox" id="bringBackChk"> Bring-back</label>
         <div class="field">
           <label title="Correlated pairs built in OTHER games than your QB's, from the types you pick under Types.">Secondary stacks</label>
           <select id="secCountSel" style="width:13ch;">
@@ -6760,7 +6760,7 @@
         // in the pool (a Top Players-only pool often has none for some games).
         if (stackSettings.bringBack){
           var withBB = qbPool.filter(function(q){
-            return q.oppTeam && pool.some(function(p){ return p.team === q.oppTeam && p.position === 'WR' && !picks[p.id]; });
+            return q.oppTeam && pool.some(function(p){ return p.team === q.oppTeam && isStackCatcher(p) && !picks[p.id]; });
           });
           if (withBB.length) qbPool = withBB;
         }
@@ -6849,36 +6849,36 @@
         // market's own read on who's the true #1) rather than just whoever
         // scores marginally best, matching that same finding.
         if (stackSettings.bringBack && qb.oppTeam){
+          // Any of the opponent's pass catchers can be the bring-back: WR, TE, or an RB that clears the
+          // receiving threshold. All compete on the same footing - highest salary first (the market's own
+          // read on who's the alpha), ties broken by projection less exposure already used.
           var bbPool = pool.filter(function(p){
-            return p.team === qb.oppTeam && p.position === 'WR';
+            return p.team === qb.oppTeam && isStackCatcher(p);
           });
           if (!bbPool.length){
             bbPool = fullPool.filter(function(p){
-              return p.team === qb.oppTeam && p.position === 'WR';
+              return p.team === qb.oppTeam && isStackCatcher(p);
             });
           }
+          var bbRanked = bbPool.filter(function(p){ return !picks[p.id]; }).slice().sort(function(a, b){
+            if (a.salary !== b.salary) return b.salary - a.salary;
+            return (playerScore(b) - (exposureCount[b.id]||0)) - (playerScore(a) - (exposureCount[a.id]||0));
+          });
           var bbSlot = null, bbPlayer = null;
-          for (var bi=0; bi<corrSlots.length; bi++){
-            var s2 = corrSlots[bi];
-            if (lineup[s2.key]) continue;
-            var opts2 = bbPool.filter(function(p){ return s2.eligible.indexOf(p.position)!==-1 && !picks[p.id]; });
-            if (opts2.length){
-              bbSlot = s2;
-              bbPlayer = opts2.reduce(function(m,p){
-                if (p.salary !== m.salary) return p.salary > m.salary ? p : m;
-                var pExp = exposureCount[p.id] || 0, mExp = exposureCount[m.id] || 0;
-                return (playerScore(p)-pExp) > (playerScore(m)-mExp) ? p : m;
-              }, opts2[0]);
-              break;
-            }
+          for (var bi=0; bi<bbRanked.length && !bbSlot; bi++){
+            var cand2 = bbRanked[bi];
+            var slot2 = corrSlots.filter(function(sl){ return !lineup[sl.key] && sl.eligible.indexOf(cand2.position) !== -1; })
+              .sort(function(a, b){ return a.eligible.length - b.eligible.length; })[0];
+            if (slot2){ bbSlot = slot2; bbPlayer = cand2; }
           }
           if (bbSlot){
             picks[bbPlayer.id] = true;
             lineup[bbSlot.key] = bbPlayer;
             slotTeamConstraint[bbSlot.key] = qb.oppTeam;
-            slotPositionLock[bbSlot.key] = 'WR';
+            slotPositionLock[bbSlot.key] = bbPlayer.position;
+            if (bbPlayer.position === 'RB') slotStackRB[bbSlot.key] = true;   // only a receiving RB may refill this slot
           } else {
-            stackNote = (stackNote ? stackNote + ' ' : '') + 'No bring-back WR candidate found for ' + qb.oppTeam + '.';
+            stackNote = (stackNote ? stackNote + ' ' : '') + 'No bring-back pass catcher found for ' + qb.oppTeam + '.';
           }
         } else if (stackSettings.bringBack && !qb.oppTeam){
           stackNote = (stackNote ? stackNote + ' ' : '') + 'No opponent found for ' + qb.team + ' - bring-back skipped.';
@@ -7245,13 +7245,13 @@
         sig = lineupSignature(lineup);
         overCap = salaryUsed() > salaryCap;
         var incomplete = restrictToTopPlayers && activeSLOT_DEFS.some(function(s){ return !lineup[s.key]; });
-        // Bring-back checked = every lineup must have one (a WR from the QB's
+        // Bring-back checked = every lineup must have one (a WR/TE/receiving RB from the QB's
         // opponent, and from Top Players when that restriction is on).
         noBB = false;
         if (slateMode === 'main' && stackSettings.bringBack && lineup.QB && lineup.QB.oppTeam &&
             !(stackSettings.onslaughtOnly && lineup.QB.tag !== 'onslaught')){
           var qOpp = lineup.QB.oppTeam;
-          noBB = !activeSLOT_DEFS.some(function(s2){ var q2 = lineup[s2.key]; return q2 && q2.team === qOpp && q2.position === 'WR'; });
+          noBB = !activeSLOT_DEFS.some(function(s2){ var q2 = lineup[s2.key]; return q2 && q2.team === qOpp && isStackCatcher(q2); });
         }
         attempt++;
 
@@ -7310,7 +7310,7 @@
         if (c && c.stackTeam && !c.bringBack){ missCount++; missingBB[c.bringBackTeam || (lu.QB && lu.QB.oppTeam) || '?'] = true; }
       });
       if (missCount){
-        bbNote = ' ' + missCount + ' of them have no bring-back (no ' + Object.keys(missingBB).join('/') + ' WR available' +
+        bbNote = ' ' + missCount + ' of them have no bring-back (no ' + Object.keys(missingBB).join('/') + ' pass catcher available' +
           (restrictToTopPlayers ? ' in Top Players - add one, or untick "Only use Top Players"' : ' in the pool') + ').';
       }
     }
