@@ -832,6 +832,13 @@
       <span id="simStatus" style="font-size:12px;color:var(--muted);">Load games and the player pool on the Main Slate tab, then run.</span>
     </div>
     <div id="simGames"></div>
+    <div id="simFilters" style="display:none;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;">
+      <div class="field"><label>Show game</label><select id="simShowGame" style="font-size:12px;min-width:150px;"><option value="">All games</option></select></div>
+      <div class="field"><label>Position</label><select id="simShowPos" style="font-size:12px;">
+        <option value="">All</option><option value="QB">QB</option><option value="RB">RB</option><option value="WR">WR</option><option value="TE">TE</option><option value="FLEX">FLEX (RB/WR/TE)</option><option value="DEF">DEF</option><option value="K">K</option>
+      </select></div>
+      <span id="simShowCount" style="font-size:12px;color:var(--muted);"></span>
+    </div>
     <div style="overflow-x:auto;margin-top:10px;"><table class="pp-table" id="simTbl"></table></div>
   </section>
 </div>
@@ -8249,6 +8256,21 @@
       });
     });
     var fb = rows.filter(function(r){ return r.src === 'FD avg'; }).length;
+    // Display filters (By Game / By Position) - only change what's shown, not what was simulated.
+    var gSel = document.getElementById('simShowGame'), pSel = document.getElementById('simShowPos');
+    var gCur = gSel.value, gOpts = {};
+    rows.forEach(function(r){ gOpts[r.game] = 1; });
+    gSel.innerHTML = '<option value="">All games</option>' + Object.keys(gOpts).map(function(g){
+      return '<option value="' + g + '"' + (g === gCur ? ' selected' : '') + '>' + g.replace('@', ' @ ') + '</option>';
+    }).join('');
+    document.getElementById('simFilters').style.display = 'flex';
+    var total = rows.length, gV = gSel.value, pV = pSel.value;
+    rows = rows.filter(function(r){
+      if (gV && r.game !== gV) return false;
+      if (pV === 'FLEX') return r.pos === 'RB' || r.pos === 'WR' || r.pos === 'TE';
+      return !pV || r.pos === pV;
+    });
+    document.getElementById('simShowCount').textContent = (gV || pV) ? 'Showing ' + rows.length + ' of ' + total + ' players' : '';
     if (projSource !== 'fppg' && fb) status.textContent += ' ' + fb + ' player' + (fb > 1 ? 's' : '') + ' fell back to FD avg (no complete market props yet).';
     var f1 = function(v){ return v.toFixed(1); };
     paceTable(tEl, [
@@ -8272,6 +8294,7 @@
     });
   }
   document.getElementById('simRunBtn').addEventListener('click', simRun);
+  ['simShowGame', 'simShowPos'].forEach(function(id){ document.getElementById(id).addEventListener('change', simRender); });
   window.__simEngine = { run: simRun, render: simRender, input: simBuildInput, results: function(){ return simResults; } };
 
   // ── Player game logs (hover) ──────────────────────────────────────────────
