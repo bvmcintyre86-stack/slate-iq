@@ -546,12 +546,16 @@
         <button id="loadUnabatedBtn">Load from Unabated</button>
         <button id="refreshLinesBtn">Refresh lines</button>
         <button id="clearGamesBtn">Clear all games</button>
-        <button id="teamGradesBtn" title="Upload PFF's team_overview.csv - powers the flip-over matchup view on each game card.">Upload team grades CSV</button>
-        <input type="file" id="teamGradesFile" accept=".csv" style="display:none;">
-        <span id="teamGradesStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
-        <button id="usageBtn" title="Upload the weekly receiving, passing and DST fantasy-stats CSVs (select all three at once). Powers the season-usage block when you hover a player, and the pass-rush note on matchup cards.">Upload player usage CSVs</button>
-        <input type="file" id="usageFile" accept=".csv" multiple style="display:none;">
-        <span id="usageStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+        <details id="pffBackup" style="font-size:12px;">
+          <summary style="cursor:pointer;color:var(--muted);white-space:nowrap;" title="PFF files load automatically from the repo's pff/ folder. Open this to see what loaded, or to upload them by hand (backup).">PFF data <span id="pffSummary"></span></summary>
+          <div style="color:var(--muted);margin-top:6px;line-height:1.6;">Team grades: <span id="teamGradesStatus">not loaded</span><br>Usage: <span id="usageStatus">not loaded</span></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+            <button id="teamGradesBtn" title="Upload PFF's team_overview.csv - powers the flip-over matchup view on each game card.">Upload team grades CSV</button>
+            <input type="file" id="teamGradesFile" accept=".csv" style="display:none;">
+            <button id="usageBtn" title="Upload the weekly receiving, passing and DST fantasy-stats CSVs (select all three at once). Powers the season-usage block when you hover a player, and the pass-rush note on matchup cards.">Upload player usage CSVs</button>
+            <input type="file" id="usageFile" accept=".csv" multiple style="display:none;">
+          </div>
+        </details>
         <span style="color:var(--line);padding:0 4px;">|</span>
         <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Week</label>
         <select id="unabatedWeek" style="font-size:12px;" title="Pick a week - the board reloads automatically with that week's games for the current mode."><option value="">Load from Unabated first</option></select>
@@ -9518,6 +9522,37 @@
 
   loadState();
   syncSlateControls();
+  // PFF files kept in the repo's pff/ folder load automatically on every page open, so the
+  // weekly update is just replacing those files on GitHub. A missing file is skipped and the
+  // last data you loaded stays. The upload buttons still work as a backup.
+  // Short note on the collapsed PFF header: the week the loaded files run through.
+  (function pffSummaryWatch(){
+    var g = document.getElementById('teamGradesStatus'), u = document.getElementById('usageStatus'), out = document.getElementById('pffSummary');
+    if (!g || !u || !out) return;
+    var upd = function(){
+      var wk = function(t){ var m = /through Week (\d+)/.exec(t || ''); return m ? +m[1] : null; };
+      var a = wk(g.textContent), b = wk(u.textContent);
+      out.textContent = a == null && b == null ? '- not loaded' : a === b || b == null ? '- through Week ' + a : a == null ? '- through Week ' + b : '- grades Wk ' + a + ', usage Wk ' + b;
+    };
+    [g, u].forEach(function(el){ new MutationObserver(upd).observe(el, { childList: true, characterData: true, subtree: true }); });
+    upd();
+  })();
+  (function loadPffFromRepo(){
+    if (location.protocol === 'file:' || typeof fetch !== 'function') return;
+    var get = function(name){
+      return fetch('pff/' + name, { cache: 'no-cache' }).then(function(r){ return r.ok ? r.text() : null; }).catch(function(){ return null; });
+    };
+    get('team_overview.csv').then(function(t){ if (t) loadTeamGradesText(t); });
+    Promise.all(['fantasy-stats-receiving.csv', 'fantasy-stats-passing.csv', 'fantasy-stats-dst.csv'].map(get)).then(function(texts){
+      var got = 0;
+      texts.forEach(function(t){ if (t && usageIngest(t).kind) got++; });
+      if (!got) return;
+      usageData.loadedAt = Date.now(); usageNameIdx = null; saveState();
+      var st = document.getElementById('usageStatus');
+      if (st) st.textContent = usageStatusText() + ' (from GitHub)';
+      renderGames();
+    });
+  })();
   renderLegend();
   renderGames();
   renderLuTabs();
