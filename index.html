@@ -489,6 +489,7 @@
     </div>
     <div class="mode-toggle">
       <button class="mode-btn active" id="mainSlateBtn">Main Slate</button>
+      <button class="mode-btn" id="shortSlateBtn" title="A short non-Sunday main slate on the same roster rules - e.g. the Thanksgiving Day 3-game slate. Keeps its own pool, lineups and market data, and stays out of the ownership model.">Short Slate</button>
       <button class="mode-btn" id="singleGameBtn">Single Game</button>
       <button class="mode-btn" id="viewPropsBtn">Props</button>
       <button class="mode-btn" id="viewPaceBtn">Pace</button>
@@ -554,6 +555,7 @@
         <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Week</label>
         <select id="unabatedWeek" style="font-size:12px;" title="Pick a week - the board reloads automatically with that week's games for the current mode."><option value="">Load from Unabated first</option></select>
         <select id="unabatedGame" style="font-size:12px;display:none;" title="Single Game only: pick which standalone game to build for."><option value="">All standalone games</option></select>
+        <select id="unabatedDay" style="font-size:12px;display:none;" title="Short Slate only: which day's games make up the slate (Thanksgiving = Thursday)."><option value="4">Thursday games</option><option value="5">Friday games</option><option value="6">Saturday games</option><option value="1">Monday games</option><option value="0">Sunday (non-main) games</option></select>
         <label style="font-size:11px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;">Proxy URL</label>
         <input id="unabatedWorkerUrl" type="text" style="flex:1;min-width:200px;font-size:12px;" value="https://unabated-proxy.bvmcintyre86.workers.dev">
         <span id="unabatedStatus" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
@@ -952,10 +954,12 @@
   var modeState = {
     fd: {
       main: { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} },
+      tg:   { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} },
       sg:   { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} }
     },
     dk: {
       main: { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} },
+      tg:   { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} },
       sg:   { lineups: null, activeIdx: 0, games: [], players: [], topPlayers: {} }
     }
   };
@@ -978,8 +982,8 @@
     return md;
   }
   var platformMarketData = {
-    fd: { main: newMd(), sg: newMd() },
-    dk: { main: newMd(), sg: newMd() }
+    fd: { main: newMd(), tg: newMd(), sg: newMd() },
+    dk: { main: newMd(), tg: newMd(), sg: newMd() }
   };
   // Permanent results history - survives future CSV uploads/platform
   // switches, since the live player pool gets replaced every week but past
@@ -2081,7 +2085,7 @@
     console.log('Kalshi ladder cleanup: ' + kalshiCleanDiag.multiGame + ' player-stat ladders had rungs from 2+ games (kept the player\'s own / earliest game), ' + kalshiCleanDiag.wideDropped + ' wide-spread or no-bid rungs ignored.' + (kalshiCleanDiag.names.length ? ' e.g. ' + kalshiCleanDiag.names.join(', ') : ''));
     var kScope = restrictToPool(kalshiProjections);
     kalshiProjections = kScope.map; matched = kScope.kept;
-    if (kScope.scoped) console.log('Kalshi scoped to the ' + (slateMode === 'sg' ? 'Single Game' : 'Main Slate') + ' pool: kept ' + kScope.kept + ', ignored ' + kScope.dropped + ' players outside it.');
+    if (kScope.scoped) console.log('Kalshi scoped to the ' + (slateMode === 'sg' ? 'Single Game' : (slateMode === 'tg' ? 'Short Slate' : 'Main Slate')) + ' pool: kept ' + kScope.kept + ', ignored ' + kScope.dropped + ' players outside it.');
     if (players.length){
       // Team-level DEF markets: keep only games involving a pool team.
       var poolCodes = {};
@@ -3342,6 +3346,7 @@
     document.getElementById('viewPropsBtn').classList.toggle('active', propsViewOn);
     document.getElementById('mainSlateBtn').classList.toggle('active', !propsViewOn && !paceViewOn && slateMode === 'main');
     document.getElementById('singleGameBtn').classList.toggle('active', !propsViewOn && !paceViewOn && slateMode === 'sg');
+    document.getElementById('shortSlateBtn').classList.toggle('active', !propsViewOn && !paceViewOn && slateMode === 'tg');
     document.getElementById('paceView').style.display = paceViewOn ? '' : 'none';
     document.getElementById('viewPaceBtn').classList.toggle('active', paceViewOn);
   }
@@ -3630,7 +3635,7 @@
 
     var uScope = restrictToPool(marketProjections);
     marketProjections = uScope.map; matched = uScope.kept;
-    if (uScope.scoped) console.log('Unabated scoped to the ' + (slateMode === 'sg' ? 'Single Game' : 'Main Slate') + ' pool: kept ' + uScope.kept + ', ignored ' + uScope.dropped + ' players outside it.');
+    if (uScope.scoped) console.log('Unabated scoped to the ' + (slateMode === 'sg' ? 'Single Game' : (slateMode === 'tg' ? 'Short Slate' : 'Main Slate')) + ' pool: kept ' + uScope.kept + ', ignored ' + uScope.dropped + ' players outside it.');
     marketProjectionsLoadedAt = Date.now();
     setPropsStatus(shortLoadStatus(matched, marketProjectionsLoadedAt));
     stashMarketScope(platform, slateMode);
@@ -4822,7 +4827,7 @@
     if (b.recYards){ v += b.recYards.value; any = true; }
     return any ? v : null;
   }
-  window.__stackTest = { eff: function(p){return effectiveFppg(p);}, refresh: function(){ refreshMatchupBacks(); }, lus: function(){return lineups;}, mp: function(){return marketProjections;}, isStackCatcher: function(p){return isStackCatcher(p);}, ss: function(){return stackSettings;} };
+  window.__stackTest = { setUna: function(w,o){ _unabatedWeekData=w; _unabatedOdds=o; applyUnabatedBoard(); }, eff: function(p){return effectiveFppg(p);}, refresh: function(){ refreshMatchupBacks(); }, lus: function(){return lineups;}, mp: function(){return marketProjections;}, isStackCatcher: function(p){return isStackCatcher(p);}, ss: function(){return stackSettings;} };
   function isStackCatcher(p){
     if (p.position === 'WR' || p.position === 'TE') return true;
     if (p.position === 'RB'){
@@ -4884,7 +4889,7 @@
     // Secondary stacks: correlated pairs outside the QB's own game.
     result.secondary = [];
     result.defClash = false;
-    if (slateMode === 'main'){
+    if (slateMode !== 'sg'){
       var skipTeams = {};
       if (qbEntry){ skipTeams[qbEntry.player.team] = true; if (qbEntry.player.oppTeam) skipTeams[qbEntry.player.oppTeam] = true; }
       var sp = filled.map(function(f){ return f.player; }).filter(function(pl){ return pl.position !== 'QB' && !skipTeams[pl.team]; });
@@ -4987,7 +4992,7 @@
         ? '<span class="cs-k">Back</span><span class="cs-team cs-team-bb">' + c.bringBackTeam + '</span><span class="cs-names">' + names(c.bbPlayers) + '</span>'
         : '<span class="cs-k">Back</span><span class="cs-none">no bring-back</span>') + '</div>';
     }
-    if (slateMode === 'main'){
+    if (slateMode !== 'sg'){
       var list = c.secondaryItems || [];
       for (var ix = 0; ix < secRows; ix++){
         var it = list[ix], inner;
@@ -5108,14 +5113,14 @@
 
         platform: platform,
         modeStateFull: {
-          fd: { main: serializeCombo('fd','main',SLOT_DEFS), sg: serializeCombo('fd','sg',SG_SLOT_DEFS_FD) },
-          dk: { main: serializeCombo('dk','main',SLOT_DEFS), sg: serializeCombo('dk','sg',SG_SLOT_DEFS_DK) }
+          fd: { main: serializeCombo('fd','main',SLOT_DEFS), tg: serializeCombo('fd','tg',SLOT_DEFS), sg: serializeCombo('fd','sg',SG_SLOT_DEFS_FD) },
+          dk: { main: serializeCombo('dk','main',SLOT_DEFS), tg: serializeCombo('dk','tg',SLOT_DEFS), sg: serializeCombo('dk','sg',SG_SLOT_DEFS_DK) }
         },
         platformCap: (function(){ var c={fd:platformCap.fd,dk:platformCap.dk}; c[platform]=salaryCap; return c; })(),
         platformMarketData: (function(){
           var d={
-            fd:{main:platformMarketData.fd.main, sg:platformMarketData.fd.sg},
-            dk:{main:platformMarketData.dk.main, sg:platformMarketData.dk.sg}
+            fd:{main:platformMarketData.fd.main, tg:platformMarketData.fd.tg, sg:platformMarketData.fd.sg},
+            dk:{main:platformMarketData.dk.main, tg:platformMarketData.dk.tg, sg:platformMarketData.dk.sg}
           };
           stashMarketScope(platform, slateMode);
           return d;
@@ -5233,7 +5238,7 @@
         // lineup IDs back into real player objects, using THAT combo's own
         // player pool and slot shape (SG differs in size between FD and DK).
         ['fd','dk'].forEach(function(plat){
-          ['main','sg'].forEach(function(mode){
+          ['main','tg','sg'].forEach(function(mode){
             var saved = state.modeStateFull[plat] && state.modeStateFull[plat][mode];
             if (!saved) return;
             var slotDefs = mode === 'sg' ? (plat==='dk'?SG_SLOT_DEFS_DK:SG_SLOT_DEFS_FD) : SLOT_DEFS;
@@ -5256,7 +5261,7 @@
             var saved = state.platformMarketData[plat];
             if (saved && (saved.main || saved.sg)){
               // Current format: already mode-scoped.
-              platformMarketData[plat] = { main: normMd(saved.main || emptyMd()), sg: normMd(saved.sg || emptyMd()) };
+              platformMarketData[plat] = { main: normMd(saved.main || emptyMd()), tg: normMd(saved.tg || emptyMd()), sg: normMd(saved.sg || emptyMd()) };
             } else if (saved && saved.marketProjections){
               // Mid-migration format: platform-scoped only, from before mode-
               // scoping existed - treat it as belonging to Main Slate, since
@@ -5309,8 +5314,13 @@
         activeSLOT_DEFS = slateMode==='sg' ? SG_SLOT_DEFS : SLOT_DEFS;
         document.getElementById('mainSlateBtn').classList.toggle('active', slateMode==='main');
         document.getElementById('singleGameBtn').classList.toggle('active', slateMode==='sg');
+        document.getElementById('shortSlateBtn').classList.toggle('active', slateMode==='tg');
       }
 
+      // Always reflect the restored mode on the three slate buttons (the block above only ran when it differed).
+      document.getElementById('mainSlateBtn').classList.toggle('active', slateMode==='main');
+      document.getElementById('shortSlateBtn').classList.toggle('active', slateMode==='tg');
+      document.getElementById('singleGameBtn').classList.toggle('active', slateMode==='sg');
       // Restore the currently active platform+mode combo into the live vars.
       var ms = modeState[platform][slateMode];
       games      = ms.games || [];
@@ -5931,7 +5941,7 @@
       return (secKindCounts[b] - secKindCounts[a]) || secKindLabels[a].localeCompare(secKindLabels[b]);
     });
     if (secFilterKind && secFilterKind !== '__NONE__' && secKindOptions.indexOf(secFilterKind) === -1) secFilterKind = null;
-    var secFilterHtml = (slateMode === 'main' && (secKindOptions.length || secFilterKind)) ?
+    var secFilterHtml = (slateMode !== 'sg' && (secKindOptions.length || secFilterKind)) ?
       '<select id="secTypeFilter" style="font-size:12px;margin-bottom:8px;margin-left:8px;">' +
         '<option value="">Any secondary stack</option>' +
         '<option value="__NONE__"'+(secFilterKind==='__NONE__'?' selected':'')+'>No secondary stacks (' + secNoneCount + ')</option>' +
@@ -6738,7 +6748,7 @@
     // available one ourselves (respecting exposure diversity during a bulk
     // build, same as every other pick) rather than requiring you to lock a
     // QB manually before stacking can even run.
-    var wantsStack = slateMode === 'main' && (stackSettings.level > 0 || stackSettings.bringBack);
+    var wantsStack = slateMode !== 'sg' && (stackSettings.level > 0 || stackSettings.bringBack);
     if (wantsStack && !lineup.QB){
       var qbCandidates = pool.filter(function(p){ return p.position === 'QB' && !picks[p.id]; });
       if (!qbCandidates.length){
@@ -6892,7 +6902,7 @@
     // Reserved slots stay locked to their team (and to the pair's allowed
     // positions) through the later upgrade passes, like the QB stack does.
     var secNote = null;
-    if (slateMode === 'main' && stackSettings.secCount > 0){
+    if (slateMode !== 'sg' && stackSettings.secCount > 0){
       var secEnabled = SEC_COMBOS.filter(function(c){ return stackSettings.secCombos && stackSettings.secCombos[c.key]; });
       var secUsedGames = {};
       if (lineup.QB){ var qgm = findGameForTeam(lineup.QB.team); if (qgm) secUsedGames[qgm.game.id] = true; }
@@ -7248,7 +7258,7 @@
         // Bring-back checked = every lineup must have one (a WR/TE/receiving RB from the QB's
         // opponent, and from Top Players when that restriction is on).
         noBB = false;
-        if (slateMode === 'main' && stackSettings.bringBack && lineup.QB && lineup.QB.oppTeam &&
+        if (slateMode !== 'sg' && stackSettings.bringBack && lineup.QB && lineup.QB.oppTeam &&
             !(stackSettings.onslaughtOnly && lineup.QB.tag !== 'onslaught')){
           var qOpp = lineup.QB.oppTeam;
           noBB = !activeSLOT_DEFS.some(function(s2){ var q2 = lineup[s2.key]; return q2 && q2.team === qOpp && isStackCatcher(q2); });
@@ -7303,7 +7313,7 @@
     secComboUse = {}; secTeamUse = {};
 
     var bbNote = '';
-    if (slateMode === 'main' && stackSettings.bringBack && newLineups.length){
+    if (slateMode !== 'sg' && stackSettings.bringBack && newLineups.length){
       var missingBB = {}, missCount = 0;
       newLineups.forEach(function(lu){
         var c = lineupConstruction(lu);
@@ -7468,7 +7478,7 @@
   function ownTrainingSlates(){
     var out = [];
     (resultsHistory || []).forEach(function(en){
-      if (!en || en.mode === 'sg' || en.platform !== platform || !en.players) return;
+      if (!en || (en.mode !== 'main' && en.mode != null) || en.platform !== platform || !en.players) return;
       var withOwn = en.players.filter(function(p){ return p.ownership != null; });
       if (withOwn.length < 25) return;                       // ownership was never imported for this slate
       var teams = {}; withOwn.forEach(function(p){ teams[p.team] = true; });
@@ -7511,9 +7521,9 @@
   // Sets p.projOwn on every pool player (null when there is not enough history yet).
   function ownProjectPool(){
     var m = ownModel(), th = document.querySelector('th[data-key="projOwn"]');
-    var ok = m.fit && slateMode !== 'sg';
+    var ok = m.fit && slateMode === 'main';   // short slates concentrate ownership differently - no projection there
     if (th){
-      th.title = ok
+      th.title = slateMode !== 'main' ? 'Projected ownership is only built for the regular Main Slate - short slates (like Thanksgiving) and Single Game concentrate ownership differently. Enter Own % from the contest page instead.' : ok
         ? 'Projected ownership for players with a market or prediction projection, learned from ' + m.n + ' saved ' + platform.toUpperCase() + ' slates with imported contest ownership. Backtest on those slates (each predicted from the others): average miss ' + m.mae.toFixed(1) + ' pts, rank correlation ' + m.corr.toFixed(2) + ', ' + Math.round(m.top5 * 100) + '% of the real top-5 found. Uses your saved projections, so it improves as you save more slates.'
         : 'Projected ownership needs ' + OWN_MIN_SLATES + ' saved ' + platform.toUpperCase() + ' Main slates with ownership imported (you have ' + m.n + '). Save each slate to Results History after importing the contest results file.';
     }
@@ -8527,6 +8537,8 @@
   function syncSlateControls(){
     var g = document.getElementById('unabatedGame');
     if (g) g.style.display = slateMode === 'sg' ? '' : 'none';
+    var dsel = document.getElementById('unabatedDay');
+    if (dsel) dsel.style.display = slateMode === 'tg' ? '' : 'none';
   }
 
   // Rebuild the board for the selected week + current mode from cached
@@ -8536,7 +8548,11 @@
     var status = statusEl || document.getElementById('unabatedStatus');
     if (!_unabatedWeekData || !_unabatedOdds) return;
     var wk = document.getElementById('unabatedWeek').value;
-    var evs = (_unabatedWeekData.weekMap[wk] || []).filter(function(ev){ return classifySlate(ev) === slateMode; });
+    var dayPick = parseInt((document.getElementById('unabatedDay') || {}).value || '4', 10);
+    var evs = (_unabatedWeekData.weekMap[wk] || []).filter(function(ev){
+      if (slateMode === 'tg') return classifySlate(ev) === 'sg' && ev.eventStart && etParts(ev.eventStart).wd === dayPick;   // Short Slate = every non-main game on the chosen day
+      return classifySlate(ev) === slateMode;
+    });
     evs.sort(function(a,b){ return new Date(a.eventStart) - new Date(b.eventStart); });
 
     var gameSel = document.getElementById('unabatedGame');
@@ -8559,7 +8575,7 @@
     // Replace Unabated-sourced games for this mode; keep hand-added ones.
     games = games.filter(function(g){ return !g._eid; });
     addEventsToBoard(evs, _unabatedOdds.spreadMap, _unabatedOdds.totalMap, status);
-    status.textContent = evs.length+' '+(slateMode==='sg'?'standalone':'main slate')+' game'+(evs.length!==1?'s':'')+' loaded for this week.' +
+    status.textContent = evs.length+' '+(slateMode==='sg'?'standalone':(slateMode==='tg'?'short slate':'main slate'))+' game'+(evs.length!==1?'s':'')+' loaded for this week.' +
       (Object.keys(_unabatedOdds.spreadMap).length ? ' (Pinnacle lines)' : '');
   }
 
@@ -8881,7 +8897,7 @@
       entry.players.forEach(function(p){
         rows.push([
           entry.weekLabel, new Date(entry.savedAt).toLocaleDateString(), entry.platform.toUpperCase(),
-          entry.mode==='sg'?'Single Game':'Main Slate',
+          entry.mode==='sg'?'Single Game':(entry.mode==='tg'?'Short Slate':'Main Slate'),
           p.name, p.position, p.team, p.salary, p.fppg,
           p.mkt!=null?p.mkt:'', p.kalshi!=null?p.kalshi:'', p.polymkt!=null?p.polymkt:'', p.combined!=null?p.combined:'',
           p.actualPts, p.mktDelta!=null?p.mktDelta:'', p.kalshiDelta!=null?p.kalshiDelta:'', p.polymktDelta!=null?p.polymktDelta:'', p.combinedDelta!=null?p.combinedDelta:'',
@@ -8925,9 +8941,10 @@
     // The K tab in Top Players only exists in Single Game - if it was active
     // when switching to Main Slate, fall back to ALL rather than getting
     // stuck on a tab with no visible button to click back to.
-    if (mode === 'main' && tpActivePos === 'K') tpActivePos = 'ALL';
+    if (mode !== 'sg' && tpActivePos === 'K') tpActivePos = 'ALL';
     document.getElementById('mainSlateBtn').classList.toggle('active', mode==='main');
     document.getElementById('singleGameBtn').classList.toggle('active', mode==='sg');
+    document.getElementById('shortSlateBtn').classList.toggle('active', mode==='tg');
     // Restore or init for new mode
     var ms = modeState[platform][mode];
     games      = ms.games || [];
@@ -8962,6 +8979,7 @@
   }
 
   document.getElementById('mainSlateBtn').addEventListener('click', function(){ switchMode('main'); });
+  document.getElementById('shortSlateBtn').addEventListener('click', function(){ switchMode('tg'); });
   document.getElementById('singleGameBtn').addEventListener('click', function(){ switchMode('sg'); });
 
   function switchPlatform(newPlatform){
@@ -9260,6 +9278,7 @@
   document.getElementById('loadUnabatedBtn').addEventListener('click', loadUnabated);
   document.getElementById('refreshLinesBtn').addEventListener('click', refreshLines);
   document.getElementById('unabatedWeek').addEventListener('change', function(){ applyUnabatedBoard(); });
+  document.getElementById('unabatedDay').addEventListener('change', function(){ applyUnabatedBoard(); });
   document.getElementById('unabatedGame').addEventListener('change', function(){ applyUnabatedBoard(); });
   syncSlateControls();
   document.getElementById('clearGamesBtn').addEventListener('click', function(){
@@ -9290,6 +9309,7 @@
   });
 
   loadState();
+  syncSlateControls();
   renderLegend();
   renderGames();
   renderLuTabs();
