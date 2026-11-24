@@ -8137,6 +8137,8 @@
       u.ypt = (sReY + 40 * Lr.ypt) / (tg + 40); u.cr = (sRec + 40 * Lr.cr) / (tg + 40); u.tdt = (sReT + 300 * Lr.tdt) / (tg + 300);
       u.ypc = (sRuY + 100 * L.ypc) / (ca + 100); u.tdc = (sRuT + 250 * L.tdc) / (ca + 250);
       if (isQB){ u.tda = (sPT + 300 * L.tda) / (at + 300); u.inta = (sInt + 300 * L.inta) / (at + 300); }
+      var imps = hist.map(function(r){ return r[16]; }).filter(function(v){ return v != null; });
+      if (imps.length) u.histImp = imps.reduce(function(a, b){ return a + b; }, 0) / imps.length;
       u.logs = true;
     } else if (p.position in MODEL.LG){
       // No game logs (rookie, new team, just activated): rough usage from his projection.
@@ -8146,6 +8148,16 @@
     }
     return u;
   }
+  // The market's passing-yards number for a QB (average of whichever sources posted one).
+  // Each source stores yardage as fantasy points, so dividing by 0.04 turns it back into yards.
+  function simPassYdsLine(p){
+    var nm = normalizeName(p.name), v = [];
+    [marketProjections[nm], kalshiProjections[nm], polymarketProjections[nm]].forEach(function(src){
+      var b = src && src.breakdown && src.breakdown.passYards;
+      if (b && b.value > 0) v.push(b.value / 0.04);
+    });
+    return v.length ? v.reduce(function(a, b){ return a + b; }, 0) / v.length : 0;
+  }
   function simBuildInput(g, sims){
     var sides = gameSides(g), teamsIn = [];
     [sides.away, sides.home].forEach(function(side){
@@ -8154,12 +8166,18 @@
         return normalizeTeam(p.team) === code && SIM_POS[p.position] && p.salary > 0 && !isOut(p);
       }).map(function(p){
         var target = effectiveFppg(p) || 0;
-        return Object.assign({ id: p.id, name: p.name, pos: p.position, team: p.team, salary: p.salary, target: target }, simUsage(p, target));
+        var x = Object.assign({ id: p.id, name: p.name, pos: p.position, team: p.team, salary: p.salary, target: target }, simUsage(p, target));
+        if (p.position === 'QB') x.passYdsLine = simPassYdsLine(p);
+        return x;
       }).filter(function(x){ return x.target >= 0.5 || x.pos === 'DEF' || x.pos === 'K'; });
       // One QB per team: the starter (highest salary). Backups would otherwise take carries.
       var qbs = roster.filter(function(x){ return x.pos === 'QB'; }).sort(function(a, b){ return b.salary - a.salary; });
       if (qbs.length > 1) roster = roster.filter(function(x){ return x.pos !== 'QB' || x === qbs[0]; });
-      teamsIn.push({ team: side.team, implied: side.implied, players: roster });
+      // The team total its players' past games were played at (from the game logs), weighted by
+      // usage - the sim scales yardage by this week's implied total relative to it.
+      var hw = 0, hs = 0;
+      roster.forEach(function(x){ if (x.histImp){ var w = (x.at || 0) + (x.tg || 0) + (x.ca || 0); hw += w; hs += w * x.histImp; } });
+      teamsIn.push({ team: side.team, implied: side.implied, histImplied: hw ? hs / hw : 0, players: roster });
     });
     return {
       away: teamsIn[0], home: teamsIn[1], sims: sims, seed: (g.away + g.home).split('').reduce(function(h, c){ return (h * 31 + c.charCodeAt(0)) >>> 0; }, 20261124),
