@@ -6505,6 +6505,16 @@
     return out.join('\n').trim();
   }
 
+  // A market source only counts for a player once his core props are posted. Missing props
+  // score as zero, so a player with only an anytime-TD price (common early in the week)
+  // would otherwise get a projection far too low instead of falling back to FD avg / Model.
+  var MKT_CORE = { QB: ['passYards', 'passTD'], RB: ['rushYards'], WR: ['recYards'], TE: ['recYards'] };
+  function mktComplete(src, pos){
+    if (!src) return false;
+    var need = MKT_CORE[pos];
+    if (!need || !src.breakdown) return true;
+    return need.every(function(k){ return src.breakdown[k]; });
+  }
   function combinedMarketProjection(p){
     var norm = normalizeName(p.name);
     var parts = [];
@@ -6515,7 +6525,13 @@
       return dlp === null ? null : { fp: dlp, parts: [{ source: 'Line model', fp: dlp }], count: 1 };
     }
     var mp = marketProjections[norm];
-    var pred = predictionProjection(norm);
+    if (mp && !mktComplete(mp, p.position)) mp = null;
+    var kp = kalshiProjections[norm], pp = polymarketProjections[norm];
+    var predParts = [];
+    if (kp && mktComplete(kp, p.position)) predParts.push({ source: 'Kalshi', fp: kp.fp });
+    if (pp && mktComplete(pp, p.position)) predParts.push({ source: 'Polymarket', fp: pp.fp });
+    var pred = predParts.length ? { fp: predParts.reduce(function(a, b){ return a + b.fp; }, 0) / predParts.length,
+                                    label: predParts.map(function(x){ return x.source; }).join('+') } : null;
     if (mp) parts.push({ source: 'Unabated',  fp: mp.fp });
     if (pred) parts.push({ source: 'Prediction (' + pred.label + ')', fp: pred.fp });
     // Defenses have no player props, so give them a betting-line projection
@@ -6550,7 +6566,7 @@
   // consistent in every season. It cannot see injuries, role changes or news - that is
   // what the market sources are for.
   var MODEL = {
-    DEC: 0.88, WINDOW: 16, MIN_GAMES: 4, IMP: 0.029,
+    DEC: 0.88, WINDOW: 16, MIN_GAMES: 4, MIN_GAMES_QB: 2, IMP: 0.029,
     SPR: { QB: -0.008, RB: 0, WR: -0.010, TE: -0.005 },
     LG: {
       QB: { ypa: 7.0488, tda: 0.0434, inta: 0.0225, ypc: 4.4066, tdc: 0.0461 },
@@ -6564,7 +6580,11 @@
     var e = glFind(p.name, p.position, p.team);
     if (!e || !e.w) return null;
     var hist = e.w.slice(-MODEL.WINDOW), n = hist.length;
-    if (n < MODEL.MIN_GAMES) return null;
+    // QBs qualify after 2 real games (10+ pass attempts): starter volume settles fast and the
+    // efficiency rates are already shrunk toward league average. Everyone else still needs 4.
+    if (p.position === 'QB'){
+      if (hist.filter(function(r){ return r[3] >= 10; }).length < MODEL.MIN_GAMES_QB) return null;
+    } else if (n < MODEL.MIN_GAMES) return null;
     var key = n + '|' + hist[n - 1][0] + '|' + platform + '|' + (p.teamImplied == null ? '' : p.teamImplied + ',' + p.teamSpread);
     if (p._mdl && p._mdl.key === key) return p._mdl.val;
     var L = MODEL.LG[p.position], isQB = p.position === 'QB';
@@ -6605,7 +6625,7 @@
     return val;
   }
   function modelTooltip(m, pos){
-    if (!m) return 'No Model projection: needs ' + MODEL.MIN_GAMES + '+ games of game-log data (QB/RB/WR/TE only).';
+    if (!m) return 'No Model projection: needs ' + (pos === 'QB' ? MODEL.MIN_GAMES_QB + '+ games with 10+ pass attempts' : MODEL.MIN_GAMES + '+ games') + ' of game-log data (QB/RB/WR/TE only).';
     var vol = pos === 'QB' ? m.at.toFixed(1) + ' att/g, ' + m.ca.toFixed(1) + ' car/g' : m.tg.toFixed(1) + ' tgt/g' + (m.ca >= 1 ? ', ' + m.ca.toFixed(1) + ' car/g' : '');
     return 'Slate IQ Model: ' + m.fp.toFixed(1) + ' pts. Recency-weighted over ' + m.n + ' games: ' + vol + '. Base ' + m.base.toFixed(1) +
       (m.env ? ' x ' + m.mult.toFixed(2) + ' game environment (' + m.env + ')' : ' (no game entered for this team, no environment tilt)') + '. Does not know injuries or news.';
@@ -6619,6 +6639,14 @@
   // Kalshi/Polymarket actually start influencing the optimizer, not just the
   // display columns. Falls back to fppg alone whenever NONE of the 3 sources
   // have this player yet (partial props coverage is expected/common).
+  function projSourceUsed(p){
+    if (projSource === 'fppg') return 'FD avg';
+    if (projSource === 'model' && modelProjection(p)) return 'Model';
+    var c = combinedMarketProjection(p);
+    if (!c) return 'FD avg';
+    if (projSource === 'blend') return 'Blend';
+    return p.position === 'DEF' && c.parts[0].source === 'Line model' ? 'Line model' : 'Market';
+  }
   function effectiveFppg(p){
     // High wind (15+ mph, open-air stadium) trims only the NON-market part: props already price it in.
     var wf = windFactor(p);
@@ -8128,6 +8156,9 @@
         var target = effectiveFppg(p) || 0;
         return Object.assign({ id: p.id, name: p.name, pos: p.position, team: p.team, salary: p.salary, target: target }, simUsage(p, target));
       }).filter(function(x){ return x.target >= 0.5 || x.pos === 'DEF' || x.pos === 'K'; });
+      // One QB per team: the starter (highest salary). Backups would otherwise take carries.
+      var qbs = roster.filter(function(x){ return x.pos === 'QB'; }).sort(function(a, b){ return b.salary - a.salary; });
+      if (qbs.length > 1) roster = roster.filter(function(x){ return x.pos !== 'QB' || x === qbs[0]; });
       teamsIn.push({ team: side.team, implied: side.implied, players: roster });
     });
     return {
@@ -8180,11 +8211,14 @@
     ids.forEach(function(id){
       var R = simResults[id];
       R.players.forEach(function(o){
-        rows.push({ id: o.id, star: topPlayers[o.id] ? 1 : 0, name: o.name, pos: o.pos, team: o.team, game: R.game.away + '@' + R.game.home,
+        var pl = players.find(function(x){ return x.id === o.id; });
+        rows.push({ id: o.id, star: topPlayers[o.id] ? 1 : 0, name: o.name, pos: o.pos, team: o.team, game: R.game.away + '@' + R.game.home, src: pl ? projSourceUsed(pl) : '',
           salary: o.salary, mean: o.mean, p50: o.p50, p90: o.p90, pTD: o.pTD, pBonus: o.pBonus, top1: o.top1, topK: o.topK, valueHit: o.valueHit,
           calib: o.calib });
       });
     });
+    var fb = rows.filter(function(r){ return r.src === 'FD avg'; }).length;
+    if (projSource !== 'fppg' && fb) status.textContent += ' ' + fb + ' player' + (fb > 1 ? 's' : '') + ' fell back to FD avg (no complete market props yet).';
     var f1 = function(v){ return v.toFixed(1); };
     paceTable(tEl, [
       { k: 'star', h: 'Top', f: function(v, r){ return '<button class="tp-add-btn' + (v ? ' in-tp' : '') + '" data-sim-tp="' + r.id + '">' + (v ? '&#9733;' : '&#9734;') + '</button>'; } },
@@ -8192,6 +8226,7 @@
       { k: 'pos', h: 'Pos' },
       { k: 'team', h: 'Team' },
       { k: 'salary', h: 'Salary', f: function(v){ return '$' + v.toLocaleString(); } },
+      { k: 'src', h: 'Source', tip: 'Where this player\'s projection came from. Falls back to FD avg when his market props are missing or incomplete (no yardage line yet), and Model falls back to Market, then FD avg.' },
       { k: 'mean', h: 'Proj', f: f1, tip: 'Simulated average - matched to the player\'s projection, so it equals the number you see on the Main Slate tab.' },
       { k: 'p50', h: 'Median', f: f1, tip: 'Half the sims land above this, half below.' },
       { k: 'p90', h: 'Ceiling', f: f1, tint: 1, tip: '90th percentile - his score in a top-10% game. Tournament upside.' },
