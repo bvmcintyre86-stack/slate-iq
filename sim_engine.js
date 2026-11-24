@@ -48,7 +48,8 @@
   // Prepares one team: usage shares and an "other" bucket for players not in the pool.
   function prepTeam(t){
     var P = t.players;
-    var qb = P.filter(function(p){ return p.pos === 'QB'; }).sort(function(a, b){ return (b.at || 0) - (a.at || 0); })[0] || null;
+    // Starter = the QB FanDuel prices highest (salary reflects who's starting), then most attempts.
+    var qb = P.filter(function(p){ return p.pos === 'QB'; }).sort(function(a, b){ return (b.salary || 0) - (a.salary || 0) || (b.at || 0) - (a.at || 0); })[0] || null;
     var baseAtt = qb && qb.at ? qb.at : 33;
     var recv = P.filter(function(p){ return p.pos !== 'QB' && p.pos !== 'DEF' && p.pos !== 'K' && p.tg > 0; });
     var rush = P.filter(function(p){ return p.pos !== 'DEF' && p.pos !== 'K' && p.ca > 0; });
@@ -83,9 +84,10 @@
       pilot.players.forEach(function(o){ gap[o.id] = o.target > 0 && o.rawMean > 0.5 ? clamp(o.target / o.rawMean, 0.5, 1.8) : 1; });
       var adj = function(t){
         return Object.assign({}, t, { players: t.players.map(function(p){
-          if (p.pos === 'QB' || p.pos === 'DEF' || p.pos === 'K') return p;
           var f = gap[p.id];
-          return Object.assign({}, p, { ypt: p.ypt * f, ypc: p.ypc * f, tdt: p.tdt * f, tdc: p.tdc * f });
+          if (p.pos === 'QB') return Object.assign({}, p, { yf: f });   // scales his passing yards (below)
+          if (p.pos === 'DEF' || p.pos === 'K') return p;
+          return Object.assign({}, p, { ypt: p.ypt * f, ypc: p.ypc * f, tdt: p.tdt * f, tdc: p.tdc * f, yf: f });
         }) });
       };
       return simulateGame(Object.assign({}, input, { away: adj(input.away), home: adj(input.home), _calibrated: true }));
@@ -144,7 +146,9 @@
           p = tm.recv[w]; i = idx[p.id];
           if (R.u() < Math.min(0.92, p.cr)){
             y = Math.round((p.ypt / p.cr) * eff * Math.exp(0.75 * R.n() - 0.28));
-            rec[i]++; recY[i] += y; teamPassY += y;
+            // QB passing yards use the receiver's unadjusted yards, so calibrating a receiver
+            // to his projection doesn't push his QB's yardage (and 300-yard bonus odds) around.
+            rec[i]++; recY[i] += y; teamPassY += y / (p.yf || 1);
             if (R.u() < 0.008) fum[i]++;
           }
         }
@@ -166,7 +170,9 @@
           }
         }
         if (tm.qb){
-          i = idx[tm.qb.id]; passY[i] = teamPassY;
+          // Passing yards follow the QB's own projection (yf), so a QB the market expects less
+          // from this week (low team total) gets fewer yards and lower 300-yard odds.
+          i = idx[tm.qb.id]; passY[i] = Math.round(teamPassY * (tm.qb.yf || 1));
           var ia = tm.qb.inta || 0.0225; for (j = 0; j < att; j++) if (R.u() < ia) ints[i]++;
         }
         me.ints = tm.qb ? ints[idx[tm.qb.id]] : R.pois(att * 0.0225);
