@@ -68,7 +68,9 @@
       recv: recv, rush: rush,
       tg: cumulative(tgW), ca: cumulative(caW), tdRec: cumulative(tdRecW), tdRush: cumulative(tdRushW),
       passShare: passTdExp / (passTdExp + rushTdExp || 1),
-      scale: t.implied / (LG.drives * (LG.tdRate * LG.ptsPerTd + LG.fgRate * 3))
+      scale: t.implied / (LG.drives * (LG.tdRate * LG.ptsPerTd + LG.fgRate * 3)),
+      // Yardage vs. his usual games: implied for fewer points than usual = fewer yards.
+      envEff: t.histImplied > 0 ? clamp(Math.pow(t.implied / t.histImplied, 0.6), 0.8, 1.2) : 1
     };
   }
 
@@ -85,7 +87,14 @@
       var adj = function(t){
         return Object.assign({}, t, { players: t.players.map(function(p){
           var f = gap[p.id];
-          if (p.pos === 'QB') return Object.assign({}, p, { yf: f });   // scales his passing yards (below)
+          if (p.pos === 'QB'){
+            // Passing yards: anchored to the market's passing-yards line when one is posted.
+            // Otherwise only part of his fantasy gap goes into yardage (sqrt), since the rest
+            // usually comes from TDs or rushing.
+            var py = pilot.passY[p.id];
+            var yf = p.passYdsLine > 0 && py > 50 ? clamp(p.passYdsLine / py, 0.6, 1.6) : Math.sqrt(f);
+            return Object.assign({}, p, { yf: yf });
+          }
           if (p.pos === 'DEF' || p.pos === 'K') return p;
           return Object.assign({}, p, { ypt: p.ypt * f, ypc: p.ypc * f, tdt: p.tdt * f, tdc: p.tdc * f, yf: f });
         }) });
@@ -99,7 +108,8 @@
     var np = all.length;
     var idx = {}; all.forEach(function(p, i){ idx[p.id] = i; });
 
-    var fp = new Float32Array(np * N);         // fantasy points, player-major: fp[i*N + s]
+    var fp = new Float32Array(np * N);
+    var passSum = new Float64Array(np);         // fantasy points, player-major: fp[i*N + s]
     var td = new Uint8Array(np * N);           // rush+rec TDs
     var bonus = new Uint8Array(np * N);        // hit any yardage bonus
     var scores = [new Uint8Array(N), new Uint8Array(N)];
@@ -134,7 +144,7 @@
       for (k = 0; k < 2; k++){
         tm = teams[k]; var me = T[k], opp = T[1 - k];
         var margin = me.pts - opp.pts, vol = me.drives / LG.drives;
-        var eff = Math.exp(0.45 * me.q);
+        var eff = Math.exp(0.45 * me.q) * tm.envEff;
         var att = Math.max(10, Math.round(tm.baseAtt * vol * clamp(Math.exp(-LG.script * margin), 0.75, 1.35) * Math.exp(R.n() * 0.08)));
         var car = Math.max(8, Math.round(tm.baseCar * vol * clamp(Math.exp(LG.script * margin), 0.7, 1.35) * Math.exp(R.n() * 0.08)));
         me.att = att;
@@ -172,7 +182,7 @@
         if (tm.qb){
           // Passing yards follow the QB's own projection (yf), so a QB the market expects less
           // from this week (low team total) gets fewer yards and lower 300-yard odds.
-          i = idx[tm.qb.id]; passY[i] = Math.round(teamPassY * (tm.qb.yf || 1));
+          i = idx[tm.qb.id]; passY[i] = Math.round(teamPassY * (tm.qb.yf || 1)); passSum[i] += passY[i];
           var ia = tm.qb.inta || 0.0225; for (j = 0; j < att; j++) if (R.u() < ia) ints[i]++;
         }
         me.ints = tm.qb ? ints[idx[tm.qb.id]] : R.pois(att * 0.0225);
@@ -241,6 +251,7 @@
     }
     return {
       sims: N, players: out, fp: fp, index: idx, scores: scores,
+      passY: all.reduce(function(o, p, i){ o[p.id] = passSum[i] / N; return o; }, {}),
       game: { away: input.away.team, home: input.home.team, awayImplied: input.away.implied, homeImplied: input.home.implied,
               awayMean: aS / N, homeMean: hS / N, awayWin: (aW + tie / 2) / N, homeWin: 1 - (aW + tie / 2) / N,
               pOver: mt != null ? over / N : null, marketTotal: mt }
