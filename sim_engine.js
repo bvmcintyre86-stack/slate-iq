@@ -80,26 +80,46 @@
     // Pilot pass: a quick 2,000-sim run to see how far each player's raw sim average is from
     // his projection, then scale his yards-per-opportunity and TD rate by that gap before the
     // real run. That way TD % and bonus % line up with the projection, not just the average.
+    // Calibration, two quick 2,000-sim pilot passes before the real run. Each pass compares the
+    // sim to the target and nudges each player's rates:
+    //   - Market lines first (p.mkt): passing yards/TDs, rushing yards, receiving yards,
+    //     receptions and anytime-TD odds are each tied to the line when one is posted.
+    //   - Anything without a line follows the gap between his projection and the sim's average.
+    // The final run then matches each player's average to his projection exactly.
     if (!input._calibrated){
-      var pilot = simulateGame(Object.assign({}, input, { sims: 2000, _calibrated: true }));
-      var gap = {};
-      pilot.players.forEach(function(o){ gap[o.id] = o.target > 0 && o.rawMean > 0.5 ? clamp(o.target / o.rawMean, 0.5, 1.8) : 1; });
-      var adj = function(t){
-        return Object.assign({}, t, { players: t.players.map(function(p){
-          var f = gap[p.id];
-          if (p.pos === 'QB'){
-            // Passing yards: anchored to the market's passing-yards line when one is posted.
-            // Otherwise only part of his fantasy gap goes into yardage (sqrt), since the rest
-            // usually comes from TDs or rushing.
-            var py = pilot.passY[p.id];
-            var yf = p.passYdsLine > 0 && py > 50 ? clamp(p.passYdsLine / py, 0.6, 1.6) : Math.sqrt(f);
-            return Object.assign({}, p, { yf: yf });
-          }
-          if (p.pos === 'DEF' || p.pos === 'K') return p;
-          return Object.assign({}, p, { ypt: p.ypt * f, ypc: p.ypc * f, tdt: p.tdt * f, tdc: p.tdc * f, yf: f });
-        }) });
-      };
-      return simulateGame(Object.assign({}, input, { away: adj(input.away), home: adj(input.home), _calibrated: true }));
+      var cur = input;
+      for (var pass = 0; pass < 2; pass++){
+        var pilot = simulateGame(Object.assign({}, cur, { sims: 2000, _calibrated: true }));
+        var st = {};
+        pilot.players.forEach(function(o){ st[o.id] = o; });
+        var adj = function(t){
+          return Object.assign({}, t, { players: t.players.map(function(p){
+            if (p.pos === 'DEF' || p.pos === 'K') return p;
+            var o = st[p.id], m = p.mkt || {}, q = Object.assign({}, p);
+            var f = o.target > 0 && o.rawMean > 0.5 ? clamp(o.target / o.rawMean, 0.5, 1.8) : 1;
+            var ratio = function(line, simv, fallback){ return line > 0 && simv > 0.05 ? clamp(line / simv, 0.5, 2) : fallback; };
+            // Anytime TD: compare as Poisson rates so 60% vs 50% isn't treated like 6 vs 5.
+            var lam = function(x){ return -Math.log(1 - clamp(x, 0.005, 0.95)); };
+            var tdF = m.attd > 0 && o.pTD > 0.005 ? clamp(lam(m.attd) / lam(o.pTD), 0.4, 2.5) : (p.pos === 'QB' ? 1 : f);
+            q.tdc = p.tdc * tdF; q.tdt = p.tdt * tdF;
+            q.ypc = p.ypc * ratio(m.rushYds, o.rushY, p.pos === 'QB' ? 1 : f);
+            if (p.pos === 'QB'){
+              // Passing yards: the line if posted, else part of the fantasy gap (sqrt) since the
+              // rest usually comes from TDs or rushing.
+              q.yf = (p.yf || 1) * ratio(m.passYds, o.passY, Math.sqrt(f));
+              q.tda = (p.tda || 0.043) * ratio(m.passTD, o.passTD, 1);
+              return q;
+            }
+            var yF = ratio(m.recYds, o.recY, f), rF = ratio(m.rec, o.rec, 1);
+            q.cr = Math.min(0.9, p.cr * rF);
+            q.ypt = p.ypt * yF;
+            q.ypf = (p.ypf || 1) * yF;      // so QB passing yards can undo receiver adjustments
+            return q;
+          }) });
+        };
+        cur = Object.assign({}, cur, { away: adj(cur.away), home: adj(cur.home) });
+      }
+      return simulateGame(Object.assign({}, cur, { _calibrated: true }));
     }
     var N = input.sims || 10000, R = rng(input.seed || 12345);
     var sc = Object.assign({ rec: 0.5, bonus: true, fumble: -2 }, input.scoring || {});
@@ -109,7 +129,7 @@
     var idx = {}; all.forEach(function(p, i){ idx[p.id] = i; });
 
     var fp = new Float32Array(np * N);
-    var passSum = new Float64Array(np);         // fantasy points, player-major: fp[i*N + s]
+    var passSum = new Float64Array(np), recYSum = new Float64Array(np), rushYSum = new Float64Array(np), recSum = new Float64Array(np), passTdSum = new Float64Array(np);         // fantasy points, player-major: fp[i*N + s]
     var td = new Uint8Array(np * N);           // rush+rec TDs
     var bonus = new Uint8Array(np * N);        // hit any yardage bonus
     var scores = [new Uint8Array(N), new Uint8Array(N)];
@@ -158,7 +178,7 @@
             y = Math.round((p.ypt / p.cr) * eff * Math.exp(0.75 * R.n() - 0.28));
             // QB passing yards use the receiver's unadjusted yards, so calibrating a receiver
             // to his projection doesn't push his QB's yardage (and 300-yard bonus odds) around.
-            rec[i]++; recY[i] += y; teamPassY += y / (p.yf || 1);
+            rec[i]++; recY[i] += y; teamPassY += y / (p.ypf || 1);
             if (R.u() < 0.008) fum[i]++;
           }
         }
@@ -203,6 +223,7 @@
             for (var g = 0; g < me.nFG; g++){ var r2 = R.u(); f += r2 < 0.5 ? 3 : r2 < 0.82 ? 4 : 5; }
             f += me.xps;
           } else {
+            recYSum[i] += recY[i]; rushYSum[i] += rushY[i]; recSum[i] += rec[i]; passTdSum[i] += passTD[i];
             f = 0.04 * passY[i] + 4 * passTD[i] - ints[i] + 0.1 * (rushY[i] + recY[i]) + sc.rec * rec[i] + 6 * tds[i] + sc.fumble * fum[i];
             if (sc.bonus){
               if (passY[i] >= 300){ f += 3; b = 1; }
@@ -227,7 +248,7 @@
       var sorted = Array.prototype.slice.call(fp.subarray(off, off + N)).sort(function(a, b){ return a - b; });
       return { id: p.id, name: p.name, pos: p.pos, team: p.team, salary: p.salary, target: p.target,
                rawMean: raw, calib: f, mean: raw * f, p25: sorted[Math.floor(N * 0.25)], p50: sorted[Math.floor(N * 0.5)], p90: sorted[Math.floor(N * 0.9)],
-               pTD: tdHit / N, pBonus: bHit / N, top1: 0, topK: 0, valueHit: 0 };
+               pTD: tdHit / N, pBonus: bHit / N, recY: recYSum[i] / N, rushY: rushYSum[i] / N, rec: recSum[i] / N, passY: passSum[i] / N, passTD: passTdSum[i] / N, top1: 0, topK: 0, valueHit: 0 };
     });
 
     // How often each player is the game's top scorer, and in its top K (K = 6 for FD Single Game).
