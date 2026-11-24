@@ -8148,15 +8148,24 @@
     }
     return u;
   }
-  // The market's passing-yards number for a QB (average of whichever sources posted one).
-  // Each source stores yardage as fantasy points, so dividing by 0.04 turns it back into yards.
-  function simPassYdsLine(p){
-    var nm = normalizeName(p.name), v = [];
+  // The market's stat lines for a player, averaged over whichever sources (Unabated, Kalshi,
+  // Polymarket) posted each one. Every source stores a stat as fantasy points, so dividing by
+  // that stat's scoring weight turns it back into yards / catches / TD odds.
+  function simMarketLines(p){
+    var nm = normalizeName(p.name), acc = {};
+    var add = function(k, v){ if (v > 0 && isFinite(v)){ (acc[k] = acc[k] || []).push(v); } };
     [marketProjections[nm], kalshiProjections[nm], polymarketProjections[nm]].forEach(function(src){
-      var b = src && src.breakdown && src.breakdown.passYards;
-      if (b && b.value > 0) v.push(b.value / 0.04);
+      var b = src && src.breakdown; if (!b) return;
+      if (b.passYards) add('passYds', b.passYards.value / PROP_BET_TYPES.passYards.mult);
+      if (b.passTD) add('passTD', b.passTD.impliedMean != null ? b.passTD.impliedMean : b.passTD.value / PROP_BET_TYPES.passTD.mult);
+      if (b.rushYards) add('rushYds', b.rushYards.value / PROP_BET_TYPES.rushYards.mult);
+      if (b.recYards) add('recYds', b.recYards.value / PROP_BET_TYPES.recYards.mult);
+      if (b.receptions) add('rec', b.receptions.value / PROP_BET_TYPES.receptions.mult);
+      if (b.attd) add('attd', b.attd.value / PROP_BET_TYPES.attd.mult);
     });
-    return v.length ? v.reduce(function(a, b){ return a + b; }, 0) / v.length : 0;
+    var out = {};
+    Object.keys(acc).forEach(function(k){ out[k] = acc[k].reduce(function(a, b){ return a + b; }, 0) / acc[k].length; });
+    return out;
   }
   function simBuildInput(g, sims){
     var sides = gameSides(g), teamsIn = [];
@@ -8167,7 +8176,7 @@
       }).map(function(p){
         var target = effectiveFppg(p) || 0;
         var x = Object.assign({ id: p.id, name: p.name, pos: p.position, team: p.team, salary: p.salary, target: target }, simUsage(p, target));
-        if (p.position === 'QB') x.passYdsLine = simPassYdsLine(p);
+        x.mkt = simMarketLines(p);
         return x;
       }).filter(function(x){ return x.target >= 0.5 || x.pos === 'DEF' || x.pos === 'K'; });
       // One QB per team: the starter (highest salary). Backups would otherwise take carries.
