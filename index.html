@@ -493,6 +493,7 @@
       <button class="mode-btn" id="singleGameBtn">Single Game</button>
       <button class="mode-btn" id="viewPropsBtn">Props</button>
       <button class="mode-btn" id="viewPaceBtn">Pace</button>
+      <button class="mode-btn" id="viewSimBtn" title="Run 10,000 simulations of each game: ceilings, TD odds, and how often each player is a top scorer.">Sim</button>
     </div>
     <div class="mode-toggle" style="margin-left:10px;">
       <button class="mode-btn active" id="fdPlatformBtn">FanDuel</button>
@@ -814,6 +815,23 @@
   </section>
 </div>
 
+<div id="simView" style="display:none;">
+  <section>
+    <div class="section-head">
+      <h2>Game simulator</h2>
+      <div class="sub">Simulates each game drive by drive. Every player's average is matched to his projection (current Projection Source), so the sim adds the shape: ceilings, TD odds, and how often he's a top scorer in his game.</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">
+      <div class="field"><label>Game</label><select id="simGameSel" style="font-size:12px;min-width:170px;"><option value="">All games</option></select></div>
+      <div class="field"><label>Sims per game</label><input id="simCount" type="number" min="1000" max="50000" step="1000" value="10000" style="width:80px;"></div>
+      <button class="primary" id="simRunBtn">Run simulation</button>
+      <span id="simStatus" style="font-size:12px;color:var(--muted);">Load games and the player pool on the Main Slate tab, then run.</span>
+    </div>
+    <div id="simGames"></div>
+    <div style="overflow-x:auto;margin-top:10px;"><table class="pp-table" id="simTbl"></table></div>
+  </section>
+</div>
+
 <div id="propsView" style="display:none;">
   <section>
     <div class="section-head">
@@ -858,6 +876,7 @@
 <script src="nfl_rosters_2026.js"></script>
 <script src="gamelogs_2026.js" onerror="void 0"></script>
 <script src="pace_2026.js" onerror="void 0"></script>
+<script src="sim_engine.js" onerror="void 0"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script>
 (function(){
@@ -3285,9 +3304,11 @@
     var $ = function(id){ return document.getElementById(id); };
     $('viewPropsBtn').addEventListener('click', function(){ propsShowView('props'); });
     $('viewPaceBtn').addEventListener('click', function(){ propsShowView('pace'); });
+    $('viewSimBtn').addEventListener('click', function(){ propsShowView('sim'); });
     // Main Slate / Single Game bring the optimizer back; FD/DK leave whichever tab is open alone.
     $('mainSlateBtn').addEventListener('click', function(){ propsShowView('opt'); });
     $('singleGameBtn').addEventListener('click', function(){ propsShowView('opt'); });
+    $('shortSlateBtn').addEventListener('click', function(){ propsShowView('opt'); });
     ['fdPlatformBtn', 'dkPlatformBtn'].forEach(function(id){
       $(id).addEventListener('click', function(){ setTimeout(propsSyncTabs, 0); });
     });
@@ -3339,25 +3360,29 @@
       propsRender();
     });
   }
-  var propsViewOn = false, paceViewOn = false;
+  var propsViewOn = false, paceViewOn = false, simViewOn = false;
   function propsSyncTabs(){
-    document.getElementById('optView').style.display = (propsViewOn || paceViewOn) ? 'none' : '';
+    document.getElementById('optView').style.display = (propsViewOn || paceViewOn || simViewOn) ? 'none' : '';
     document.getElementById('propsView').style.display = propsViewOn ? '' : 'none';
     document.getElementById('viewPropsBtn').classList.toggle('active', propsViewOn);
-    document.getElementById('mainSlateBtn').classList.toggle('active', !propsViewOn && !paceViewOn && slateMode === 'main');
-    document.getElementById('singleGameBtn').classList.toggle('active', !propsViewOn && !paceViewOn && slateMode === 'sg');
-    document.getElementById('shortSlateBtn').classList.toggle('active', !propsViewOn && !paceViewOn && slateMode === 'tg');
+    document.getElementById('mainSlateBtn').classList.toggle('active', !propsViewOn && !paceViewOn && !simViewOn && slateMode === 'main');
+    document.getElementById('singleGameBtn').classList.toggle('active', !propsViewOn && !paceViewOn && !simViewOn && slateMode === 'sg');
+    document.getElementById('shortSlateBtn').classList.toggle('active', !propsViewOn && !paceViewOn && !simViewOn && slateMode === 'tg');
     document.getElementById('paceView').style.display = paceViewOn ? '' : 'none';
     document.getElementById('viewPaceBtn').classList.toggle('active', paceViewOn);
+    document.getElementById('simView').style.display = simViewOn ? '' : 'none';
+    document.getElementById('viewSimBtn').classList.toggle('active', simViewOn);
   }
   function propsShowView(v){
     propsViewOn = v === 'props';
     paceViewOn = v === 'pace';
+    simViewOn = v === 'sim';
     propsSyncTabs();
     // Main/SG clicks update their own highlight after this runs, so re-sync once they have.
     setTimeout(propsSyncTabs, 0);
     if (propsViewOn) propsRender();
     if (paceViewOn) paceRender();
+    if (simViewOn) simRender();
   }
   propsLoadLog();
   try { var sb = JSON.parse(localStorage.getItem('slateIqPropsBooks') || '{}'); if (sb && typeof sb === 'object') PROPS_CFG.books = sb; } catch(e){}
@@ -7975,7 +8000,7 @@
     var oe = (A.proe != null && H.proe != null) ? (A.proe + H.proe) / 2 : null;
     return { aE: aE, hE: hE, proj: aE + hE, spp: sp, proe: oe, A: A, H: H };
   }
-  var paceSort = { games: { k: 'proj', d: -1 }, teams: { k: 'ppg', d: -1 } };
+  var paceSort = { games: { k: 'proj', d: -1 }, teams: { k: 'ppg', d: -1 }, sim: { k: 'topK', d: -1 } };
   function paceTint(rank, n, hiGood){
     if (rank == null || !n) return '';
     var q = rank / (n - 1 || 1);               // 0 = top of the sort order
@@ -8011,7 +8036,7 @@
       th.addEventListener('click', function(){
         var k = th.getAttribute('data-pk');
         paceSort[key] = { k: k, d: paceSort[key].k === k ? -paceSort[key].d : (k === 'team' || k === 'game' || k === 'nspp' || k === 'spp' ? 1 : -1) };
-        paceRender();
+        if (key === 'sim') simRender(); else paceRender();
       });
     });
   }
@@ -8061,6 +8086,127 @@
     ], trows, 'teams');
   }
   window.__paceEngine = { game: paceGame, team: paceTeam, render: paceRender };
+
+  // ── Game simulator (engine in sim_engine.js) ──────────────────────────────
+  // Builds each game's inputs from what Slate IQ already has: implied totals from the game
+  // lines, usage + efficiency from the game logs (same recipe as the Model column), and each
+  // player's projection from the current Projection Source as the calibration target.
+  var simResults = {}, simMeta = null;
+  var SIM_POS = { QB: 1, RB: 1, WR: 1, TE: 1, DEF: 1, K: 1 };
+  function simUsage(p, target){
+    var L = MODEL.LG[p.position] || MODEL.LG.WR, isQB = p.position === 'QB';
+    var e = (p.position in MODEL.LG) ? glFind(p.name, p.position, p.team) : null;
+    var u = { tg: 0, ca: 0, at: 0, cr: L.cr || 0.65, ypt: L.ypt || 7.5, tdt: L.tdt || 0.045, ypc: L.ypc, tdc: L.tdc, tda: L.tda || 0, inta: L.inta || 0, logs: false };
+    if (e && e.w && e.w.length >= 2){
+      var hist = e.w.slice(-MODEL.WINDOW), n = hist.length, W = 0, tg = 0, ca = 0, at = 0, sRec = 0, sReY = 0, sReT = 0, sRuY = 0, sRuT = 0, sPT = 0, sInt = 0;
+      hist.forEach(function(r, i){
+        var w = Math.pow(MODEL.DEC, n - 1 - i);
+        W += w; tg += w * r[10]; ca += w * r[7]; at += w * r[3];
+        sRec += w * r[11]; sReY += w * r[12]; sReT += w * r[13]; sRuY += w * r[8]; sRuT += w * r[9]; sPT += w * r[5]; sInt += w * r[6];
+      });
+      var Lr = isQB ? MODEL.LG.RB : L;   // QBs barely get targets; any they do use RB rates
+      u.tg = tg / W; u.ca = ca / W; u.at = at / W;
+      u.ypt = (sReY + 40 * Lr.ypt) / (tg + 40); u.cr = (sRec + 40 * Lr.cr) / (tg + 40); u.tdt = (sReT + 300 * Lr.tdt) / (tg + 300);
+      u.ypc = (sRuY + 100 * L.ypc) / (ca + 100); u.tdc = (sRuT + 250 * L.tdc) / (ca + 250);
+      if (isQB){ u.tda = (sPT + 300 * L.tda) / (at + 300); u.inta = (sInt + 300 * L.inta) / (at + 300); }
+      u.logs = true;
+    } else if (p.position in MODEL.LG){
+      // No game logs (rookie, new team, just activated): rough usage from his projection.
+      if (isQB){ u.at = 32; u.ca = 4; }
+      else if (p.position === 'RB'){ u.ca = target * 0.8; u.tg = target * 0.2; }
+      else u.tg = target / 1.5;
+    }
+    return u;
+  }
+  function simBuildInput(g, sims){
+    var sides = gameSides(g), teamsIn = [];
+    [sides.away, sides.home].forEach(function(side){
+      var code = normalizeTeam(side.team);
+      var roster = players.filter(function(p){
+        return normalizeTeam(p.team) === code && SIM_POS[p.position] && p.salary > 0 && !isOut(p);
+      }).map(function(p){
+        var target = effectiveFppg(p) || 0;
+        return Object.assign({ id: p.id, name: p.name, pos: p.position, team: p.team, salary: p.salary, target: target }, simUsage(p, target));
+      }).filter(function(x){ return x.target >= 0.5 || x.pos === 'DEF' || x.pos === 'K'; });
+      teamsIn.push({ team: side.team, implied: side.implied, players: roster });
+    });
+    return {
+      away: teamsIn[0], home: teamsIn[1], sims: sims, seed: (g.away + g.home).split('').reduce(function(h, c){ return (h * 31 + c.charCodeAt(0)) >>> 0; }, 20261124),
+      marketTotal: g.total, topK: 6, valueMult: valueTargetMultiplier(),
+      scoring: { rec: PROP_BET_TYPES.receptions.mult, bonus: true, fumble: platform === 'dk' ? -1 : -2 }
+    };
+  }
+  async function simRun(){
+    var status = document.getElementById('simStatus'), btn = document.getElementById('simRunBtn');
+    if (typeof SlateSim === 'undefined'){ status.textContent = 'sim_engine.js not found next to this page.'; return; }
+    var sel = document.getElementById('simGameSel').value;
+    var list = games.filter(function(g){ return !sel || String(g.id) === sel; });
+    if (!list.length){ status.textContent = 'No games loaded - load the slate on the Main Slate tab first.'; return; }
+    if (!players.length){ status.textContent = 'No player pool loaded - upload the FanDuel/DraftKings CSV first.'; return; }
+    var sims = Math.max(1000, Math.min(50000, parseInt(document.getElementById('simCount').value, 10) || 10000));
+    btn.disabled = true; simResults = {};
+    var t0 = Date.now();
+    for (var i = 0; i < list.length; i++){
+      status.textContent = 'Simulating ' + list[i].away + ' @ ' + list[i].home + ' (' + (i + 1) + ' of ' + list.length + ')...';
+      await new Promise(function(r){ setTimeout(r, 0); });
+      try { simResults[list[i].id] = SlateSim.simulateGame(simBuildInput(list[i], sims)); }
+      catch(e){ console.warn('Sim failed for', list[i].away + ' @ ' + list[i].home, e); }
+    }
+    var srcName = { fppg: 'FanDuel fppg', market: 'Market', blend: 'Blend', model: 'Model' }[projSource] || projSource;
+    simMeta = { sims: sims, at: new Date(), src: srcName, secs: (Date.now() - t0) / 1000 };
+    btn.disabled = false;
+    simRender();
+  }
+  function simRender(){
+    var sel = document.getElementById('simGameSel'), cur = sel.value;
+    sel.innerHTML = '<option value="">All games</option>' + games.map(function(g){
+      return '<option value="' + g.id + '"' + (String(g.id) === cur ? ' selected' : '') + '>' + g.away + ' @ ' + g.home + '</option>';
+    }).join('');
+    var ids = Object.keys(simResults), status = document.getElementById('simStatus');
+    var gEl = document.getElementById('simGames'), tEl = document.getElementById('simTbl');
+    if (!ids.length){ gEl.innerHTML = ''; tEl.innerHTML = ''; return; }
+    status.textContent = simMeta.sims.toLocaleString() + ' sims per game, ' + ids.length + ' game' + (ids.length > 1 ? 's' : '') +
+      ' in ' + simMeta.secs.toFixed(1) + 's. Calibrated to: ' + simMeta.src + '. Run again after changing projections or lines.';
+    var pc = function(v){ return (v * 100).toFixed(0) + '%'; };
+    gEl.innerHTML = ids.map(function(id){
+      var G = simResults[id].game;
+      return '<div style="font-size:12.5px;padding:4px 0;">' +
+        '<b>' + G.away + ' ' + G.awayMean.toFixed(1) + ' - ' + G.home + ' ' + G.homeMean.toFixed(1) + '</b>' +
+        ' <span style="color:var(--muted);">(market ' + G.awayImplied.toFixed(1) + ' - ' + G.homeImplied.toFixed(1) + ')</span>' +
+        ' &middot; ' + G.away + ' wins ' + pc(G.awayWin) + ', ' + G.home + ' ' + pc(G.homeWin) +
+        (G.pOver != null ? ' &middot; Over ' + G.marketTotal + ': ' + pc(G.pOver) : '') + '</div>';
+    }).join('');
+    var rows = [];
+    ids.forEach(function(id){
+      var R = simResults[id];
+      R.players.forEach(function(o){
+        rows.push({ id: o.id, star: topPlayers[o.id] ? 1 : 0, name: o.name, pos: o.pos, team: o.team, game: R.game.away + '@' + R.game.home,
+          salary: o.salary, mean: o.mean, p50: o.p50, p90: o.p90, pTD: o.pTD, pBonus: o.pBonus, top1: o.top1, topK: o.topK, valueHit: o.valueHit,
+          calib: o.calib });
+      });
+    });
+    var f1 = function(v){ return v.toFixed(1); };
+    paceTable(tEl, [
+      { k: 'star', h: 'Top', f: function(v, r){ return '<button class="tp-add-btn' + (v ? ' in-tp' : '') + '" data-sim-tp="' + r.id + '">' + (v ? '&#9733;' : '&#9734;') + '</button>'; } },
+      { k: 'name', h: 'Player', left: true },
+      { k: 'pos', h: 'Pos' },
+      { k: 'team', h: 'Team' },
+      { k: 'salary', h: 'Salary', f: function(v){ return '$' + v.toLocaleString(); } },
+      { k: 'mean', h: 'Proj', f: f1, tip: 'Simulated average - matched to the player\'s projection, so it equals the number you see on the Main Slate tab.' },
+      { k: 'p50', h: 'Median', f: f1, tip: 'Half the sims land above this, half below.' },
+      { k: 'p90', h: 'Ceiling', f: f1, tint: 1, tip: '90th percentile - his score in a top-10% game. Tournament upside.' },
+      { k: 'pTD', h: 'TD %', f: pc, tint: 1, tip: 'Chance of a rushing or receiving TD (DEF: defensive/return TD). QB passing TDs not counted here.' },
+      { k: 'pBonus', h: 'Bonus %', f: pc, tint: 1, tip: 'Chance of a yardage bonus: 300+ pass, 100+ rush, or 100+ receiving yards.' },
+      { k: 'top1', h: 'Top scorer %', f: pc, tint: 1, tip: 'How often he scores the most fantasy points of anyone in his game. The natural MVP / Captain number.' },
+      { k: 'topK', h: 'Top 6 %', f: pc, tint: 1, tip: 'How often he finishes among the 6 highest scorers in his game (salary ignored). A Single Game lineup is 6 players.' },
+      { k: 'valueHit', h: 'Value %', f: pc, tint: 1, tip: 'How often he reaches the salary-based value target for this mode (' + valueTargetMultiplier() + 'x salary/1000).' }
+    ], rows, 'sim');
+    tEl.querySelectorAll('[data-sim-tp]').forEach(function(btn){
+      btn.addEventListener('click', function(ev){ ev.stopPropagation(); toggleTopPlayer(btn.getAttribute('data-sim-tp')); simRender(); });
+    });
+  }
+  document.getElementById('simRunBtn').addEventListener('click', simRun);
+  window.__simEngine = { run: simRun, render: simRender, input: simBuildInput, results: function(){ return simResults; } };
 
   // ── Player game logs (hover) ──────────────────────────────────────────────
   var glIndex = null, glIndex2 = null;
