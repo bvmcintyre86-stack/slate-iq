@@ -1350,7 +1350,10 @@
     if (!sigma || threshold == null || prob == null || prob <= 0.01 || prob >= 0.99) return threshold;
     var z = invNormCdf(1 - prob);
     if (!isFinite(z)) return threshold;
-    return threshold - z * sigma;
+    // A yardage average can't be below threshold x prob ("10+ yards" at 20% means at least
+    // 2 yards on average). The bell curve undershoots for low-volume stats like a QB's
+    // rushing, and could even go negative (-17 rushing yards for Cousins), so floor it there.
+    return Math.max(threshold * prob, threshold - z * sigma);
   }
 
   // Passing TDs (unlike ATTD, which is a one-time "did they score at all"
@@ -2032,8 +2035,14 @@
         // EV-proxy logic already used for Unabated's alt-line fallback: a
         // near-even-money line sits closest to the market's real expectation.
         var list = kalshiCleanList(stats[sk], normName);
+        // Yardage: only rungs priced 10-90% can be backed out into a line. A rung near 0% or
+        // 100% (often a dead one-sided quote) gave nonsense like -2 passing yards for Cousins,
+        // so if no rung is in that band this source is left out for the stat.
+        if (list && list.length && list[0].kind === 'yardage'){
+          list = list.filter(function(c){ return c.prob >= 0.10 && c.prob <= 0.90; });
+        }
         var best = null, bestDist = Infinity;
-        list.forEach(function(c){
+        (list || []).forEach(function(c){
           var dist = Math.abs(c.prob - 0.5);
           if (dist < bestDist){ bestDist = dist; best = c; }
         });
@@ -2486,8 +2495,14 @@
         // priced closest to a coinflip is the best available expected-value
         // stand-in for that player/stat.
         var list = kalshiCleanList(stats[sk], normName);
+        // Yardage: only rungs priced 10-90% can be backed out into a line. A rung near 0% or
+        // 100% (often a dead one-sided quote) gave nonsense like -2 passing yards for Cousins,
+        // so if no rung is in that band this source is left out for the stat.
+        if (list && list.length && list[0].kind === 'yardage'){
+          list = list.filter(function(c){ return c.prob >= 0.10 && c.prob <= 0.90; });
+        }
         var best = null, bestDist = Infinity;
-        list.forEach(function(c){
+        (list || []).forEach(function(c){
           var dist = Math.abs(c.prob - 0.5);
           if (dist < bestDist){ bestDist = dist; best = c; }
         });
@@ -6494,14 +6509,19 @@
   // Prediction = Kalshi and Polymarket merged into ONE source: their plain average where both
   // have the player, whichever one exists otherwise. It counts once (not twice) in the
   // market average, so sportsbooks (Unabated) and prediction markets each carry half.
-  function predictionProjection(norm){
-    var kp = kalshiProjections[norm], pp = polymarketProjections[norm], parts = [];
-    if (kp) parts.push({ source: 'Kalshi', fp: kp.fp });
-    if (pp) parts.push({ source: 'Polymarket', fp: pp.fp });
+  function predictionProjection(norm, pos){
+    var kp = kalshiProjections[norm], pp = polymarketProjections[norm], parts = [], left = [];
+    // With a position, a venue missing one of his core props (e.g. no usable passing-yards
+    // line) is left out of the average while the other venue is complete - an incomplete
+    // venue counts the missing stat as zero and drags the average down.
+    var kOk = kp && (!pos || mktComplete(kp, pos)), pOk = pp && (!pos || mktComplete(pp, pos));
+    if (pos && !kOk && !pOk){ kOk = !!kp; pOk = !!pp; }
+    if (kp && kOk) parts.push({ source: 'Kalshi', fp: kp.fp }); else if (kp) left.push('Kalshi');
+    if (pp && pOk) parts.push({ source: 'Polymarket', fp: pp.fp }); else if (pp) left.push('Polymarket');
     if (!parts.length) return null;
     var fp = parts.reduce(function(a, b){ return a + b.fp; }, 0) / parts.length;
     return { fp: fp, parts: parts, gap: parts.length === 2 ? Math.abs(parts[0].fp - parts[1].fp) : null, kp: kp, pp: pp,
-             label: parts.length === 2 ? 'Kalshi+Polymarket' : parts[0].source };
+             label: parts.length === 2 ? 'Kalshi+Polymarket' : parts[0].source, left: left };
   }
   function predictionTooltip(pr, position){
     if (!pr) return 'No Kalshi or Polymarket data loaded for this player yet.';
@@ -6510,6 +6530,7 @@
       head += ' (average of Kalshi ' + pr.parts[0].fp.toFixed(1) + ' and Polymarket ' + pr.parts[1].fp.toFixed(1) + ')';
       if (pr.gap >= 2) head += '\nNote: the two venues differ by ' + pr.gap.toFixed(1) + ' pts - check which one is thin.';
     } else head += ' (' + pr.parts[0].source + ' only)';
+    if (pr.left && pr.left.length) head += '\n' + pr.left.join(' and ') + ' left out: missing a core prop (no usable line yet).';
     var out = [head, ''];
     if (pr.kp) out.push(kalshiTooltip(pr.kp, position), '');
     if (pr.pp) out.push(polymarketTooltip(pr.pp, position));
@@ -7674,8 +7695,8 @@
       if (sortKey === 'mkt'){
         av = mktSortValue(a); bv = mktSortValue(b);
       } else if (sortKey === 'kalshi' || sortKey === 'prediction'){
-        var akp = predictionProjection(normalizeName(a.name));
-        var bkp = predictionProjection(normalizeName(b.name));
+        var akp = predictionProjection(normalizeName(a.name), a.position);
+        var bkp = predictionProjection(normalizeName(b.name), b.position);
         av = akp ? akp.fp : -Infinity;
         bv = bkp ? bkp.fp : -Infinity;
       } else if (sortKey === 'model'){
@@ -7783,7 +7804,7 @@
           return '<span style="color:var(--teal);opacity:.85;display:inline-block;max-width:84px;line-height:1.2;" title="'+tip.replace(/"/g,'&quot;')+'">'+defLineProjection(p).toFixed(1)+' <span style="font-size:11px;">line</span>'+extra+'</span>';
         })() : '—'))+'</td>'+
         (function(){
-          var pr = predictionProjection(normalizeName(p.name));
+          var pr = predictionProjection(normalizeName(p.name), p.position);
           return '<td class="num" style="color:'+(pr?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+predictionTooltip(pr,p.position).replace(/"/g,'&quot;')+'">'+(pr ? pr.fp.toFixed(1)+(pr.gap !== null && pr.gap >= 2 ? ' <span style="opacity:.6;font-size:11px;">&#177;</span>' : '') : '—')+'</td>';
         })()+
         '<td class="num polymkt-col" style="color:'+(pp?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(pp,p.position).replace(/"/g,'&quot;')+'">'+(pp ? polymarketDisplayTotal(pp).toFixed(1) : '—')+'</td>'+
@@ -8442,7 +8463,7 @@
     var mkt = marketProjections[normalizeName(p.name)];
     var mktCell = '<td class="mono" style="color:'+(mkt?'var(--teal)':'var(--muted)')+';cursor:help;" title="'+mktTooltip(mkt,p.position).replace(/"/g,'&quot;')+'">'+(mkt ? mktDisplayTotal(mkt).toFixed(1)+(mktCoverage(mkt,p.position)?' <span style="opacity:.6;font-size:11px;">('+mktCoverage(mkt,p.position).matched+'/'+mktCoverage(mkt,p.position).total+')</span>':'') : '—')+'</td>';
     var kalshi = kalshiProjections[normalizeName(p.name)];
-    var predTP = predictionProjection(normalizeName(p.name));
+    var predTP = predictionProjection(normalizeName(p.name), p.position);
     var kalshiCell = '<td class="mono" style="color:'+(predTP?'var(--gold)':'var(--muted)')+';cursor:help;" title="'+predictionTooltip(predTP,p.position).replace(/"/g,'&quot;')+'">'+(predTP ? predTP.fp.toFixed(1) : '—')+'</td>';
     var polymkt = polymarketProjections[normalizeName(p.name)];
     var polymktCell = '<td class="mono polymkt-col" style="color:'+(polymkt?'var(--violet)':'var(--muted)')+';cursor:help;" title="'+polymarketTooltip(polymkt,p.position).replace(/"/g,'&quot;')+'">'+(polymkt ? polymarketDisplayTotal(polymkt).toFixed(1) : '—')+'</td>';
@@ -9487,7 +9508,7 @@
         var mktVal = mp ? mktDisplayTotal(mp) : null;
         var kalshiVal = kp ? kalshiDisplayTotal(kp) : null;
         var polymktVal = pp ? polymarketDisplayTotal(pp) : null;
-        var predRec = predictionProjection(normalizeName(p.name));
+        var predRec = predictionProjection(normalizeName(p.name), p.position);
         var predictionVal = predRec ? Math.round(predRec.fp * 10) / 10 : null;
         var combinedVal = combined ? Math.round(combined.fp * 10) / 10 : null;
         return {
