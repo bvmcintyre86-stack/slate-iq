@@ -1815,7 +1815,13 @@
         var mine = withEv.filter(function(c){ return c.teams && codes.some(function(t){ return c.teams.indexOf(t) === 0 || c.teams.slice(-t.length) === t; }); });
         if (mine.length) pool = mine;
       }
-      var minDate = Math.min.apply(null, pool.map(function(c){ return c.date; }));
+      // Kalshi keeps past games listed as open until they settle (prices frozen at kickoff, or
+      // drifted to ~0/100% after the game), so "earliest open game" could be last week's or
+      // older. Take the earliest game dated today or later; if there's none, the most recent.
+      var now = new Date(), today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+      var upcoming = pool.filter(function(c){ return c.date >= today; });
+      var minDate = upcoming.length ? Math.min.apply(null, upcoming.map(function(c){ return c.date; }))
+                                    : Math.max.apply(null, pool.map(function(c){ return c.date; }));
       var games = {};
       pool.forEach(function(c){ games[c.date + '|' + c.teams] = 1; });
       if (Object.keys(games).length > 1){
