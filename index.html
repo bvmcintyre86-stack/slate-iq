@@ -2720,6 +2720,7 @@
     return !!polymarketProjections[norm];
   }
   window.debugPolymarketPlayer = debugPolymarketPlayer;
+  window.debugPlayerProps = debugPlayerProps;
   // Console: debugKalshiPlayer('kirk cousins') - every Kalshi rung loaded for a player, grouped
   // by stat and series, plus which rungs survived cleanup and what the projection used.
   window.debugKalshiPlayer = function(q){
@@ -2803,6 +2804,58 @@
   // book, or kind is omitted (e.g. the debug console tools below, which
   // just want to show "what would we actually use" for a specific book's
   // own number) - identical behavior to before in that case.
+  // Standard (non-alt) Unabated line for one player/stat, across approved books:
+  //  - Each book's Over price is de-vigged against its Under on the same line (no Under posted:
+  //    a typical 4.5% two-way overround is removed instead).
+  //  - Yardage / receptions: each book's line + fair price is turned into an implied average
+  //    (Over 64.5 at -140 -> ~69, not 64.5), then the TRUE median across books. Before, the raw
+  //    line number was used and the LOWER of the two middle books on even counts - both low-biased.
+  //  - Pass TD: expected TDs solved per book (books post 0.5 or 1.5), then averaged.
+  //  - Anytime TD (Yes-only): average implied probability, as before.
+  function consensusLine(overMsl, underMsl, statKey){
+    if (!overMsl) return null;
+    var cfg = PROP_BET_TYPES[statKey] || {}, kind = cfg.kind;
+    var first = function(msl, src){
+      var l = msl && msl[src];
+      if (!l || l.statusId === 3) return null;
+      var a = (l.alternateLines && l.alternateLines.length) ? l.alternateLines[0] : l;
+      if (a.price == null) return null;
+      return { price: a.price, points: a.points !== undefined ? a.points : l.points };
+    };
+    var quotes = [];
+    for (var i = 0; i < SPORTSBOOK_PRIORITY.length; i++){
+      var src = String(SPORTSBOOK_PRIORITY[i]);
+      var o = first(overMsl, src);
+      if (!o) continue;
+      var pO = americanToProb(o.price);
+      if (pO == null) continue;
+      var u = first(underMsl, src), pU = u && u.points === o.points ? americanToProb(u.price) : null;
+      var fair = pU != null ? pO / (pO + pU) : Math.min(0.99, pO / 1.045);
+      quotes.push({ price: o.price, points: o.points, sourceId: src, fair: fair, devig: pU != null });
+    }
+    if (!quotes.length) return null;
+    var med = function(a){ a = a.slice().sort(function(x, y){ return x - y; }); var m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+    var out = { price: quotes[0].price, sourceId: quotes[0].sourceId, consensusCount: quotes.length,
+                devigged: quotes.filter(function(q){ return q.devig; }).length };
+    if (kind === 'yardage'){
+      var means = quotes.map(function(q){ return q.points == null ? null : impliedStatMean(statKey, q.points, q.fair); })
+                        .filter(function(v){ return v != null && isFinite(v); });
+      if (!means.length) return null;
+      out.points = med(means);
+      out.rawLine = med(quotes.map(function(q){ return q.points; }));
+      return out;
+    }
+    var avgFair = quotes.reduce(function(a, q){ return a + q.fair; }, 0) / quotes.length;
+    out.points = quotes[0].points;
+    out.consensusProb = avgFair;
+    out.price = avgFair >= 0.5 ? -Math.round(avgFair / (1 - avgFair) * 100) : Math.round((1 - avgFair) / avgFair * 100);
+    if (statKey === 'passTD'){
+      var tds = quotes.map(function(q){ return impliedTdMean(q.points, q.fair); }).filter(function(v){ return v != null; });
+      if (tds.length) out.tdMean = tds.reduce(function(a, b){ return a + b; }, 0) / tds.length;
+    }
+    return out;
+  }
+
   function pickBestLine(marketSourceLines, kind){
     if (!marketSourceLines) return null;
     var quotes = [];
@@ -3529,6 +3582,7 @@
     // later for the FanDuel yardage-bonus calculation, which needs the FULL
     // set of alt thresholds, not just whichever one won the normal fallback.
     var altAccum = {};
+    var overRaw = {}, underRaw = {};   // personId -> statKey -> marketSourceLines, by side
 
     if (!game || !game.pregame){
       diag.push('single unfiltered request: no data returned');
@@ -3546,10 +3600,16 @@
           var side = sides[sideKey];
           var personId = side.personId;
           if (!personId) continue;
-          // Over / Yes side only (sideIndex 0). Both sides share a yardage line, but for TD props
-          // the Under's price was being read as the Over's probability whenever it came last -
-          // e.g. Under 1.5 pass TDs at -170 (63%) used as P(2+ TDs), inflating Pass TD ~50%.
-          if (side.sideIndex === 1) continue;
+          // Sides: sideIndex 0 = Over / Yes, 1 = Under. The Under used to overwrite the Over, so
+          // its price was read as the Over's probability (Pass TD ~50% too high). Now the Under is
+          // kept separately, only to de-vig the Over price on the same line.
+          if (side.sideIndex === 1){
+            if (!isAlt){
+              if (!underRaw[personId]) underRaw[personId] = {};
+              underRaw[personId][thisKey] = side.marketSourceLines;
+            }
+            continue;
+          }
           if (!isAlt && side.marketSourceLines && Object.keys(side.marketSourceLines).length) s.anyBookMatched++;
 
           if (isAlt){
@@ -3568,12 +3628,19 @@
             continue;
           }
 
-          var best = pickBestLine(side.marketSourceLines, PROP_BET_TYPES[thisKey] && PROP_BET_TYPES[thisKey].kind);
+          if (!overRaw[personId]) overRaw[personId] = {};
+          overRaw[personId][thisKey] = side.marketSourceLines;
+        }
+      }
+      // Now that both sides are in, build each player's line from the Over (de-vigged by the Under).
+      for (var oPid in overRaw){
+        for (var oKey in overRaw[oPid]){
+          var best = consensusLine(overRaw[oPid][oKey], underRaw[oPid] && underRaw[oPid][oKey], oKey);
           if (!best) continue;
-          s.approvedBookMatched++;
-          if (best.consensusCount > 1) s.consensusBooks = (s.consensusBooks || 0) + 1;
-          if (!accum[personId]) accum[personId] = {};
-          accum[personId][thisKey] = best;
+          statsByKey[oKey].approvedBookMatched++;
+          if (best.consensusCount > 1) statsByKey[oKey].consensusBooks = (statsByKey[oKey].consensusBooks || 0) + 1;
+          if (!accum[oPid]) accum[oPid] = {};
+          accum[oPid][oKey] = best;
         }
       }
 
@@ -3663,7 +3730,7 @@
           // prob*mult (correct for ATTD) understates Pass TD whenever the
           // book's line isn't exactly the "1+" threshold. Same Poisson
           // back-out as Kalshi/Polymarket's main loop now use.
-          var tdMean = (sk === 'passTD') ? impliedTdMean(line.points, prob) : null;
+          var tdMean = (sk === 'passTD') ? (line.tdMean != null ? line.tdMean : impliedTdMean(line.points, prob)) : null;
           contribution = tdMean !== null ? tdMean * cfg.mult : (prob === null ? 0 : prob * cfg.mult);
         }
         fp += contribution;
@@ -3890,6 +3957,25 @@
           var thisProb = americanToProb(best.price);
           var usable = thisProb !== null && thisProb > 0.35 && thisProb < 0.65;
           bestDesc += usable ? '  [close to even odds - usable as EV proxy]' : '  [too lopsided - not usable as EV proxy]';
+        }
+        if (!f.entry.betSubType && f.side.sideIndex === 1) return;   // Under side: shown with its Over below
+        if (!f.entry.betSubType){
+          // What the projection actually uses now: each book's Over, de-vigged by its Under.
+          var uSide = null, es = f.entry.sides || {};
+          for (var k2 in es){ if (String(es[k2].personId) === String(pid) && es[k2].sideIndex === 1) uSide = es[k2]; }
+          var uLines = uSide ? uSide.marketSourceLines : null;
+          var per = SPORTSBOOK_PRIORITY.map(String).filter(function(id){ return lines[id] && lines[id].statusId !== 3; }).map(function(id){
+            var oL = lines[id], oA = (oL.alternateLines && oL.alternateLines.length) ? oL.alternateLines[0] : oL;
+            var uL = uLines && uLines[id], uA = uL ? ((uL.alternateLines && uL.alternateLines.length) ? uL.alternateLines[0] : uL) : null;
+            return (SPORTSBOOK_NAMES[id] || ('src' + id)) + ' ' + (oA.points !== undefined ? oA.points : oL.points) + ' o' + oA.price + (uA ? '/u' + uA.price : '');
+          });
+          var cl = consensusLine(lines, uLines, btKey);
+          bestDesc = cl ? (cfg && cfg.kind === 'yardage'
+              ? 'implied average ' + cl.points.toFixed(1) + ' (median posted line ' + cl.rawLine + ', ' + cl.devigged + ' of ' + cl.consensusCount + ' books de-vigged)'
+              : (cl.tdMean != null ? 'expected TDs ' + cl.tdMean.toFixed(2) : 'fair prob ' + Math.round(cl.consensusProb * 100) + '%') + ' across ' + cl.consensusCount + ' books')
+            : 'no approved book has posted this yet';
+          console.log('  ' + btKey + ' - ' + (per.join(', ') || 'none') + ' -> using: ' + bestDesc);
+          return;
         }
         console.log('  ' + btKey + altFlag + ' - books posted: [' + (bookList.join(', ') || 'none') + '] -> using: ' + bestDesc);
 
