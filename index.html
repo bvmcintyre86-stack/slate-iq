@@ -1990,7 +1990,7 @@
             var haveBoth = bid != null && !isNaN(bid) && ask != null && !isNaN(ask) && (bid > 0 && ask > 0);
             var quality = haveBoth ? ((ask - bid) <= KALSHI_MAX_SPREAD ? 0 : 2) : 2;
             if (!haveBoth && last != null && !isNaN(last) && last > 0 && last < 1) quality = 1; // traded recently, no live two-sided quote
-            candidates[norm][rs.key].push({ threshold: threshold, prob: prob, kind: rs.kind, bid: bid, ask: ask, q: quality, date: evDate, teams: evTeams });
+            candidates[norm][rs.key].push({ threshold: threshold, prob: prob, kind: rs.kind, bid: bid, ask: ask, q: quality, date: evDate, teams: evTeams, series: rs.ticker, tk: mkt.ticker || '' });
             try {
             propsRawK.push({ n: norm, nm: name, k: rs.key, thr: threshold, bid: (bid != null && !isNaN(bid)) ? bid : null, ask: (ask != null && !isNaN(ask)) ? ask : null,
                              last: (last != null && !isNaN(last)) ? last : null, date: evDate, teams: evTeams, tk: mkt.ticker || '',
@@ -2022,6 +2022,7 @@
     await Promise.all(Array.from({length: Math.min(CONCURRENCY, relevantSeries.length)}, worker));
 
     var candidateKeys = Object.keys(candidates);
+    window.__kalshiCandidates = candidates;
     console.log('Kalshi candidates object has ' + candidateKeys.length + ' player key(s) right after fetch completed.' +
       (candidateKeys.length ? (' First key: "' + candidateKeys[0] + '" -> ' + JSON.stringify(candidates[candidateKeys[0]])) : ''));
 
@@ -2703,6 +2704,29 @@
     return !!polymarketProjections[norm];
   }
   window.debugPolymarketPlayer = debugPolymarketPlayer;
+  // Console: debugKalshiPlayer('kirk cousins') - every Kalshi rung loaded for a player, grouped
+  // by stat and series, plus which rungs survived cleanup and what the projection used.
+  window.debugKalshiPlayer = function(q){
+    var c = window.__kalshiCandidates || {}, n = normalizeName(q || ''), out = [];
+    var keys = Object.keys(c).filter(function(k){ return k.indexOf(n) >= 0; });
+    if (!keys.length){ console.log('No Kalshi rungs loaded for "' + q + '". Load Prediction props first.'); return; }
+    keys.forEach(function(k){
+      out.push('=== ' + k + ' ===');
+      Object.keys(c[k]).forEach(function(sk){
+        var kept = kalshiCleanList(c[k][sk], k) || [];
+        out.push('-- ' + sk + ': ' + c[k][sk].length + ' rungs loaded, ' + kept.length + ' kept after week/quality cleanup');
+        c[k][sk].forEach(function(r){
+          out.push('   ' + (kept.indexOf(r) >= 0 ? 'KEPT ' : '     ') + (r.series || '?') + ' ' + (r.tk || '') + '  thr ' + r.threshold +
+            '  bid ' + r.bid + ' ask ' + r.ask + '  prob ' + (r.prob != null ? r.prob.toFixed(3) : r.prob) + '  q' + r.q +
+            '  ' + (r.date ? new Date(r.date).toISOString().slice(0, 10) : 'no date') + ' ' + (r.teams || ''));
+        });
+      });
+      var kp = kalshiProjections[k];
+      out.push('-- projection used: ' + (kp ? JSON.stringify(kp.breakdown) : 'none'));
+    });
+    console.log(out.join('\n'));
+    return out.join('\n');
+  };
 
   function americanToProb(price){
     price = Number(price);
