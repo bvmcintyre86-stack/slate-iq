@@ -1712,7 +1712,10 @@
   // That's exactly what produced an absurd "16.5+ receptions, 49% implied"
   // line (really "16.5+ yards on your longest catch", near a coinflip, then
   // multiplied by the receptions point value instead of a yardage one).
-  var KALSHI_EXCLUDE_PATTERNS = [/SEASON/, /CAREER/, /WEEK/, /MOST/, /RECORD/, /LADDER/, /ESCALATOR/, /H2H/, /LONG/];
+  // PRECISE: exact-value markets (KXNFLPASSYDSPRECISE = "exactly N passing yards", one contract per
+  // yard from -1 to 600, nearly all empty books). Not a ladder - one fake 50% rung at -0.5 yards
+  // was setting Cousins's and Stroud's Kalshi passing yards to ~0.
+  var KALSHI_EXCLUDE_PATTERNS = [/SEASON/, /CAREER/, /WEEK/, /MOST/, /RECORD/, /LADDER/, /ESCALATOR/, /H2H/, /LONG/, /PRECISE/];
 
   function classifyKalshiSeries(ticker){
     for (var e=0;e<KALSHI_EXCLUDE_PATTERNS.length;e++){
@@ -1839,7 +1842,9 @@
     if (main.length) out = main;
     var good = out.filter(function(c){ return c.q <= 1; });
     if (good.length && good.length < out.length) kalshiCleanDiag.wideDropped += out.length - good.length;
-    return good.length ? good : out;
+    if (good.length) return good;
+    // Fallback (wide spreads only): never a rung with no bid - its midpoint isn't a price.
+    return out.filter(function(c){ return c.bid == null || c.bid > 0; });
   }
 
   async function fetchKalshiProjections(){
@@ -1995,6 +2000,12 @@
             var haveBoth = bid != null && !isNaN(bid) && ask != null && !isNaN(ask) && (bid > 0 && ask > 0);
             var quality = haveBoth ? ((ask - bid) <= KALSHI_MAX_SPREAD ? 0 : 2) : 2;
             if (!haveBoth && last != null && !isNaN(last) && last > 0 && last < 1) quality = 1; // traded recently, no live two-sided quote
+            // With no bid, (0 + ask) / 2 is not a price (bid 0 / ask 99c -> a fake 49.5%). Use the
+            // last trade if there is one, otherwise mark the rung unusable.
+            if (!haveBoth){
+              if (quality === 1) prob = last;
+              else quality = 2;
+            }
             candidates[norm][rs.key].push({ threshold: threshold, prob: prob, kind: rs.kind, bid: bid, ask: ask, q: quality, date: evDate, teams: evTeams, series: rs.ticker, tk: mkt.ticker || '' });
             try {
             propsRawK.push({ n: norm, nm: name, k: rs.key, thr: threshold, bid: (bid != null && !isNaN(bid)) ? bid : null, ask: (ask != null && !isNaN(ask)) ? ask : null,
