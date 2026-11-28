@@ -1832,6 +1832,11 @@
       }
       out = pool.filter(function(c){ return c.date === minDate; });
     }
+    // Kalshi runs a "Protected" copy of most prop series (KXNFLRECPROT, KXNFLPASSYDSPROT...):
+    // same question, settles at the pre-kickoff price if the player leaves after halftime, and
+    // trades with much wider spreads. Use the regular series when it has rungs for this game.
+    var main = out.filter(function(c){ return !c.series || !/PROT$/.test(c.series); });
+    if (main.length) out = main;
     var good = out.filter(function(c){ return c.q <= 1; });
     if (good.length && good.length < out.length) kalshiCleanDiag.wideDropped += out.length - good.length;
     return good.length ? good : out;
