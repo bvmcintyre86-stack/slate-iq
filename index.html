@@ -3546,6 +3546,10 @@
           var side = sides[sideKey];
           var personId = side.personId;
           if (!personId) continue;
+          // Over / Yes side only (sideIndex 0). Both sides share a yardage line, but for TD props
+          // the Under's price was being read as the Over's probability whenever it came last -
+          // e.g. Under 1.5 pass TDs at -170 (63%) used as P(2+ TDs), inflating Pass TD ~50%.
+          if (side.sideIndex === 1) continue;
           if (!isAlt && side.marketSourceLines && Object.keys(side.marketSourceLines).length) s.anyBookMatched++;
 
           if (isAlt){
